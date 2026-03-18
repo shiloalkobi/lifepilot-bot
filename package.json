@@ -1,0 +1,14 @@
+{
+  "name": "lifepilot-bot",
+  "version": "1.0.0",
+  "description": "LifePilot — Personal Telegram Bot powered by Claude",
+  "main": "bot/index.js",
+  "scripts": {
+    "start": "node bot/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "groq-sdk": "^1.1.1",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
