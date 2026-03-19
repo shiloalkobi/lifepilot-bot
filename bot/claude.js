@@ -12,7 +12,6 @@ const {
 } = require('./google');
 
 // Gemini 2.5 Flash via OpenAI-compatible endpoint
-// Free tier: 1,500 requests/day, 1M tokens/min
 const client = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
@@ -28,41 +27,27 @@ const googleReady = (() => {
   catch { console.log('[Google] no token found — disabled'); return false; }
 })();
 
-// ── Intent classification via JSON mode ────────────────────────────────────────
+// ── Intent classification ──────────────────────────────────────────────────────
 const INTENT_SYSTEM = `You are an intent classifier for a Hebrew/English personal assistant.
 Today's date and time (Asia/Jerusalem): {NOW}
 
 Respond ONLY with valid JSON, no extra text.
 
-Classify the user message into one of these intents and extract parameters:
+Intents:
+- "read_calendar": user wants to see calendar events. params: { "days": number (1=today,2=tomorrow,7=week) }
+- "create_event": create new event. params: { "summary": string, "startDateTime": "YYYY-MM-DDTHH:MM:SS", "endDateTime": "YYYY-MM-DDTHH:MM:SS" }
+- "update_event": rename/reschedule event. params: { "search": string, "updates": { "summary"?: string, "startDateTime"?: string, "endDateTime"?: string } }
+- "delete_event": delete/remove event. params: { "search": string }
+- "read_emails": see unread emails. params: { "maxResults": number }
+- "chat": everything else. params: {}
 
-- "read_calendar": user wants to see/list calendar events
-  params: { "days": number (1=today, 2=tomorrow, 7=this week) }
-
-- "create_event": user wants to add/create a new calendar event
-  params: { "summary": string, "startDateTime": "YYYY-MM-DDTHH:MM:SS", "endDateTime": "YYYY-MM-DDTHH:MM:SS" }
-  Note: if no end time given, add 1 hour to start. Use the CURRENT YEAR unless user specifies otherwise.
-
-- "update_event": user wants to rename/reschedule/change an existing event
-  params: { "search": "event name to find", "updates": { "summary"?: string, "startDateTime"?: "YYYY-MM-DDTHH:MM:SS", "endDateTime"?: "YYYY-MM-DDTHH:MM:SS" } }
-
-- "delete_event": user wants to remove/cancel an event
-  params: { "search": "event name to find" }
-
-- "read_emails": user wants to see unread emails
-  params: { "maxResults": number }
-
-- "chat": anything else
-  params: {}
-
-Return format:
-{ "intent": "<intent>", "params": { ... } }`;
+Format: { "intent": "...", "params": { ... } }`;
 
 async function classifyIntent(userMessage) {
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
   const res = await client.chat.completions.create({
     model: MODEL,
-    max_tokens: 250,
+    max_tokens: 400,
     temperature: 0,
     response_format: { type: 'json_object' },
     messages: [
@@ -75,33 +60,43 @@ async function classifyIntent(userMessage) {
 
 // ── Execute Google action ──────────────────────────────────────────────────────
 async function executeGoogleAction(intent, params) {
-  if (intent === 'read_calendar') return await getCalendarEvents(Number(params.days) || 1);
-  if (intent === 'create_event')  return await createCalendarEvent(params.summary, params.startDateTime, params.endDateTime);
+  if (intent === 'read_calendar') {
+    return { type: 'display', data: await getCalendarEvents(Number(params.days) || 1) };
+  }
+  if (intent === 'create_event') {
+    const result = await createCalendarEvent(params.summary, params.startDateTime, params.endDateTime);
+    return { type: 'direct', data: result };
+  }
   if (intent === 'update_event') {
     const found = JSON.parse(await findEventsByQuery(params.search || ''));
-    if (!found.found) return found.message;
-    return await updateCalendarEvent(found.events[0].id, params.updates || {});
+    if (!found.found) return { type: 'direct', data: `לא נמצא אירוע עם השם "${params.search}"` };
+    const result = await updateCalendarEvent(found.events[0].id, params.updates || {});
+    return { type: 'direct', data: result };
   }
   if (intent === 'delete_event') {
     const found = JSON.parse(await findEventsByQuery(params.search || ''));
-    if (!found.found) return found.message;
-    return await deleteCalendarEvent(found.events[0].id);
+    if (!found.found) return { type: 'direct', data: `לא נמצא אירוע עם השם "${params.search}" ביומן.` };
+    const result = await deleteCalendarEvent(found.events[0].id);
+    return { type: 'direct', data: `${result} (${found.events[0].summary})` };
   }
-  if (intent === 'read_emails') return await getUnreadEmails(Number(params.maxResults) || 5);
+  if (intent === 'read_emails') {
+    return { type: 'display', data: await getUnreadEmails(Number(params.maxResults) || 5) };
+  }
   return null;
 }
 
-// ── Generate final response ────────────────────────────────────────────────────
+// ── Generate model response (for display/chat only) ───────────────────────────
 async function generateResponse(messages, googleData) {
   const extra = googleData
-    ? [{ role: 'assistant', content: `[נתוני Google]\n${googleData}` }]
+    ? [{ role: 'assistant', content: `[נתוני Google]\n${googleData}` },
+       { role: 'user', content: 'תסכם לי את המידע הזה בצורה ברורה וקצרה' }]
     : [];
 
   const res = await client.chat.completions.create({
     model: MODEL,
     max_tokens: 1024,
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: 'אתה עוזר אישי בשם LifePilot של שילה אלקובי. ענה בעברית קצר וישיר. אם קיבלת נתוני Google — הצג אותם בלבד, אל תמציא מידע נוסף.' },
       ...messages,
       ...extra,
     ],
@@ -117,16 +112,31 @@ async function askClaude(messages) {
     try {
       const { intent, params } = await classifyIntent(lastUserMessage);
       console.log('[Intent]', intent, params);
+
       if (intent !== 'chat') {
-        const googleData = await executeGoogleAction(intent, params || {});
-        return await generateResponse(messages, googleData);
+        const actionResult = await executeGoogleAction(intent, params || {});
+
+        // "direct" = return as-is (create/update/delete) — no model hallucination possible
+        if (actionResult.type === 'direct') return actionResult.data;
+
+        // "display" = pass through model to format nicely (read calendar/emails)
+        if (actionResult.type === 'display') return await generateResponse(messages, actionResult.data);
       }
     } catch (err) {
       console.error('[Intent/Google error]', err.message);
     }
   }
 
-  return await generateResponse(messages, null);
+  // Regular chat
+  const res = await client.chat.completions.create({
+    model: MODEL,
+    max_tokens: 1024,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ],
+  });
+  return res.choices[0].message.content || '(no response)';
 }
 
 module.exports = { askClaude };
