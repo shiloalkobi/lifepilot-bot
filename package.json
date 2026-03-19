@@ -8,6 +8,7 @@
     "alerts": "node alerts/oref.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "dotenv": "^16.4.5",
     "googleapis": "^171.4.0",
     "groq-sdk": "^1.1.1",

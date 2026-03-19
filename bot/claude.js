@@ -1,7 +1,6 @@
 'use strict';
 
-const OpenAI = require('openai');
-const { loadSystemPrompt } = require('./system_prompt');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const {
   getCalendarEvents,
   createCalendarEvent,
@@ -11,15 +10,134 @@ const {
   deleteCalendarEvent,
 } = require('./google');
 
-// Gemini 2.5 Flash via OpenAI-compatible endpoint
-const client = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const MODEL = 'gemini-2.5-flash';
+const SYSTEM_PROMPT = `אתה LifePilot — העוזר האישי של שילה אלקובי.
+אזור זמן: Asia/Jerusalem. תאריך היום: ${new Date().toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
 
-const systemPrompt = loadSystemPrompt();
+יש לך גישה מלאה ליומן Google Calendar ולGmail של שילה דרך הכלים שלמטה.
+ענה בעברית קצר וישיר. כשמבצעים פעולה ביומן — דווח בדיוק מה בוצע.`;
+
+// ── Tool definitions ──────────────────────────────────────────────────────────
+const TOOLS = [{
+  functionDeclarations: [
+    {
+      name: 'get_calendar_events',
+      description: 'מביא אירועים מהיומן. השתמש כשהמשתמש רוצה לראות מה יש ביומן.',
+      parameters: {
+        type: 'object',
+        properties: {
+          days: { type: 'number', description: '1=היום, 2=מחר, 7=השבוע' },
+        },
+        required: ['days'],
+      },
+    },
+    {
+      name: 'find_calendar_events',
+      description: 'מחפש אירוע ביומן לפי שם. השתמש לפני עדכון או מחיקה כדי לקבל את ה-ID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'שם האירוע לחיפוש (חלקי)' },
+          days:  { type: 'number', description: 'כמה ימים קדימה לחפש (ברירת מחדל 30)' },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'create_calendar_event',
+      description: 'יוצר אירוע חדש ביומן.',
+      parameters: {
+        type: 'object',
+        properties: {
+          summary:       { type: 'string', description: 'שם האירוע' },
+          startDateTime: { type: 'string', description: 'ISO 8601 לדוגמה: 2026-03-20T15:00:00' },
+          endDateTime:   { type: 'string', description: 'ISO 8601 שעת סיום' },
+        },
+        required: ['summary', 'startDateTime', 'endDateTime'],
+      },
+    },
+    {
+      name: 'update_calendar_event',
+      description: 'מעדכן אירוע קיים (שם/שעה/תאריך). יש לקרוא קודם ל-find_calendar_events.',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventId:       { type: 'string', description: 'ID של האירוע (מ-find_calendar_events)' },
+          summary:       { type: 'string', description: 'שם חדש (אופציונלי)' },
+          startDateTime: { type: 'string', description: 'שעת התחלה חדשה ISO 8601 (אופציונלי)' },
+          endDateTime:   { type: 'string', description: 'שעת סיום חדשה ISO 8601 (אופציונלי)' },
+        },
+        required: ['eventId'],
+      },
+    },
+    {
+      name: 'delete_calendar_event',
+      description: 'מוחק אירוע מהיומן. יש לקרוא קודם ל-find_calendar_events.',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventId: { type: 'string', description: 'ID של האירוע למחיקה' },
+          summary: { type: 'string', description: 'שם האירוע (לאישור בלבד)' },
+        },
+        required: ['eventId'],
+      },
+    },
+    {
+      name: 'get_unread_emails',
+      description: 'מביא מיילים שלא נקראו.',
+      parameters: {
+        type: 'object',
+        properties: {
+          maxResults: { type: 'number', description: 'כמה מיילים (ברירת מחדל 5)' },
+        },
+        required: [],
+      },
+    },
+  ],
+}];
+
+// ── Execute a function call from the model ────────────────────────────────────
+async function executeTool(name, args) {
+  console.log(`[Tool] ${name}`, args);
+  try {
+    if (name === 'get_calendar_events') {
+      return await getCalendarEvents(Number(args.days) || 1);
+    }
+    if (name === 'find_calendar_events') {
+      return await findEventsByQuery(args.query, Number(args.days) || 30);
+    }
+    if (name === 'create_calendar_event') {
+      return await createCalendarEvent(args.summary, args.startDateTime, args.endDateTime);
+    }
+    if (name === 'update_calendar_event') {
+      return await updateCalendarEvent(args.eventId, {
+        summary: args.summary,
+        startDateTime: args.startDateTime,
+        endDateTime: args.endDateTime,
+      });
+    }
+    if (name === 'delete_calendar_event') {
+      return await deleteCalendarEvent(args.eventId);
+    }
+    if (name === 'get_unread_emails') {
+      return await getUnreadEmails(Number(args.maxResults) || 5);
+    }
+    return 'כלי לא ידוע';
+  } catch (err) {
+    console.error(`[Tool error] ${name}:`, err.message);
+    return `שגיאה: ${err.message}`;
+  }
+}
+
+// ── Convert history to Gemini format ─────────────────────────────────────────
+function toGeminiHistory(messages) {
+  // All messages except the last user message go into history
+  return messages.slice(0, -1).map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+}
 
 const googleReady = (() => {
   if (process.env.GOOGLE_TOKEN_JSON) { console.log('[Google] using env var token'); return true; }
@@ -27,118 +145,47 @@ const googleReady = (() => {
   catch { console.log('[Google] no token found — disabled'); return false; }
 })();
 
-// ── Intent classification ──────────────────────────────────────────────────────
-const INTENT_SYSTEM = `You are an intent classifier for a Hebrew/English personal assistant.
-Today's date and time (Asia/Jerusalem): {NOW}
-
-Respond ONLY with valid JSON, no extra text.
-
-Intents:
-- "read_calendar": user wants to see calendar events. params: { "days": number (1=today,2=tomorrow,7=week) }
-- "create_event": create new event. params: { "summary": string, "startDateTime": "YYYY-MM-DDTHH:MM:SS", "endDateTime": "YYYY-MM-DDTHH:MM:SS" }
-- "update_event": rename/reschedule event. params: { "search": string, "updates": { "summary"?: string, "startDateTime"?: string, "endDateTime"?: string } }
-- "delete_event": delete/remove event. params: { "search": string }
-- "read_emails": see unread emails. params: { "maxResults": number }
-- "chat": everything else. params: {}
-
-Format: { "intent": "...", "params": { ... } }`;
-
-async function classifyIntent(userMessage) {
-  const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-  const res = await client.chat.completions.create({
-    model: MODEL,
-    max_tokens: 400,
-    temperature: 0,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: INTENT_SYSTEM.replace('{NOW}', now) },
-      { role: 'user', content: userMessage },
-    ],
-  });
-  return JSON.parse(res.choices[0].message.content);
-}
-
-// ── Execute Google action ──────────────────────────────────────────────────────
-async function executeGoogleAction(intent, params) {
-  if (intent === 'read_calendar') {
-    return { type: 'display', data: await getCalendarEvents(Number(params.days) || 1) };
-  }
-  if (intent === 'create_event') {
-    const result = await createCalendarEvent(params.summary, params.startDateTime, params.endDateTime);
-    return { type: 'direct', data: result };
-  }
-  if (intent === 'update_event') {
-    const found = JSON.parse(await findEventsByQuery(params.search || ''));
-    if (!found.found) return { type: 'direct', data: `לא נמצא אירוע עם השם "${params.search}"` };
-    const result = await updateCalendarEvent(found.events[0].id, params.updates || {});
-    return { type: 'direct', data: result };
-  }
-  if (intent === 'delete_event') {
-    const found = JSON.parse(await findEventsByQuery(params.search || ''));
-    if (!found.found) return { type: 'direct', data: `לא נמצא אירוע עם השם "${params.search}" ביומן.` };
-    const result = await deleteCalendarEvent(found.events[0].id);
-    const name = found.events[0].summary || 'ללא כותרת';
-    return { type: 'direct', data: `${result} (${name})` };
-  }
-  if (intent === 'read_emails') {
-    return { type: 'display', data: await getUnreadEmails(Number(params.maxResults) || 5) };
-  }
-  return null;
-}
-
-// ── Generate model response (for display/chat only) ───────────────────────────
-async function generateResponse(messages, googleData) {
-  const extra = googleData
-    ? [{ role: 'assistant', content: `[נתוני Google]\n${googleData}` },
-       { role: 'user', content: 'תסכם לי את המידע הזה בצורה ברורה וקצרה' }]
-    : [];
-
-  const res = await client.chat.completions.create({
-    model: MODEL,
-    max_tokens: 1024,
-    messages: [
-      { role: 'system', content: 'אתה עוזר אישי בשם LifePilot של שילה אלקובי. ענה בעברית קצר וישיר. אם קיבלת נתוני Google — הצג אותם בלבד, אל תמציא מידע נוסף.' },
-      ...messages,
-      ...extra,
-    ],
-  });
-  return res.choices[0].message.content || '(no response)';
-}
-
-// ── Main entry ─────────────────────────────────────────────────────────────────
+// ── Main entry ────────────────────────────────────────────────────────────────
 async function askClaude(messages) {
-  const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+  const lastMessage = messages[messages.length - 1]?.content || '';
+  const history = toGeminiHistory(messages);
 
-  if (googleReady) {
-    try {
-      const { intent, params } = await classifyIntent(lastUserMessage);
-      console.log('[Intent]', intent, params);
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    systemInstruction: SYSTEM_PROMPT,
+    tools: googleReady ? TOOLS : [],
+  });
 
-      if (intent !== 'chat') {
-        try {
-          const actionResult = await executeGoogleAction(intent, params || {});
-          if (actionResult.type === 'direct') return actionResult.data;
-          if (actionResult.type === 'display') return await generateResponse(messages, actionResult.data);
-        } catch (googleErr) {
-          console.error('[Google error]', googleErr.message);
-          return `⚠️ שגיאה בחיבור לGoogle Calendar: ${googleErr.message}`;
-        }
-      }
-    } catch (err) {
-      console.error('[Intent error]', err.message);
-    }
+  const chat = model.startChat({ history });
+
+  // Tool calling loop — model can call multiple tools before final answer
+  let result = await chat.sendMessage(lastMessage);
+
+  for (let i = 0; i < 5; i++) { // max 5 tool call rounds
+    const candidate = result.response.candidates?.[0];
+    if (!candidate) break;
+
+    const functionCalls = candidate.content.parts.filter((p) => p.functionCall);
+    if (functionCalls.length === 0) break;
+
+    // Execute all requested tool calls
+    const toolResponses = await Promise.all(
+      functionCalls.map(async (p) => {
+        const output = await executeTool(p.functionCall.name, p.functionCall.args);
+        return {
+          functionResponse: {
+            name: p.functionCall.name,
+            response: { result: String(output) },
+          },
+        };
+      })
+    );
+
+    // Send results back to model
+    result = await chat.sendMessage(toolResponses);
   }
 
-  // Regular chat
-  const res = await client.chat.completions.create({
-    model: MODEL,
-    max_tokens: 1024,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...messages,
-    ],
-  });
-  return res.choices[0].message.content || '(no response)';
+  return result.response.text() || '(no response)';
 }
 
 module.exports = { askClaude };
