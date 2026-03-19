@@ -96,4 +96,69 @@ async function getUnreadEmails(maxResults = 5) {
   }).join('\n\n');
 }
 
-module.exports = { getCalendarEvents, createCalendarEvent, getUnreadEmails };
+async function findEventsByQuery(query, days = 30) {
+  const auth     = getAuthClient();
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  const now = new Date();
+  const end = new Date();
+  end.setDate(end.getDate() + days);
+
+  const res = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: now.toISOString(),
+    timeMax: end.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults: 20,
+  });
+
+  // Hebrew-friendly search: match if event summary contains any significant word from query
+  const queryWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 1)
+    .map((w) => w.replace(/^[הוכבלמש]/, '')); // strip common Hebrew prefixes
+
+  const events = (res.data.items || []).filter((e) => {
+    const summary = (e.summary || '').toLowerCase();
+    return queryWords.some((w) => summary.includes(w));
+  });
+
+  if (events.length === 0) return JSON.stringify({ found: false, message: `לא נמצא אירוע עם השם "${query}"` });
+
+  return JSON.stringify({
+    found: true,
+    events: events.map((e) => ({
+      id: e.id,
+      summary: e.summary,
+      start: e.start.dateTime || e.start.date,
+      end: e.end.dateTime || e.end.date,
+    })),
+  });
+}
+
+async function updateCalendarEvent(eventId, updates) {
+  const auth     = getAuthClient();
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  const body = {};
+  if (updates.summary)       body.summary = updates.summary;
+  if (updates.startDateTime) body.start = { dateTime: updates.startDateTime, timeZone: 'Asia/Jerusalem' };
+  if (updates.endDateTime)   body.end   = { dateTime: updates.endDateTime,   timeZone: 'Asia/Jerusalem' };
+
+  const res = await calendar.events.patch({
+    calendarId: 'primary',
+    eventId,
+    requestBody: body,
+  });
+
+  return `✅ האירוע עודכן: "${res.data.summary}"`;
+}
+
+async function deleteCalendarEvent(eventId) {
+  const auth     = getAuthClient();
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  await calendar.events.delete({ calendarId: 'primary', eventId });
+  return '✅ האירוע נמחק.';
+}
+
+module.exports = { getCalendarEvents, createCalendarEvent, getUnreadEmails, findEventsByQuery, updateCalendarEvent, deleteCalendarEvent };
