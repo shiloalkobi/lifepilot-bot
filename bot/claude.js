@@ -61,47 +61,73 @@ async function callTool(name, args) {
   return 'כלי לא ידוע';
 }
 
-async function askClaude(messages) {
-  const googleReady = (() => {
-    if (process.env.GOOGLE_TOKEN_JSON) { console.log('[Google] using env var token'); return true; }
-    try { require('fs').readFileSync(require('path').join(__dirname, '..', 'google_token.json')); console.log('[Google] using file token'); return true; }
-    catch { console.log('[Google] no token found — tools disabled'); return false; }
-  })();
+const CALENDAR_KEYWORDS = ['יומן', 'פגישה', 'פגישות', 'היום', 'מחר', 'השבוע', 'אירוע', 'לוז', 'תזכורת'];
+const EMAIL_KEYWORDS    = ['מייל', 'מיילים', 'אימייל', 'דואר', 'inbox', 'email'];
 
+function detectIntent(text) {
+  const lower = text.toLowerCase();
+  if (EMAIL_KEYWORDS.some((k) => lower.includes(k)))    return 'email';
+  if (CALENDAR_KEYWORDS.some((k) => lower.includes(k))) return 'calendar';
+  return null;
+}
+
+function getDaysFromText(text) {
+  if (text.includes('השבוע')) return 7;
+  if (text.includes('מחר'))   return 2;
+  return 1;
+}
+
+const googleReady = (() => {
+  if (process.env.GOOGLE_TOKEN_JSON) { console.log('[Google] using env var token'); return true; }
+  try { require('fs').readFileSync(require('path').join(__dirname, '..', 'google_token.json')); console.log('[Google] using file token'); return true; }
+  catch { console.log('[Google] no token found — disabled'); return false; }
+})();
+
+async function askClaude(messages) {
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+
+  // Google shortcuts — bypass model tool calling
+  if (googleReady) {
+    const intent = detectIntent(lastUserMessage);
+    if (intent === 'calendar') {
+      const days = getDaysFromText(lastUserMessage);
+      const data = await getCalendarEvents(days);
+      const followUp = await client.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1024,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages,
+          { role: 'assistant', content: `נתוני יומן Google:\n${data}` },
+          { role: 'user', content: 'תסכם לי את האירועים בצורה ברורה' },
+        ],
+      });
+      return followUp.choices[0].message.content || data;
+    }
+    if (intent === 'email') {
+      const data = await getUnreadEmails(5);
+      const followUp = await client.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1024,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages,
+          { role: 'assistant', content: `מיילים לא נקראים:\n${data}` },
+          { role: 'user', content: 'תסכם לי את המיילים בצורה ברורה' },
+        ],
+      });
+      return followUp.choices[0].message.content || data;
+    }
+  }
+
+  // Regular chat
   const response = await client.chat.completions.create({
     model: 'llama-3.3-70b-versatile',
     max_tokens: 1024,
     messages: [{ role: 'system', content: systemPrompt }, ...messages],
-    tools: googleReady ? TOOLS : undefined,
-    tool_choice: googleReady ? 'auto' : undefined,
   });
 
-  const choice = response.choices[0];
-
-  // No tool call — plain text reply
-  if (choice.finish_reason !== 'tool_calls') {
-    return choice.message.content || '(no response)';
-  }
-
-  // Execute tool calls
-  const toolCall  = choice.message.tool_calls[0];
-  const toolName  = toolCall.function.name;
-  const toolArgs  = JSON.parse(toolCall.function.arguments);
-  const toolResult = await callTool(toolName, toolArgs);
-
-  // Send result back to model for a natural reply
-  const followUp = await client.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    max_tokens: 1024,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...messages,
-      choice.message,
-      { role: 'tool', tool_call_id: toolCall.id, content: toolResult },
-    ],
-  });
-
-  return followUp.choices[0].message.content || toolResult;
+  return response.choices[0].message.content || '(no response)';
 }
 
 module.exports = { askClaude };
