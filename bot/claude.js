@@ -1,7 +1,6 @@
 'use strict';
 
-const Groq = require('groq-sdk');
-// Model: llama-3.3-70b-versatile — 100k tokens/day free, best Hebrew quality on Groq
+const OpenAI = require('openai');
 const { loadSystemPrompt } = require('./system_prompt');
 const {
   getCalendarEvents,
@@ -12,9 +11,14 @@ const {
   deleteCalendarEvent,
 } = require('./google');
 
-const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Gemini 2.5 Flash via OpenAI-compatible endpoint
+// Free tier: 1,500 requests/day, 1M tokens/min
+const client = new OpenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+});
 
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL = 'gemini-2.5-flash';
 
 const systemPrompt = loadSystemPrompt();
 
