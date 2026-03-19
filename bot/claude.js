@@ -55,9 +55,9 @@ const TOOLS = [
 ];
 
 async function callTool(name, args) {
-  if (name === 'get_calendar_events')  return await getCalendarEvents(args.days || 1);
+  if (name === 'get_calendar_events')   return await getCalendarEvents(Number(args.days) || 1);
   if (name === 'create_calendar_event') return await createCalendarEvent(args.summary, args.startDateTime, args.endDateTime);
-  if (name === 'get_unread_emails')    return await getUnreadEmails(args.maxResults || 5);
+  if (name === 'get_unread_emails')     return await getUnreadEmails(Number(args.maxResults) || 5);
   return 'כלי לא ידוע';
 }
 
