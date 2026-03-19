@@ -77,7 +77,8 @@ async function executeGoogleAction(intent, params) {
     const found = JSON.parse(await findEventsByQuery(params.search || ''));
     if (!found.found) return { type: 'direct', data: `לא נמצא אירוע עם השם "${params.search}" ביומן.` };
     const result = await deleteCalendarEvent(found.events[0].id);
-    return { type: 'direct', data: `${result} (${found.events[0].summary})` };
+    const name = found.events[0].summary || 'ללא כותרת';
+    return { type: 'direct', data: `${result} (${name})` };
   }
   if (intent === 'read_emails') {
     return { type: 'display', data: await getUnreadEmails(Number(params.maxResults) || 5) };
@@ -114,16 +115,17 @@ async function askClaude(messages) {
       console.log('[Intent]', intent, params);
 
       if (intent !== 'chat') {
-        const actionResult = await executeGoogleAction(intent, params || {});
-
-        // "direct" = return as-is (create/update/delete) — no model hallucination possible
-        if (actionResult.type === 'direct') return actionResult.data;
-
-        // "display" = pass through model to format nicely (read calendar/emails)
-        if (actionResult.type === 'display') return await generateResponse(messages, actionResult.data);
+        try {
+          const actionResult = await executeGoogleAction(intent, params || {});
+          if (actionResult.type === 'direct') return actionResult.data;
+          if (actionResult.type === 'display') return await generateResponse(messages, actionResult.data);
+        } catch (googleErr) {
+          console.error('[Google error]', googleErr.message);
+          return `⚠️ שגיאה בחיבור לGoogle Calendar: ${googleErr.message}`;
+        }
       }
     } catch (err) {
-      console.error('[Intent/Google error]', err.message);
+      console.error('[Intent error]', err.message);
     }
   }
 

@@ -114,11 +114,16 @@ async function findEventsByQuery(query, days = 30) {
   });
 
   // Hebrew-friendly search: match if event summary contains any significant word from query
+  const noTitleKeywords = ['ללא כותרת', 'ללא שם', 'no title', 'untitled', 'without title', 'ללא'];
+  const isSearchingNoTitle = noTitleKeywords.some((k) => query.toLowerCase().includes(k.toLowerCase()));
+
   const queryWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 1)
     .map((w) => w.replace(/^[הוכבלמש]/, '')); // strip common Hebrew prefixes
 
   const events = (res.data.items || []).filter((e) => {
     const summary = (e.summary || '').toLowerCase();
+    // Match untitled events
+    if (isSearchingNoTitle && !e.summary) return true;
     return queryWords.some((w) => summary.includes(w));
   });
 
