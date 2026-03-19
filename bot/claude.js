@@ -63,6 +63,7 @@ async function callTool(name, args) {
 
 async function askClaude(messages) {
   const googleReady = (() => {
+    if (process.env.GOOGLE_TOKEN_JSON) return true;
     try { require('fs').readFileSync(require('path').join(__dirname, '..', 'google_token.json')); return true; }
     catch { return false; }
   })();
