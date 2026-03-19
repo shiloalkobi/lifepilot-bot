@@ -1,6 +1,7 @@
 'use strict';
 
 const Groq = require('groq-sdk');
+// Model: llama-3.3-70b-versatile — 100k tokens/day free, best Hebrew quality on Groq
 const { loadSystemPrompt } = require('./system_prompt');
 const {
   getCalendarEvents,
@@ -11,7 +12,10 @@ const {
   deleteCalendarEvent,
 } = require('./google');
 
-const client       = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+const MODEL = 'llama-3.3-70b-versatile';
+
 const systemPrompt = loadSystemPrompt();
 
 const googleReady = (() => {
@@ -44,7 +48,7 @@ Classify the user message into one of these intents and extract parameters:
 - "read_emails": user wants to see unread emails
   params: { "maxResults": number }
 
-- "chat": anything else (general questions, conversation, etc.)
+- "chat": anything else
   params: {}
 
 Return format:
@@ -52,61 +56,45 @@ Return format:
 
 async function classifyIntent(userMessage) {
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-  const prompt = INTENT_SYSTEM.replace('{NOW}', now);
-
-  // Use fast/cheap small model for intent classification (500k TPD vs 100k for 70b)
   const res = await client.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: MODEL,
     max_tokens: 250,
     temperature: 0,
     response_format: { type: 'json_object' },
     messages: [
-      { role: 'system', content: prompt },
+      { role: 'system', content: INTENT_SYSTEM.replace('{NOW}', now) },
       { role: 'user', content: userMessage },
     ],
   });
-
   return JSON.parse(res.choices[0].message.content);
 }
 
-// ── Execute Google action and return result string ─────────────────────────────
+// ── Execute Google action ──────────────────────────────────────────────────────
 async function executeGoogleAction(intent, params) {
-  if (intent === 'read_calendar') {
-    return await getCalendarEvents(Number(params.days) || 1);
-  }
-
-  if (intent === 'create_event') {
-    return await createCalendarEvent(params.summary, params.startDateTime, params.endDateTime);
-  }
-
+  if (intent === 'read_calendar') return await getCalendarEvents(Number(params.days) || 1);
+  if (intent === 'create_event')  return await createCalendarEvent(params.summary, params.startDateTime, params.endDateTime);
   if (intent === 'update_event') {
     const found = JSON.parse(await findEventsByQuery(params.search || ''));
     if (!found.found) return found.message;
-    const event = found.events[0];
-    return await updateCalendarEvent(event.id, params.updates || {});
+    return await updateCalendarEvent(found.events[0].id, params.updates || {});
   }
-
   if (intent === 'delete_event') {
     const found = JSON.parse(await findEventsByQuery(params.search || ''));
     if (!found.found) return found.message;
     return await deleteCalendarEvent(found.events[0].id);
   }
-
-  if (intent === 'read_emails') {
-    return await getUnreadEmails(Number(params.maxResults) || 5);
-  }
-
+  if (intent === 'read_emails') return await getUnreadEmails(Number(params.maxResults) || 5);
   return null;
 }
 
-// ── Final response from model ──────────────────────────────────────────────────
+// ── Generate final response ────────────────────────────────────────────────────
 async function generateResponse(messages, googleData) {
   const extra = googleData
     ? [{ role: 'assistant', content: `[נתוני Google]\n${googleData}` }]
     : [];
 
   const res = await client.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: MODEL,
     max_tokens: 1024,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -114,7 +102,6 @@ async function generateResponse(messages, googleData) {
       ...extra,
     ],
   });
-
   return res.choices[0].message.content || '(no response)';
 }
 
@@ -126,14 +113,12 @@ async function askClaude(messages) {
     try {
       const { intent, params } = await classifyIntent(lastUserMessage);
       console.log('[Intent]', intent, params);
-
       if (intent !== 'chat') {
         const googleData = await executeGoogleAction(intent, params || {});
         return await generateResponse(messages, googleData);
       }
     } catch (err) {
       console.error('[Intent/Google error]', err.message);
-      // Fall through to regular chat on error
     }
   }
 
