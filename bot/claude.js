@@ -54,9 +54,10 @@ async function classifyIntent(userMessage) {
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
   const prompt = INTENT_SYSTEM.replace('{NOW}', now);
 
+  // Use fast/cheap small model for intent classification (500k TPD vs 100k for 70b)
   const res = await client.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    max_tokens: 300,
+    model: 'llama-3.1-8b-instant',
+    max_tokens: 250,
     temperature: 0,
     response_format: { type: 'json_object' },
     messages: [
@@ -105,7 +106,7 @@ async function generateResponse(messages, googleData) {
     : [];
 
   const res = await client.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama-3.1-8b-instant',
     max_tokens: 1024,
     messages: [
       { role: 'system', content: systemPrompt },

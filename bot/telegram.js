@@ -42,7 +42,10 @@ function startBot(token) {
       bot.sendMessage(chatId, reply);
     } catch (err) {
       console.error('Claude error:', err.message);
-      bot.sendMessage(chatId, '⚠️ שגיאה בחיבור ל-Claude. נסה שוב.');
+      const msg = err.message?.includes('429')
+        ? '⏳ הגעתי למגבלת הקריאות של ה-AI. נסה שוב בעוד כמה דקות.'
+        : '⚠️ שגיאה בחיבור ל-AI. נסה שוב.';
+      bot.sendMessage(chatId, msg);
     }
   });
 

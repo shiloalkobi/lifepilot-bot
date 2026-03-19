@@ -1,5 +1,10 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
+// Prevent unhandled Telegram/network errors from crashing the process
+process.on('unhandledRejection', (err) => {
+  console.error('[UnhandledRejection]', err?.message || err);
+});
+
 const { startBot } = require('./telegram');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
