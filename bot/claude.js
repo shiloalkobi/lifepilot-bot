@@ -10,13 +10,27 @@ const {
   deleteCalendarEvent,
 } = require('./google');
 
+const { saveDraft, listDrafts, deleteDraft } = require('./social');
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const SYSTEM_PROMPT = `אתה LifePilot — העוזר האישי של שילה אלקובי.
 אזור זמן: Asia/Jerusalem. תאריך היום: ${new Date().toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
 
 יש לך גישה מלאה ליומן Google Calendar ולGmail של שילה דרך הכלים שלמטה.
-ענה בעברית קצר וישיר. כשמבצעים פעולה ביומן — דווח בדיוק מה בוצע.`;
+ענה בעברית קצר וישיר. כשמבצעים פעולה ביומן — דווח בדיוק מה בוצע.
+
+## יכולות שיווק בסושיאל מדיה
+אתה יכול ליצור תוכן לסושיאל מדיה לפי הפלטפורמה:
+
+**Instagram:** קפשן עד 2200 תווים, אמוג'י, שורת hook ראשונה חזקה, 5-15 האשטגים רלוונטיים.
+**Facebook:** יותר מידע, טון שיחתי, שאלה לסיום לעידוד תגובות, 3-5 האשטגים בלבד.
+**TikTok:** קצר ומכוון, טון צעיר ואנרגטי, hook חזק ב-3 שניות, 3-7 האשטגים טרנדיים.
+
+כשמבקשים פוסט — כתוב קודם את הקפשן המלא, אח"כ האשטגים בנפרד.
+כשמבקשים prompt לתמונה — כתוב בפורמט מפורט באנגלית (סגנון, תאורה, קומפוזיציה, צבעים).
+כשמבקשים תכנית תוכן שבועית — הצג טבלה עם יום / פלטפורמה / נושא / פורמט.
+אחרי יצירת תוכן — שאל אם לשמור כטיוטה.`;
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 const TOOLS = [{
@@ -94,6 +108,40 @@ const TOOLS = [{
         required: [],
       },
     },
+    {
+      name: 'save_social_draft',
+      description: 'שומר טיוטת פוסט לסושיאל מדיה. השתמש כשהמשתמש מבקש לשמור פוסט שנוצר.',
+      parameters: {
+        type: 'object',
+        properties: {
+          platform:    { type: 'string', description: 'הפלטפורמה: Instagram / Facebook / TikTok' },
+          content:     { type: 'string', description: 'טקסט הפוסט המלא' },
+          hashtags:    { type: 'string', description: 'האשטגים (אופציונלי)' },
+          imagePrompt: { type: 'string', description: 'prompt לתמונה אם נוצר (אופציונלי)' },
+        },
+        required: ['platform', 'content'],
+      },
+    },
+    {
+      name: 'list_social_drafts',
+      description: 'מציג את כל טיוטות הפוסטים השמורות.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'delete_social_draft',
+      description: 'מוחק טיוטת פוסט לפי ID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'ה-ID של הטיוטה למחיקה' },
+        },
+        required: ['id'],
+      },
+    },
   ],
 }];
 
@@ -122,6 +170,15 @@ async function executeTool(name, args) {
     }
     if (name === 'get_unread_emails') {
       return await getUnreadEmails(Number(args.maxResults) || 5);
+    }
+    if (name === 'save_social_draft') {
+      return saveDraft(args);
+    }
+    if (name === 'list_social_drafts') {
+      return listDrafts();
+    }
+    if (name === 'delete_social_draft') {
+      return deleteDraft(args.id);
     }
     return 'כלי לא ידוע';
   } catch (err) {

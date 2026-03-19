@@ -2,3 +2,7 @@
 node_modules/
 google_credentials.json
 google_token.json
+_bmad/
+.claude/
+drafts/
+design-artifacts/
