@@ -216,8 +216,15 @@ const googleReady = (() => {
   catch { console.log('[Google] no token found — disabled'); return false; }
 })();
 
+const { canCall, increment } = require('./rate-limiter');
+
 // ── Main entry ────────────────────────────────────────────────────────────────
 async function askClaude(messages) {
+  if (!canCall()) {
+    return '⚠️ הגעתי למגבלה היומית של בקשות AI. נתאפס בחצות.\n\n/usage — לראות כמה קריאות נוצלו';
+  }
+  increment();
+
   const lastMessage = messages[messages.length - 1]?.content || '';
   const history = toGeminiHistory(messages);
 

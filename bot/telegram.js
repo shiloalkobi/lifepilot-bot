@@ -18,6 +18,7 @@ const {
   getDailyWord, getRandomWord, formatWord,
   startQuiz, isInQuiz, processQuizAnswer, formatStreak,
 } = require('./english');
+const { formatUsage } = require('./rate-limiter');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -310,6 +311,10 @@ function startBot(token, webhookUrl = null) {
       console.error('[/english streak]', err.message);
       bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
     }
+  });
+
+  bot.onText(/^\/usage$/, (msg) => {
+    bot.sendMessage(msg.chat.id, formatUsage(), { parse_mode: 'HTML' });
   });
 
   bot.onText(/^\/cancel$/, (msg) => {
