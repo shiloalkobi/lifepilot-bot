@@ -1,9 +1,9 @@
 'use strict';
 
-const cron          = require('node-cron');
-const { getActiveAlerts } = require('pikud-haoref-api');
+const https = require('https');
+const cron  = require('node-cron');
 
-// ── Areas to monitor (מרכז / ראשון לציון) — exact names from pikud-haoref-api cities.json ──
+// ── Areas to monitor (מרכז / ראשון לציון) — exact names from tzevaadom cities.json ──
 const MONITORED_AREAS = new Set([
   // ראשון לציון
   'ראשון לציון - מזרח', 'ראשון לציון - מערב',
@@ -28,38 +28,81 @@ const MONITORED_AREAS = new Set([
   'אור יהודה', 'אזור', 'ראש העין', 'אלעד',
 ]);
 
-// ── Alert type mapping (pikud-haoref-api string types → display) ──────────────
-const ALERT_TYPES = {
-  missiles:                    { emoji: '🚨',    label: 'צבע אדום — ירי רקטות וטילים',       action: 'היכנסו מיד למרחב המוגן',          shelterMin: 10 },
-  general:                     { emoji: '⚠️',    label: 'התרעה כללית',                         action: 'היכנסו למרחב המוגן',              shelterMin: 10 },
-  earthQuake:                  { emoji: '🌍',    label: 'רעידת אדמה',                          action: 'צאו מהבניין בזהירות',             shelterMin: 0  },
-  radiologicalEvent:           { emoji: '☢️',    label: 'אירוע רדיולוגי',                     action: 'הישארו בפנים, סגרו חלונות',       shelterMin: 0  },
-  tsunami:                     { emoji: '🌊',    label: 'אזהרת צונאמי',                        action: 'התרחקו מהחוף לאלתר',             shelterMin: 0  },
-  hostileAircraftIntrusion:    { emoji: '✈️',    label: 'חדירת כטב"מ / מטוס עוין',            action: 'היכנסו למרחב המוגן',              shelterMin: 10 },
-  hazardousMaterials:          { emoji: '☣️',    label: 'אירוע חומרים מסוכנים',               action: 'הישארו בפנים, סגרו חלונות',       shelterMin: 0  },
-  terroristInfiltration:       { emoji: '🔴',    label: 'חדירת מחבלים',                       action: 'נעלו דלתות, הישארו בפנים',        shelterMin: 0  },
-  newsFlash:                   { emoji: '📢',    label: 'הודעה דחופה',                         action: '',                                 shelterMin: 0  },
-  // Drill types — lower priority
-  missilesDrill:               { emoji: '🔔',    label: 'תרגיל — צבע אדום',                   action: 'זוהי תרגיל בלבד',                 shelterMin: 0  },
-  generalDrill:                { emoji: '🔔',    label: 'תרגיל כללי',                          action: 'זוהי תרגיל בלבד',                 shelterMin: 0  },
+// ── Tzofar (tzevaadom.co.il) threat ID → display info ─────────────────────────
+// Source: https://github.com/dn5qMDW3/tzevaadom/blob/main/custom_components/tzevaadom/const.py
+const THREAT_TYPES = {
+  0: { emoji: '🚨',    label: 'צבע אדום — ירי רקטות וטילים',        action: 'היכנסו מיד למרחב המוגן',          shelterMin: 10 },
+  1: { emoji: '☣️',    label: 'אירוע חומרים מסוכנים',                action: 'הישארו בפנים, סגרו חלונות',       shelterMin: 0  },
+  2: { emoji: '🔴',    label: 'חדירת מחבלים',                        action: 'נעלו דלתות, הישארו בפנים',        shelterMin: 0  },
+  3: { emoji: '🌍',    label: 'רעידת אדמה',                          action: 'צאו מהבניין בזהירות',             shelterMin: 0  },
+  4: { emoji: '🌊',    label: 'אזהרת צונאמי',                        action: 'התרחקו מהחוף לאלתר',             shelterMin: 0  },
+  5: { emoji: '✈️',    label: 'חדירת כטב"מ / מטוס עוין',             action: 'היכנסו למרחב המוגן',              shelterMin: 10 },
+  6: { emoji: '☢️',    label: 'אירוע רדיולוגי',                      action: 'הישארו בפנים, סגרו חלונות',       shelterMin: 0  },
+  7: { emoji: '🚀🔴',  label: 'ירי טיל בליסטי',                      action: 'היכנסו מיד למרחב המוגן! ~3 דקות', shelterMin: 30 },
+  8: { emoji: '📢',    label: 'התרעה — הודעת פיקוד העורף',           action: '',                                 shelterMin: 0  },
+  9: { emoji: '🔔',    label: 'תרגיל פיקוד העורף',                   action: 'זוהי תרגיל בלבד',                 shelterMin: 0  },
 };
 
 function nowHebrew() {
-  return new Date().toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return new Date().toLocaleTimeString('he-IL', {
+    timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+// ── HTTP GET helper ────────────────────────────────────────────────────────────
+function httpGet(hostname, path, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname, path, method: 'GET',
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', ...headers },
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+    });
+    req.on('error', reject);
+    req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
+
+// ── Primary source: api.tzevaadom.co.il (no geo-blocking, worldwide) ──────────
+async function fetchTzofar() {
+  const { status, body } = await httpGet('api.tzevaadom.co.il', '/notifications');
+  if (status !== 200) throw new Error(`Tzofar returned HTTP ${status}`);
+  const data = JSON.parse(body);
+  if (!Array.isArray(data)) throw new Error('Tzofar: unexpected response format');
+  // Each notification: { notificationId, threat, isDrill, cities: [string], time }
+  return data;
+}
+
+// ── Secondary source: oref.org.il (geo-blocked from US, may work or not) ──────
+async function fetchOref() {
+  const { status, body } = await httpGet('www.oref.org.il', '/WarningMessages/alert/alerts.json', {
+    'X-Requested-With': 'XMLHttpRequest',
+    'Referer': 'https://www.oref.org.il/',
+  });
+  if (status !== 200) throw new Error(`Oref returned HTTP ${status}`);
+  const cleaned = body.replace(/^\uFEFF/, '').trim();
+  if (!cleaned || cleaned === '\r\n') return []; // empty = no alerts
+  const json = JSON.parse(cleaned);
+  if (!json.data || !Array.isArray(json.data)) return [];
+  // Convert to tzofar-like format for uniform processing
+  return [{ notificationId: String(json.id || Date.now()), threat: Number(json.cat || 1) - 1, isDrill: false, cities: json.data }];
 }
 
 /**
  * Start the Pikud HaOref alert monitor.
- * @param {import('node-telegram-bot-api')} bot
- * @param {string} chatId - from process.env.ALERT_CHAT_ID
+ * Primary: api.tzevaadom.co.il (Cloudflare, no geo-blocking)
+ * Fallback: www.oref.org.il (may be geo-blocked from US)
  */
 function startOrefMonitor(bot, chatId) {
-  // Deduplication: Set of seen alert IDs
   const seenIds     = new Set();
   let shelterTimer  = null;
   let reminderTimer = null;
   let pollCount     = 0;
-  let errorCount    = 0;
+  let primaryErrors = 0;
+  let source        = 'tzofar'; // track which source is active
 
   function send(text) {
     bot.sendMessage(chatId, text, { parse_mode: 'HTML' }).catch((err) => {
@@ -83,86 +126,90 @@ function startOrefMonitor(bot, chatId) {
     }, minutes * 60 * 1000);
   }
 
-  function processAlerts(alerts) {
-    if (!Array.isArray(alerts) || alerts.length === 0) return;
+  function processNotifications(notifications) {
+    if (!notifications || notifications.length === 0) return;
 
-    for (const alert of alerts) {
-      if (!alert.cities || alert.cities.length === 0) continue;
-
-      // Check if any monitored city is in this alert
-      const matched = alert.cities.filter((c) => MONITORED_AREAS.has(c));
+    for (const n of notifications) {
+      const cities = Array.isArray(n.cities) ? n.cities : [];
+      const matched = cities.filter((c) => MONITORED_AREAS.has(c));
       if (matched.length === 0) continue;
 
-      // Deduplication by ID (if provided) or by type+cities fingerprint
-      const alertId = alert.id
-        ? String(alert.id)
-        : `${alert.type}:${matched.sort().join(',')}`;
+      // Skip drills (threat 9 or isDrill=true)
+      if (n.isDrill || n.threat === 9) continue;
 
+      const alertId = String(n.notificationId || `${n.threat}:${matched.sort().join(',')}`);
       if (seenIds.has(alertId)) continue;
       seenIds.add(alertId);
 
-      // Cap Set to prevent memory growth
       if (seenIds.size > 200) {
-        const oldest = seenIds.values().next().value;
-        seenIds.delete(oldest);
+        seenIds.delete(seenIds.values().next().value);
       }
 
-      const type = ALERT_TYPES[alert.type] || {
-        emoji: '⚠️',
-        label: alert.instructions || 'התראה',
-        action: 'היכנסו למרחב המוגן',
-        shelterMin: 10,
+      const type = THREAT_TYPES[n.threat] || {
+        emoji: '⚠️', label: 'התרעה', action: 'היכנסו למרחב המוגן', shelterMin: 10,
       };
 
-      const time = nowHebrew();
+      const time    = nowHebrew();
       const message =
         `${type.emoji} <b>${type.label}</b>\n` +
         `🕐 <b>שעה:</b> ${time}\n\n` +
         `📍 <b>אזורים:</b> ${matched.join(', ')}\n\n` +
         (type.action ? `🛡️ ${type.action}` : '');
 
-      console.log(`[Oref] ALERT at ${time}: ${type.label} → ${matched.join(', ')}`);
+      console.log(`[Oref] ALERT [${source}] ${time}: ${type.label} → ${matched.join(', ')}`);
       send(message);
 
       if (type.shelterMin > 0) startShelterCountdown(type.shelterMin);
     }
   }
 
-  function poll() {
-    getActiveAlerts((err, alerts) => {
-      pollCount++;
-      if (err) {
-        errorCount++;
-        // Log only every 10th error to avoid log spam
-        if (errorCount % 10 === 1) {
-          console.error(`[Oref] Fetch error #${errorCount}: ${err.message}`);
-        }
-        return;
+  async function poll() {
+    pollCount++;
+    try {
+      // Try primary (Tzofar — no geo-blocking)
+      const notifications = await fetchTzofar();
+      primaryErrors = 0;
+      source = 'tzofar';
+      processNotifications(notifications);
+    } catch (tzErr) {
+      primaryErrors++;
+      if (primaryErrors % 30 === 1) {
+        console.error(`[Oref] Tzofar error #${primaryErrors}: ${tzErr.message} — trying Oref fallback`);
       }
-      errorCount = 0; // reset on success
-      processAlerts(alerts);
-    });
+      // Fallback to oref.org.il
+      try {
+        const notifications = await fetchOref();
+        source = 'oref';
+        processNotifications(notifications);
+      } catch (orefErr) {
+        if (primaryErrors % 30 === 1) {
+          console.error(`[Oref] Oref fallback also failed: ${orefErr.message}`);
+        }
+      }
+    }
   }
 
-  // Poll every 2 seconds (pikud-haoref-api is heavier than raw HTTPS)
+  // Poll every 2 seconds
   setInterval(poll, 2000);
   poll();
 
   // Health check log every 60 seconds
   setInterval(() => {
-    const status = errorCount > 0 ? `⚠️ ${errorCount} consecutive errors` : '✅ OK';
-    console.log(`[Oref] Status: ${status} | ${pollCount} total polls | ${seenIds.size} unique alerts`);
+    const errNote = primaryErrors > 0 ? ` | Tzofar errors: ${primaryErrors}` : '';
+    console.log(`[Oref] Status: source=${source} | polls=${pollCount} | seen=${seenIds.size}${errNote}`);
   }, 60 * 1000);
 
   // Daily health check at 09:00 Israel (06:00 UTC)
   cron.schedule('0 6 * * *', async () => {
     try {
+      const srcLabel = source === 'tzofar'
+        ? '✅ Tzofar (tzevaadom.co.il) — ללא geo-blocking'
+        : '⚠️ Oref ישיר — עלול להיחסם';
       const msg =
         `🛡️ <b>בדיקת מערכת פיקוד העורף — יומית</b>\n\n` +
-        `✅ מערכת ההתראות פעילה\n` +
-        `📊 ${pollCount} בדיקות מאז ההפעלה\n` +
-        `🔍 ${seenIds.size} התראות ייחודיות נרשמו\n` +
-        `⏱️ בדיקה כל 2 שניות — ${MONITORED_AREAS.size} אזורים במעקב\n\n` +
+        `${srcLabel}\n` +
+        `📊 ${pollCount} בדיקות | ${seenIds.size} התראות ייחודיות\n` +
+        `⏱️ בדיקה כל 2 שניות | ${MONITORED_AREAS.size} אזורים במעקב\n\n` +
         `<i>ישראל שקטה — אין התראות פעילות</i>`;
       await bot.sendMessage(chatId, msg, { parse_mode: 'HTML' });
       console.log('[Oref] Daily health check sent');
@@ -171,14 +218,14 @@ function startOrefMonitor(bot, chatId) {
     }
   }, { timezone: 'UTC' });
 
-  console.log(`✅ [Oref] Monitor started — ${MONITORED_AREAS.size} areas | 2s polling | daily check 09:00 IL | chat: ${chatId}`);
+  console.log(`✅ [Oref] Monitor started — Tzofar primary + Oref fallback | ${MONITORED_AREAS.size} areas | chat: ${chatId}`);
 }
 
 /**
- * Send a mock alert for testing the message format.
+ * Send a mock alert for testing message format.
  */
 function sendMockAlert(bot, chatId) {
-  const type = ALERT_TYPES['missiles'];
+  const type = THREAT_TYPES[0];
   const time = nowHebrew();
   const message =
     `${type.emoji} <b>${type.label}</b>\n` +
