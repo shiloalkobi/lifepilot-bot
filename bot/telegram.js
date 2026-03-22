@@ -1,6 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { askClaude } = require('./claude');
 const { getHistory, addMessage, resetHistory } = require('./history');
+const { buildMorningMessage } = require('./scheduler');
 
 function startBot(token) {
   const bot = new TelegramBot(token, {
@@ -37,9 +38,19 @@ function startBot(token) {
   bot.onText(/\/help/, (msg) => {
     bot.sendMessage(
       msg.chat.id,
-      '📋 *פקודות זמינות:*\n\n/start — ברכה\n/reset — מחיקת היסטוריה\n/help — עזרה\n\nכל הודעה אחרת → Claude',
+      '📋 *פקודות זמינות:*\n\n/start — ברכה\n/reset — מחיקת היסטוריה\n/boker — הודעת בוקר טוב (בדיקה)\n/help — עזרה\n\nכל הודעה אחרת → Gemini AI',
       { parse_mode: 'Markdown' }
     );
+  });
+
+  bot.onText(/\/boker/, async (msg) => {
+    try {
+      const message = await buildMorningMessage();
+      bot.sendMessage(msg.chat.id, message, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/boker] Error:', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בטעינת הודעת הבוקר.');
+    }
   });
 
   // Handle all non-command messages

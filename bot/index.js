@@ -8,6 +8,7 @@ process.on('unhandledRejection', (err) => {
 const http = require('http');
 const { startBot } = require('./telegram');
 const { startOrefMonitor, sendMockAlert } = require('./oref');
+const { startScheduler } = require('./scheduler');
 
 const token   = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey  = process.env.GROQ_API_KEY;
@@ -34,6 +35,14 @@ server.listen(PORT, () => {
 });
 
 const bot = startBot(token);
+
+// Start daily scheduler (morning briefing at 07:00 IL)
+const mainChatId = alertChatId || process.env.CHAT_ID;
+if (mainChatId) {
+  const scheduler = startScheduler(bot, mainChatId);
+  // Register the /boker on-demand handler in telegram.js context
+  bot._scheduler = scheduler;
+}
 
 // Start Pikud HaOref real-time alert monitor (1s polling, integrated)
 if (alertChatId) {
