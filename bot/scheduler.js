@@ -6,6 +6,7 @@ const fs      = require('fs');
 const path    = require('path');
 const { getMorningMedSummary } = require('./medications');
 const { hadEntryYesterday } = require('./health');
+const { getDailyWord, formatWord } = require('./english');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
 
@@ -125,11 +126,21 @@ function startScheduler(bot, chatId) {
     }
   }
 
-  // Every day at 07:00 Israel time (UTC+3 → cron runs in server UTC, so 04:00 UTC)
-  // node-cron uses server local time; Render UTC → 04:00 UTC = 07:00 Asia/Jerusalem
+  // 07:00 Israel = 04:00 UTC
   cron.schedule('0 4 * * *', sendMorning, { timezone: 'UTC' });
 
-  console.log('✅ [Scheduler] Morning briefing scheduled — 07:00 Asia/Jerusalem daily');
+  // Daily English word at 10:00 Israel = 07:00 UTC
+  cron.schedule('0 7 * * *', async () => {
+    try {
+      const word = getDailyWord();
+      await bot.sendMessage(chatId, formatWord(word, '📚 מילת האנגלית של היום'), { parse_mode: 'HTML' });
+      console.log('[Scheduler] English word sent:', word.word);
+    } catch (err) {
+      console.error('[Scheduler] English word error:', err.message);
+    }
+  }, { timezone: 'UTC' });
+
+  console.log('✅ [Scheduler] Morning 07:00 + English 10:00 (IL) scheduled');
 
   return { sendMorning };
 }

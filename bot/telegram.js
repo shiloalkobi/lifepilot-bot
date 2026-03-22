@@ -14,6 +14,10 @@ const {
   startCheckin, isInCheckin, processCheckinStep, cancelCheckin,
   formatTodayStatus: formatHealthToday, getWeekSummary, formatRecentLog,
 } = require('./health');
+const {
+  getDailyWord, getRandomWord, formatWord,
+  startQuiz, isInQuiz, processQuizAnswer, formatStreak,
+} = require('./english');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -266,6 +270,46 @@ function startBot(token, webhookUrl = null) {
     bot.sendMessage(msg.chat.id, formatRecentLog(5), { parse_mode: 'HTML' });
   });
 
+  // ── English Practice Commands ───────────────────────────────────────────────
+  bot.onText(/^\/english$/, (msg) => {
+    try {
+      const word = getDailyWord();
+      bot.sendMessage(msg.chat.id, formatWord(word), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/english]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בטעינת מילת היום.');
+    }
+  });
+
+  bot.onText(/^\/english quiz$/, (msg) => {
+    try {
+      const q = startQuiz(msg.chat.id);
+      bot.sendMessage(msg.chat.id, q, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/english quiz]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בהתחלת quiz.');
+    }
+  });
+
+  bot.onText(/^\/english random$/, (msg) => {
+    try {
+      const word = getRandomWord();
+      bot.sendMessage(msg.chat.id, formatWord(word, '🎲 מילה אקראית'), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/english random]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
+  bot.onText(/^\/english streak$/, (msg) => {
+    try {
+      bot.sendMessage(msg.chat.id, formatStreak(), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/english streak]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
   bot.onText(/^\/cancel$/, (msg) => {
     if (cancelCheckin(msg.chat.id)) {
       bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
@@ -287,6 +331,19 @@ function startBot(token, webhookUrl = null) {
     if (!msg.text || msg.text.startsWith('/')) return;
 
     const chatId = msg.chat.id;
+
+    // ── English quiz intercept ───────────────────────────────────────────────
+    if (isInQuiz(chatId)) {
+      try {
+        const result = processQuizAnswer(chatId, msg.text);
+        if (!result) return;
+        await bot.sendMessage(chatId, result.reply, { parse_mode: 'HTML' });
+      } catch (err) {
+        console.error('[quiz]', err.message);
+        bot.sendMessage(chatId, '⚠️ שגיאה. נסה שוב עם /english quiz');
+      }
+      return;
+    }
 
     // ── Health check-in intercept ────────────────────────────────────────────
     if (isInCheckin(chatId)) {
