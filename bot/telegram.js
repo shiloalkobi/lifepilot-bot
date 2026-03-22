@@ -10,6 +10,10 @@ const {
   addMedication, removeMedication, markTaken, markSkipped,
   formatList: formatMedList, formatTodayStatus,
 } = require('./medications');
+const {
+  startCheckin, isInCheckin, processCheckinStep, cancelCheckin,
+  formatTodayStatus: formatHealthToday, getWeekSummary, formatRecentLog,
+} = require('./health');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -232,6 +236,42 @@ function startBot(token, webhookUrl = null) {
       { parse_mode: 'HTML' });
   });
 
+  // ── Health Tracking Commands ────────────────────────────────────────────────
+  bot.onText(/^\/health$/, (msg) => {
+    try {
+      const question = startCheckin(msg.chat.id);
+      bot.sendMessage(msg.chat.id,
+        '🩺 <b>דיווח בריאות יומי</b>\n' +
+        'ענה על 5 שאלות קצרות. שלח /cancel בכל שלב לביטול.\n\n' + question,
+        { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/health]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בהתחלת דיווח.');
+    }
+  });
+
+  bot.onText(/^\/health status$/, (msg) => {
+    bot.sendMessage(msg.chat.id, formatHealthToday(), { parse_mode: 'HTML' });
+  });
+
+  bot.onText(/^\/health week$/, (msg) => {
+    bot.sendMessage(msg.chat.id, getWeekSummary(7), { parse_mode: 'HTML' });
+  });
+
+  bot.onText(/^\/health month$/, (msg) => {
+    bot.sendMessage(msg.chat.id, getWeekSummary(30), { parse_mode: 'HTML' });
+  });
+
+  bot.onText(/^\/health log$/, (msg) => {
+    bot.sendMessage(msg.chat.id, formatRecentLog(5), { parse_mode: 'HTML' });
+  });
+
+  bot.onText(/^\/cancel$/, (msg) => {
+    if (cancelCheckin(msg.chat.id)) {
+      bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
+    }
+  });
+
   bot.onText(/\/boker/, async (msg) => {
     try {
       const message = await buildMorningMessage();
@@ -248,9 +288,27 @@ function startBot(token, webhookUrl = null) {
 
     const chatId = msg.chat.id;
 
-    // Show "typing..." indicator
-    bot.sendChatAction(chatId, 'typing');
+    // ── Health check-in intercept ────────────────────────────────────────────
+    if (isInCheckin(chatId)) {
+      try {
+        const result = processCheckinStep(chatId, msg.text);
+        if (!result) return;
+        await bot.sendMessage(chatId, result.reply, { parse_mode: 'HTML' });
+        // After saving, check for high-pain alert
+        if (result.done) {
+          const { checkHighPainAlert } = require('./health');
+          const alert = checkHighPainAlert();
+          if (alert) setTimeout(() => bot.sendMessage(chatId, alert, { parse_mode: 'HTML' }), 1000);
+        }
+      } catch (err) {
+        console.error('[health checkin]', err.message);
+        bot.sendMessage(chatId, '⚠️ שגיאה בדיווח. נסה שוב או שלח /cancel.');
+      }
+      return;
+    }
 
+    // ── AI chat ──────────────────────────────────────────────────────────────
+    bot.sendChatAction(chatId, 'typing');
     addMessage(chatId, 'user', msg.text);
 
     try {
@@ -259,10 +317,10 @@ function startBot(token, webhookUrl = null) {
       bot.sendMessage(chatId, reply);
     } catch (err) {
       console.error('Claude error:', err.message);
-      const msg = err.message?.includes('429')
+      const errMsg = err.message?.includes('429')
         ? '⏳ הגעתי למגבלת הקריאות של ה-AI. נסה שוב בעוד כמה דקות.'
         : '⚠️ שגיאה בחיבור ל-AI. נסה שוב.';
-      bot.sendMessage(chatId, msg);
+      bot.sendMessage(chatId, errMsg);
     }
   });
 

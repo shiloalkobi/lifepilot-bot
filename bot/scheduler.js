@@ -5,6 +5,7 @@ const https   = require('https');
 const fs      = require('fs');
 const path    = require('path');
 const { getMorningMedSummary } = require('./medications');
+const { hadEntryYesterday } = require('./health');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
 
@@ -94,13 +95,15 @@ async function buildMorningMessage() {
     ? `❝ ${quote.text} ❞\n— ${quote.author}`
     : `❝ ${quote.text} ❞\n— ${quote.author}`;
 
-  const medSummary = getMorningMedSummary();
+  const medSummary      = getMorningMedSummary();
+  const missedYesterday = !hadEntryYesterday();
 
   return (
     `🌅 <b>בוקר טוב, שילה!</b>\n` +
     `📅 ${dateStr}\n\n` +
     `🏙️ <b>ראשון לציון:</b> ${weather}\n\n` +
     (medSummary ? `${medSummary}\n\n` : '') +
+    (missedYesterday ? `📝 <b>תזכורת:</b> לא מילאת דיווח בריאות אתמול. /health\n\n` : '') +
     `✨ <b>ציטוט היום:</b>\n${quoteBlock}\n\n` +
     `${tip}`
   );
