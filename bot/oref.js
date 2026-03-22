@@ -1,26 +1,47 @@
 'use strict';
 
-const https = require('https');
+const cron          = require('node-cron');
+const { getActiveAlerts } = require('pikud-haoref-api');
 
-// ── Areas to monitor (מרכז / ראשון לציון) ────────────────────────────────────
+// ── Areas to monitor (מרכז / ראשון לציון) — exact names from pikud-haoref-api cities.json ──
 const MONITORED_AREAS = new Set([
-  'ראשון לציון', 'ראשון לציון - מזרח', 'ראשון לציון - מערב',
-  'תל אביב - דרום', 'תל אביב - מרכז', 'תל אביב - צפון', 'תל אביב - ירקון',
-  'רמת גן', 'גבעתיים', 'פתח תקווה', 'בני ברק',
-  'חולון', 'בת ים', 'רמת השרון', 'הרצליה',
-  'כפר סבא', 'רעננה', 'הוד השרון', 'נס ציונה',
-  'רחובות', 'לוד', 'רמלה', 'מודיעין - מכבים - רעות',
-  'יהוד - מונוסון', 'גבעת שמואל', 'קריית אונו', 'אור יהודה',
-  'אזור', 'ראש העין', 'אלעד',
+  // ראשון לציון
+  'ראשון לציון - מזרח', 'ראשון לציון - מערב',
+  // תל אביב
+  'תל אביב - מרכז העיר', 'תל אביב - עבר הירקון',
+  'תל אביב - דרום העיר ויפו', 'תל אביב - מזרח',
+  // רמת גן / גבעתיים
+  'רמת גן - מזרח', 'רמת גן - מערב', 'גבעתיים',
+  // חולון / בת ים
+  'חולון', 'בת ים',
+  // פתח תקווה / בני ברק
+  'פתח תקווה', 'בני ברק',
+  // הרצליה
+  'הרצליה - מערב', 'הרצליה - מרכז וגליל ים',
+  // שרון
+  'רמת השרון', 'כפר סבא', 'רעננה', 'הוד השרון',
+  // שפלה / מרכז
+  'נס ציונה', 'רחובות', 'לוד', 'רמלה',
+  'מודיעין מכבים רעות',
+  // מזרח ת"א
+  'יהוד מונוסון', 'גבעת שמואל', 'קריית אונו',
+  'אור יהודה', 'אזור', 'ראש העין', 'אלעד',
 ]);
 
+// ── Alert type mapping (pikud-haoref-api string types → display) ──────────────
 const ALERT_TYPES = {
-  '1':  { emoji: '🚨',    label: 'צבע אדום — ירי רקטות וטילים',       action: 'היכנסו מיד למרחב המוגן',          shelterMin: 10 },
-  '2':  { emoji: '🚀🔴', label: 'התרעה מוקדמת — טיל בליסטי מאיראן',  action: 'היכנסו מיד למרחב המוגן! ~3 דקות', shelterMin: 30 },
-  '3':  { emoji: '✈️',   label: 'חדירת כטב"מ / מטוס עוין',            action: 'היכנסו למרחב המוגן',              shelterMin: 10 },
-  '4':  { emoji: '🌍',   label: 'רעידת אדמה',                          action: 'צאו מהבניין בזהירות',             shelterMin: 0  },
-  '6':  { emoji: '☢️',   label: 'אירוע חומרים מסוכנים',                action: 'הישארו בפנים, סגרו חלונות',       shelterMin: 0  },
-  '13': { emoji: '🌊',   label: 'אזהרת צונאמי',                        action: 'התרחקו מהחוף לאלתר',             shelterMin: 0  },
+  missiles:                    { emoji: '🚨',    label: 'צבע אדום — ירי רקטות וטילים',       action: 'היכנסו מיד למרחב המוגן',          shelterMin: 10 },
+  general:                     { emoji: '⚠️',    label: 'התרעה כללית',                         action: 'היכנסו למרחב המוגן',              shelterMin: 10 },
+  earthQuake:                  { emoji: '🌍',    label: 'רעידת אדמה',                          action: 'צאו מהבניין בזהירות',             shelterMin: 0  },
+  radiologicalEvent:           { emoji: '☢️',    label: 'אירוע רדיולוגי',                     action: 'הישארו בפנים, סגרו חלונות',       shelterMin: 0  },
+  tsunami:                     { emoji: '🌊',    label: 'אזהרת צונאמי',                        action: 'התרחקו מהחוף לאלתר',             shelterMin: 0  },
+  hostileAircraftIntrusion:    { emoji: '✈️',    label: 'חדירת כטב"מ / מטוס עוין',            action: 'היכנסו למרחב המוגן',              shelterMin: 10 },
+  hazardousMaterials:          { emoji: '☣️',    label: 'אירוע חומרים מסוכנים',               action: 'הישארו בפנים, סגרו חלונות',       shelterMin: 0  },
+  terroristInfiltration:       { emoji: '🔴',    label: 'חדירת מחבלים',                       action: 'נעלו דלתות, הישארו בפנים',        shelterMin: 0  },
+  newsFlash:                   { emoji: '📢',    label: 'הודעה דחופה',                         action: '',                                 shelterMin: 0  },
+  // Drill types — lower priority
+  missilesDrill:               { emoji: '🔔',    label: 'תרגיל — צבע אדום',                   action: 'זוהי תרגיל בלבד',                 shelterMin: 0  },
+  generalDrill:                { emoji: '🔔',    label: 'תרגיל כללי',                          action: 'זוהי תרגיל בלבד',                 shelterMin: 0  },
 };
 
 function nowHebrew() {
@@ -33,11 +54,12 @@ function nowHebrew() {
  * @param {string} chatId - from process.env.ALERT_CHAT_ID
  */
 function startOrefMonitor(bot, chatId) {
-  // Deduplication: Set of seen alert IDs (capped to prevent memory growth)
+  // Deduplication: Set of seen alert IDs
   const seenIds     = new Set();
   let shelterTimer  = null;
   let reminderTimer = null;
   let pollCount     = 0;
+  let errorCount    = 0;
 
   function send(text) {
     bot.sendMessage(chatId, text, { parse_mode: 'HTML' }).catch((err) => {
@@ -61,112 +83,107 @@ function startOrefMonitor(bot, chatId) {
     }, minutes * 60 * 1000);
   }
 
-  function processAlert(raw) {
-    if (!raw || raw.length < 5) return;
+  function processAlerts(alerts) {
+    if (!Array.isArray(alerts) || alerts.length === 0) return;
 
-    let alert;
-    try {
-      // Strip UTF-8 BOM if present
-      alert = JSON.parse(raw.replace(/^\uFEFF/, ''));
-    } catch {
-      return;
+    for (const alert of alerts) {
+      if (!alert.cities || alert.cities.length === 0) continue;
+
+      // Check if any monitored city is in this alert
+      const matched = alert.cities.filter((c) => MONITORED_AREAS.has(c));
+      if (matched.length === 0) continue;
+
+      // Deduplication by ID (if provided) or by type+cities fingerprint
+      const alertId = alert.id
+        ? String(alert.id)
+        : `${alert.type}:${matched.sort().join(',')}`;
+
+      if (seenIds.has(alertId)) continue;
+      seenIds.add(alertId);
+
+      // Cap Set to prevent memory growth
+      if (seenIds.size > 200) {
+        const oldest = seenIds.values().next().value;
+        seenIds.delete(oldest);
+      }
+
+      const type = ALERT_TYPES[alert.type] || {
+        emoji: '⚠️',
+        label: alert.instructions || 'התראה',
+        action: 'היכנסו למרחב המוגן',
+        shelterMin: 10,
+      };
+
+      const time = nowHebrew();
+      const message =
+        `${type.emoji} <b>${type.label}</b>\n` +
+        `🕐 <b>שעה:</b> ${time}\n\n` +
+        `📍 <b>אזורים:</b> ${matched.join(', ')}\n\n` +
+        (type.action ? `🛡️ ${type.action}` : '');
+
+      console.log(`[Oref] ALERT at ${time}: ${type.label} → ${matched.join(', ')}`);
+      send(message);
+
+      if (type.shelterMin > 0) startShelterCountdown(type.shelterMin);
     }
-
-    if (!alert.id) return;
-
-    const alertId = String(alert.id);
-
-    // Deduplication — skip already-seen alert IDs
-    if (seenIds.has(alertId)) return;
-    seenIds.add(alertId);
-
-    // Cap Set size to prevent memory growth during long runs
-    if (seenIds.size > 200) {
-      const oldest = seenIds.values().next().value;
-      seenIds.delete(oldest);
-    }
-
-    const cities  = Array.isArray(alert.data) ? alert.data : [];
-    const matched = cities.filter((c) => MONITORED_AREAS.has(c));
-    if (matched.length === 0) return;
-
-    const cat  = String(alert.cat || '1');
-    const type = ALERT_TYPES[cat] || {
-      emoji: '⚠️',
-      label: alert.title || 'התראה',
-      action: alert.desc || 'היכנסו למרחב המוגן',
-      shelterMin: 10,
-    };
-
-    const time = nowHebrew();
-    const message =
-      `${type.emoji} <b>${type.label}</b>\n` +
-      `🕐 <b>שעה:</b> ${time}\n\n` +
-      `📍 <b>אזורים:</b> ${matched.join(', ')}\n\n` +
-      `🛡️ ${type.action}`;
-
-    console.log(`[Oref] ALERT at ${time}: ${type.label} → ${matched.join(', ')}`);
-    send(message);
-
-    if (type.shelterMin > 0) startShelterCountdown(type.shelterMin);
   }
 
   function poll() {
-    const req = https.request({
-      hostname: 'www.oref.org.il',
-      path: '/WarningMessages/alert/alerts.json',
-      method: 'GET',
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-        'Referer': 'https://www.oref.org.il/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json, text/plain, */*',
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', (c) => { data += c; });
-      res.on('end', () => {
-        pollCount++;
-        processAlert(data.trim());
-      });
+    getActiveAlerts((err, alerts) => {
+      pollCount++;
+      if (err) {
+        errorCount++;
+        // Log only every 10th error to avoid log spam
+        if (errorCount % 10 === 1) {
+          console.error(`[Oref] Fetch error #${errorCount}: ${err.message}`);
+        }
+        return;
+      }
+      errorCount = 0; // reset on success
+      processAlerts(alerts);
     });
-
-    req.on('error', (err) => {
-      // Log but do not crash — next poll will retry automatically
-      console.error(`[Oref] Fetch error (will retry in 1s): ${err.message}`);
-    });
-
-    req.setTimeout(4000, () => {
-      req.destroy();
-      console.warn('[Oref] Request timeout — will retry');
-    });
-
-    req.end();
   }
 
-  // Poll every 1 second
-  setInterval(poll, 1000);
+  // Poll every 2 seconds (pikud-haoref-api is heavier than raw HTTPS)
+  setInterval(poll, 2000);
   poll();
 
   // Health check log every 60 seconds
   setInterval(() => {
-    console.log(`[Oref] Polling active — ${pollCount} polls, ${seenIds.size} unique alerts seen`);
+    const status = errorCount > 0 ? `⚠️ ${errorCount} consecutive errors` : '✅ OK';
+    console.log(`[Oref] Status: ${status} | ${pollCount} total polls | ${seenIds.size} unique alerts`);
   }, 60 * 1000);
 
-  console.log(`✅ [Oref] Monitor started — ${MONITORED_AREAS.size} areas | 1s polling | chat: ${chatId}`);
+  // Daily health check at 09:00 Israel (06:00 UTC)
+  cron.schedule('0 6 * * *', async () => {
+    try {
+      const msg =
+        `🛡️ <b>בדיקת מערכת פיקוד העורף — יומית</b>\n\n` +
+        `✅ מערכת ההתראות פעילה\n` +
+        `📊 ${pollCount} בדיקות מאז ההפעלה\n` +
+        `🔍 ${seenIds.size} התראות ייחודיות נרשמו\n` +
+        `⏱️ בדיקה כל 2 שניות — ${MONITORED_AREAS.size} אזורים במעקב\n\n` +
+        `<i>ישראל שקטה — אין התראות פעילות</i>`;
+      await bot.sendMessage(chatId, msg, { parse_mode: 'HTML' });
+      console.log('[Oref] Daily health check sent');
+    } catch (err) {
+      console.error('[Oref] Daily health check error:', err.message);
+    }
+  }, { timezone: 'UTC' });
+
+  console.log(`✅ [Oref] Monitor started — ${MONITORED_AREAS.size} areas | 2s polling | daily check 09:00 IL | chat: ${chatId}`);
 }
 
 /**
  * Send a mock alert for testing the message format.
- * Call this with TEST_ALERT=1 env var.
  */
 function sendMockAlert(bot, chatId) {
-  const type = ALERT_TYPES['1'];
-  const time = new Date().toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const type = ALERT_TYPES['missiles'];
+  const time = nowHebrew();
   const message =
     `${type.emoji} <b>${type.label}</b>\n` +
     `🕐 <b>שעה:</b> ${time}\n\n` +
-    `📍 <b>אזורים:</b> ראשון לציון, תל אביב - מרכז\n\n` +
+    `📍 <b>אזורים:</b> ראשון לציון - מזרח, תל אביב - מרכז העיר\n\n` +
     `🛡️ ${type.action}\n\n` +
     `<i>⚙️ זוהי התראת בדיקה (mock)</i>`;
 
