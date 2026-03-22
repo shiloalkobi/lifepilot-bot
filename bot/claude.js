@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const {
   getCalendarEvents,
@@ -14,11 +16,23 @@ const { saveDraft, listDrafts, deleteDraft } = require('./social');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Load Shilo's profile from file
+let shiloProfile = '';
+try {
+  shiloProfile = fs.readFileSync(path.join(__dirname, '..', 'shilo_profile.md'), 'utf8');
+} catch (err) {
+  console.error('[Warning] Could not load shilo_profile.md:', err.message);
+}
+
 const SYSTEM_PROMPT = `אתה LifePilot — העוזר האישי של שילה אלקובי.
 אזור זמן: Asia/Jerusalem. תאריך היום: ${new Date().toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
 
+## הפרופיל המלא של שילה
+${shiloProfile}
+
 יש לך גישה מלאה ליומן Google Calendar ולGmail של שילה דרך הכלים שלמטה.
 ענה בעברית קצר וישיר. כשמבצעים פעולה ביומן — דווח בדיוק מה בוצע.
+כשנשאלים על שילה — השתמש במידע מהפרופיל למעלה כדי לענות בצורה מלאה ומדויקת.
 
 ## יכולות שיווק בסושיאל מדיה
 אתה יכול ליצור תוכן לסושיאל מדיה לפי הפלטפורמה:
