@@ -2,6 +2,10 @@ const TelegramBot = require('node-telegram-bot-api');
 const { askClaude } = require('./claude');
 const { getHistory, addMessage, resetHistory } = require('./history');
 const { buildMorningMessage } = require('./scheduler');
+const {
+  addTask, markDone, markUndone, deleteTask,
+  clearCompleted, formatOpenTasks,
+} = require('./tasks');
 
 function startBot(token) {
   const bot = new TelegramBot(token, {
@@ -38,9 +42,94 @@ function startBot(token) {
   bot.onText(/\/help/, (msg) => {
     bot.sendMessage(
       msg.chat.id,
-      '📋 *פקודות זמינות:*\n\n/start — ברכה\n/reset — מחיקת היסטוריה\n/boker — הודעת בוקר טוב (בדיקה)\n/help — עזרה\n\nכל הודעה אחרת → Gemini AI',
+      '📋 *פקודות זמינות:*\n\n' +
+        '🌅 /boker — הודעת בוקר טוב\n\n' +
+        '✅ *משימות:*\n' +
+        '/task טקסט — הוסף משימה\n' +
+        '/task !טקסט — הוסף משימה דחופה\n' +
+        '/tasks — הצג משימות פתוחות\n' +
+        '/done 2 — סמן משימה 2 כבוצעת\n' +
+        '/undone 2 — פתח מחדש משימה 2\n' +
+        '/deltask 2 — מחק משימה 2\n' +
+        '/cleartasks — מחק כל הבוצעות\n\n' +
+        '⚙️ /reset — מחיקת היסטוריית שיחה\n' +
+        '/help — עזרה\n\n' +
+        'כל הודעה אחרת → Gemini AI',
       { parse_mode: 'Markdown' }
     );
+  });
+
+  // ── Task Management Commands ────────────────────────────────────────────────
+  bot.onText(/^\/task (.+)/, (msg, match) => {
+    try {
+      const task = addTask(match[1].trim());
+      if (!task) return bot.sendMessage(msg.chat.id, '⚠️ טקסט המשימה ריק.');
+      const emoji = task.priority === 'high' ? '📌' : '🔲';
+      const note  = task.priority === 'high' ? ' <b>[דחוף]</b>' : '';
+      bot.sendMessage(msg.chat.id,
+        `${emoji} <b>משימה נוספה!</b>\n${task.text}${note}`,
+        { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/task]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בהוספת המשימה.');
+    }
+  });
+
+  bot.onText(/^\/tasks$/, (msg) => {
+    try {
+      bot.sendMessage(msg.chat.id, formatOpenTasks(), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/tasks]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בטעינת המשימות.');
+    }
+  });
+
+  bot.onText(/^\/done (\d+)$/, (msg, match) => {
+    try {
+      const task = markDone(parseInt(match[1]));
+      if (!task) return bot.sendMessage(msg.chat.id, '⚠️ מספר משימה לא נמצא.');
+      bot.sendMessage(msg.chat.id,
+        `✅ <b>בוצע!</b>\n${task.text}`,
+        { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/done]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בסימון המשימה.');
+    }
+  });
+
+  bot.onText(/^\/undone (\d+)$/, (msg, match) => {
+    try {
+      const task = markUndone(parseInt(match[1]));
+      if (!task) return bot.sendMessage(msg.chat.id, '⚠️ מספר משימה לא נמצא.');
+      bot.sendMessage(msg.chat.id,
+        `🔲 <b>נפתח מחדש:</b>\n${task.text}`,
+        { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/undone]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
+  bot.onText(/^\/deltask (\d+)$/, (msg, match) => {
+    try {
+      const task = deleteTask(parseInt(match[1]));
+      if (!task) return bot.sendMessage(msg.chat.id, '⚠️ מספר משימה לא נמצא.');
+      bot.sendMessage(msg.chat.id, `🗑️ נמחק: ${task.text}`);
+    } catch (err) {
+      console.error('[/deltask]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה במחיקת המשימה.');
+    }
+  });
+
+  bot.onText(/^\/cleartasks$/, (msg) => {
+    try {
+      const count = clearCompleted();
+      bot.sendMessage(msg.chat.id,
+        count > 0 ? `🧹 נמחקו ${count} משימות שהושלמו.` : '📋 אין משימות שהושלמו למחיקה.');
+    } catch (err) {
+      console.error('[/cleartasks]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
   });
 
   bot.onText(/\/boker/, async (msg) => {
