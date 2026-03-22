@@ -2,12 +2,16 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const WORDS_FILE    = path.join(__dirname, '..', 'data', 'english-words.json');
 const PROGRESS_FILE = path.join(__dirname, '..', 'data', 'english-progress.json');
 
+// ── Gemini client (reuse env key already configured for chat) ─────────────────
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
 // ── Data ──────────────────────────────────────────────────────────────────────
-function loadWords() {
+function loadStaticWords() {
   try { return JSON.parse(fs.readFileSync(WORDS_FILE, 'utf8')); } catch { return []; }
 }
 
@@ -28,43 +32,6 @@ function todayIL() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 }
 
-// Consistent daily word selection — same word all day, rotates daily
-function getDailyWord() {
-  const words    = loadWords();
-  const progress = loadProgress();
-  const today    = todayIL();
-
-  // Return cached daily word if already set for today
-  if (progress.dailyWords[today]) {
-    return words.find((w) => w.word === progress.dailyWords[today]) || pickWord(words, progress);
-  }
-
-  const word = pickWord(words, progress);
-  progress.dailyWords[today] = word.word;
-
-  // Mark practice date
-  if (!progress.dates.includes(today)) progress.dates.push(today);
-  progress.lastPracticed = today;
-
-  // Keep dailyWords dict lean (last 60 days)
-  const keys = Object.keys(progress.dailyWords).sort();
-  if (keys.length > 60) delete progress.dailyWords[keys[0]];
-
-  saveProgress(progress);
-  return word;
-}
-
-function pickWord(words, progress) {
-  // Difficulty based on quiz success rate
-  const difficulty = getUserDifficulty(progress);
-  const pool = words.filter((w) => w.difficulty === difficulty && !progress.wordsLearned.includes(w.word));
-  // If pool empty, use all words of that difficulty
-  const source = pool.length > 0 ? pool : words.filter((w) => w.difficulty === difficulty);
-  // Use day-of-year as seed for consistency within the day
-  const doy = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-  return source[doy % source.length];
-}
-
 function getUserDifficulty(progress) {
   if (progress.quizScores.length < 5) return 'beginner';
   const recent = progress.quizScores.slice(-10);
@@ -74,8 +41,121 @@ function getUserDifficulty(progress) {
   return 'beginner';
 }
 
+// ── AI word generation ────────────────────────────────────────────────────────
+async function generateWordFromAI(difficulty, excludeWords) {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+  const excluded = excludeWords.slice(-50).join(', ') || 'none';
+
+  const prompt = `Generate a single English vocabulary word for a Hebrew-speaking developer learning English.
+
+Requirements:
+- Difficulty level: ${difficulty}
+- The word must NOT be any of these already-learned words: ${excluded}
+- Practical and useful for daily life, technology, or professional work
+- Not too obscure or overly academic
+
+Return ONLY a valid JSON object (no markdown, no backticks) with exactly these fields:
+{
+  "word": "the English word",
+  "translation": "Hebrew translation (concise, 1-4 words)",
+  "partOfSpeech": "noun/verb/adjective/adverb",
+  "example": "A clear, practical English sentence using the word.",
+  "difficulty": "${difficulty}",
+  "pronunciation": "phonetic hint, e.g. /rɪˈzɪl.jəns/ or (ri-ZIL-yens)",
+  "commonMistake": "One common mistake Hebrew speakers make with this word (in Hebrew)",
+  "relatedWords": ["related1", "related2", "related3"]
+}`;
+
+  const result = await model.generateContent(prompt);
+  const raw    = result.response.text().trim();
+
+  // Strip markdown code fences if Gemini adds them
+  const cleaned = raw.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const word    = JSON.parse(cleaned);
+
+  // Validate required fields
+  const required = ['word', 'translation', 'partOfSpeech', 'example', 'difficulty'];
+  for (const f of required) {
+    if (!word[f]) throw new Error(`Missing field: ${f}`);
+  }
+  return word;
+}
+
+// Fallback: pick from static bank
+function pickStaticWord(difficulty, excludeWords) {
+  const words  = loadStaticWords();
+  const pool   = words.filter((w) => w.difficulty === difficulty && !excludeWords.includes(w.word));
+  const source = pool.length > 0 ? pool : words.filter((w) => w.difficulty === difficulty);
+  if (!source.length) return words[0];
+  const doy = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+  return source[doy % source.length];
+}
+
+// ── AI quiz options ───────────────────────────────────────────────────────────
+async function generateQuizOptions(word) {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+  const prompt = `The English word "${word.word}" means "${word.translation}" in Hebrew.
+Generate 3 plausible but WRONG Hebrew translations that could trick a learner.
+They should be real Hebrew words, similar in theme but incorrect.
+Return ONLY a JSON array of 3 strings, no markdown, e.g.: ["תשובה1", "תשובה2", "תשובה3"]`;
+
+  const result  = await model.generateContent(prompt);
+  const raw     = result.response.text().trim();
+  const cleaned = raw.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const options = JSON.parse(cleaned);
+  if (!Array.isArray(options) || options.length < 3) throw new Error('Invalid quiz options');
+  return options.slice(0, 3);
+}
+
+// ── Main: get daily word (AI-first, static fallback) ─────────────────────────
+async function getDailyWord() {
+  const progress = loadProgress();
+  const today    = todayIL();
+
+  // Return cached word for today
+  if (progress.dailyWordData?.[today]) {
+    return progress.dailyWordData[today];
+  }
+
+  const difficulty = getUserDifficulty(progress);
+  let word;
+
+  try {
+    word = await generateWordFromAI(difficulty, progress.wordsLearned);
+    console.log(`[English] AI generated: "${word.word}" (${difficulty})`);
+  } catch (err) {
+    console.warn(`[English] AI failed (${err.message}), using static fallback`);
+    word = pickStaticWord(difficulty, progress.wordsLearned);
+  }
+
+  // Cache today's word
+  if (!progress.dailyWordData) progress.dailyWordData = {};
+  progress.dailyWordData[today] = word;
+
+  // Keep cache lean (last 60 days)
+  const keys = Object.keys(progress.dailyWordData).sort();
+  if (keys.length > 60) delete progress.dailyWordData[keys[0]];
+
+  // Track practice date
+  if (!progress.dates.includes(today)) progress.dates.push(today);
+  progress.lastPracticed = today;
+
+  saveProgress(progress);
+  return word;
+}
+
+// Sync version for fallback contexts (returns cached or static)
+function getDailyWordSync() {
+  const progress = loadProgress();
+  const today    = todayIL();
+  if (progress.dailyWordData?.[today]) return progress.dailyWordData[today];
+  return pickStaticWord(getUserDifficulty(progress), progress.wordsLearned);
+}
+
 function getRandomWord() {
-  const words = loadWords();
+  const words = loadStaticWords();
   return words[Math.floor(Math.random() * words.length)];
 }
 
@@ -90,48 +170,66 @@ function getStreak() {
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = yesterday.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 
-  // Streak only counts if practiced today or yesterday
   if (sorted[0] !== today && sorted[0] !== yStr) return 0;
 
   let streak = 1;
   for (let i = 1; i < sorted.length; i++) {
     const prev = new Date(sorted[i - 1] + 'T12:00:00');
     const curr = new Date(sorted[i] + 'T12:00:00');
-    const diff = Math.round((prev - curr) / 86400000);
-    if (diff === 1) streak++;
+    if (Math.round((prev - curr) / 86400000) === 1) streak++;
     else break;
   }
   return streak;
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
-const POS_ICONS = { verb: '🔧', noun: '📦', adjective: '🎨', 'adj/verb': '🎨🔧', 'verb/noun': '🔧📦', 'noun/adj': '📦🎨', 'adjective/noun': '🎨📦' };
+const POS_ICONS = {
+  verb: '🔧', noun: '📦', adjective: '🎨', adverb: '💨',
+  'adj/verb': '🎨🔧', 'verb/noun': '🔧📦', 'noun/adj': '📦🎨', 'adjective/noun': '🎨📦',
+};
 
 function formatWord(w, label = '📚 מילת היום') {
   const pos  = POS_ICONS[w.partOfSpeech] || '📝';
   const diff = { beginner: '🟢 מתחיל', intermediate: '🟡 בינוני', advanced: '🔴 מתקדם' }[w.difficulty] || '';
-  return (
+
+  let msg =
     `${label}\n\n` +
     `📖 <b>${w.word}</b>\n` +
     `🇮🇱 <b>${w.translation}</b>\n` +
-    `${pos} ${w.partOfSpeech} | ${diff}\n\n` +
-    `💬 <i>"${w.example}"</i>\n\n` +
-    `🔥 Streak: ${getStreak()} ימים | /english quiz לקווiz`
-  );
+    `${pos} ${w.partOfSpeech} | ${diff}\n`;
+
+  if (w.pronunciation) msg += `🔊 <i>${w.pronunciation}</i>\n`;
+
+  msg += `\n💬 <i>"${w.example}"</i>\n`;
+
+  if (w.commonMistake) msg += `\n⚠️ <b>טעות נפוצה:</b> ${w.commonMistake}\n`;
+
+  if (w.relatedWords?.length) {
+    msg += `\n🔗 <b>מילים קשורות:</b> ${w.relatedWords.join(' • ')}\n`;
+  }
+
+  msg += `\n🔥 Streak: ${getStreak()} ימים | /english quiz לקוויז`;
+  return msg;
 }
 
 // ── Quiz ──────────────────────────────────────────────────────────────────────
-// Map<chatId, { word, correctIdx, options }>
 const quizSessions = new Map();
 
-function startQuiz(chatId) {
-  const words  = loadWords();
-  const word   = getDailyWord();
-  const wrongs = words
-    .filter((w) => w.word !== word.word)
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3)
-    .map((w) => w.translation);
+async function startQuiz(chatId) {
+  const word = getDailyWordSync();
+  let wrongs;
+
+  try {
+    wrongs = await generateQuizOptions(word);
+  } catch {
+    // Fallback: random translations from static bank
+    const staticWords = loadStaticWords();
+    wrongs = staticWords
+      .filter((w) => w.word !== word.word)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3)
+      .map((w) => w.translation);
+  }
 
   const correctIdx = Math.floor(Math.random() * 4);
   const options    = [...wrongs];
@@ -141,7 +239,7 @@ function startQuiz(chatId) {
 
   const optLines = options.map((o, i) => `${i + 1}. ${o}`).join('\n');
   return (
-    `🎯 <b>קווiz — מה המשמעות של:</b>\n\n` +
+    `🎯 <b>קוויז — מה המשמעות של:</b>\n\n` +
     `📖 <b>${word.word}</b>\n\n` +
     `${optLines}\n\n` +
     `ענה עם מספר (1-4)`
@@ -164,7 +262,6 @@ function processQuizAnswer(chatId, text) {
   quizSessions.delete(chatId);
   const correct = n - 1 === session.correctIdx;
 
-  // Save quiz score
   const progress = loadProgress();
   const today    = todayIL();
   let dayScore   = progress.quizScores.find((q) => q.date === today);
@@ -179,7 +276,6 @@ function processQuizAnswer(chatId, text) {
       progress.wordsLearned.push(session.word.word);
     }
   }
-  // Keep quizScores last 90 days
   if (progress.quizScores.length > 90) progress.quizScores.shift();
   saveProgress(progress);
 
@@ -189,6 +285,7 @@ function processQuizAnswer(chatId, text) {
       reply:
         `✅ <b>נכון!</b> 🎉\n\n` +
         `📖 <b>${word.word}</b> = ${word.translation}\n` +
+        (word.pronunciation ? `🔊 <i>${word.pronunciation}</i>\n` : '') +
         `💬 <i>"${word.example}"</i>\n\n` +
         `🔥 Streak: ${getStreak()} ימים`,
       done: true, correct: true,
@@ -199,6 +296,7 @@ function processQuizAnswer(chatId, text) {
         `❌ <b>לא נכון.</b>\n\n` +
         `✅ התשובה הנכונה: <b>${word.translation}</b>\n` +
         `📖 ${word.word} — ${word.partOfSpeech}\n` +
+        (word.pronunciation ? `🔊 <i>${word.pronunciation}</i>\n` : '') +
         `💬 <i>"${word.example}"</i>`,
       done: true, correct: false,
     };
@@ -215,20 +313,21 @@ function formatStreak() {
     : 0;
   const level    = getUserDifficulty(progress);
   const lvlLabel = { beginner: '🟢 מתחיל', intermediate: '🟡 בינוני', advanced: '🔴 מתקדם' }[level];
-
-  const fire = streak >= 7 ? '🔥🔥🔥' : streak >= 3 ? '🔥🔥' : streak >= 1 ? '🔥' : '💤';
+  const fire     = streak >= 7 ? '🔥🔥🔥' : streak >= 3 ? '🔥🔥' : streak >= 1 ? '🔥' : '💤';
 
   return (
     `${fire} <b>English Streak</b>\n\n` +
     `🔥 רצף: <b>${streak} ימים</b>\n` +
     `📚 מילים שנלמדו: <b>${total}</b>\n` +
     `✅ דיוק (10 אחרונים): <b>${rate}%</b>\n` +
-    `📊 רמה נוכחית: ${lvlLabel}`
+    `📊 רמה נוכחית: ${lvlLabel}\n\n` +
+    `<i>מילות היום מיוצרות ע"י Gemini AI ✨</i>`
   );
 }
 
 module.exports = {
   getDailyWord,
+  getDailyWordSync,
   getRandomWord,
   formatWord,
   startQuiz,

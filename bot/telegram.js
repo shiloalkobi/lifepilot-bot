@@ -271,9 +271,10 @@ function startBot(token, webhookUrl = null) {
   });
 
   // ── English Practice Commands ───────────────────────────────────────────────
-  bot.onText(/^\/english$/, (msg) => {
+  bot.onText(/^\/english$/, async (msg) => {
     try {
-      const word = getDailyWord();
+      bot.sendChatAction(msg.chat.id, 'typing');
+      const word = await getDailyWord();
       bot.sendMessage(msg.chat.id, formatWord(word), { parse_mode: 'HTML' });
     } catch (err) {
       console.error('[/english]', err.message);
@@ -281,9 +282,10 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
-  bot.onText(/^\/english quiz$/, (msg) => {
+  bot.onText(/^\/english quiz$/, async (msg) => {
     try {
-      const q = startQuiz(msg.chat.id);
+      bot.sendChatAction(msg.chat.id, 'typing');
+      const q = await startQuiz(msg.chat.id);
       bot.sendMessage(msg.chat.id, q, { parse_mode: 'HTML' });
     } catch (err) {
       console.error('[/english quiz]', err.message);

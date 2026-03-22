@@ -6,7 +6,7 @@ const fs      = require('fs');
 const path    = require('path');
 const { getMorningMedSummary } = require('./medications');
 const { hadEntryYesterday } = require('./health');
-const { getDailyWord, formatWord } = require('./english');
+const { getDailyWord, formatWord } = require('./english'); // getDailyWord is async
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
 
