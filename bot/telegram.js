@@ -6,6 +6,10 @@ const {
   addTask, markDone, markUndone, deleteTask,
   clearCompleted, formatOpenTasks,
 } = require('./tasks');
+const {
+  addMedication, removeMedication, markTaken, markSkipped,
+  formatList: formatMedList, formatTodayStatus,
+} = require('./medications');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -142,6 +146,90 @@ function startBot(token, webhookUrl = null) {
       console.error('[/cleartasks]', err.message);
       bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
     }
+  });
+
+  // ── Medication Commands ─────────────────────────────────────────────────────
+  bot.onText(/^\/med add (.+?) (\S+)$/, (msg, match) => {
+    try {
+      const result = addMedication(match[1].trim(), match[2].trim());
+      if (result.error) return bot.sendMessage(msg.chat.id, `⚠️ ${result.error}`);
+      const { med } = result;
+      bot.sendMessage(msg.chat.id,
+        `💊 <b>תרופה נוספה!</b>\n` +
+        `<b>${med.name}</b>${med.dosage ? ` — ${med.dosage}` : ''}\n` +
+        `🕐 מועדים: ${med.times.join(', ')}`,
+        { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/med add]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בהוספת תרופה.\nשימוש: /med add שם HH:MM,HH:MM');
+    }
+  });
+
+  bot.onText(/^\/med list$/, (msg) => {
+    try {
+      bot.sendMessage(msg.chat.id, formatMedList(), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/med list]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
+  bot.onText(/^\/med taken (.+)$/, (msg, match) => {
+    try {
+      const result = markTaken(match[1].trim());
+      if (!result) return bot.sendMessage(msg.chat.id, '⚠️ תרופה לא נמצאה. בדוק /med list');
+      bot.sendMessage(msg.chat.id,
+        `✅ <b>רשום!</b> ${result.med.name} נלקח ב-${result.time}`,
+        { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/med taken]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
+  bot.onText(/^\/med skip (.+)$/, (msg, match) => {
+    try {
+      const result = markSkipped(match[1].trim());
+      if (!result) return bot.sendMessage(msg.chat.id, '⚠️ תרופה לא נמצאה. בדוק /med list');
+      bot.sendMessage(msg.chat.id,
+        `⏭️ <b>דולג:</b> ${result.med.name} (${result.time})`,
+        { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/med skip]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
+  bot.onText(/^\/med remove (.+)$/, (msg, match) => {
+    try {
+      const removed = removeMedication(match[1].trim());
+      if (!removed) return bot.sendMessage(msg.chat.id, '⚠️ תרופה לא נמצאה.');
+      bot.sendMessage(msg.chat.id, `🗑️ הוסר: ${removed.name}`);
+    } catch (err) {
+      console.error('[/med remove]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
+  bot.onText(/^\/med status$/, (msg) => {
+    try {
+      bot.sendMessage(msg.chat.id, formatTodayStatus(), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/med status]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה.');
+    }
+  });
+
+  bot.onText(/^\/med$/, (msg) => {
+    bot.sendMessage(msg.chat.id,
+      '💊 <b>פקודות תרופות:</b>\n\n' +
+      '/med add שם HH:MM,HH:MM — הוסף תרופה\n' +
+      '/med list — הצג כל התרופות\n' +
+      '/med status — סטטוס היום\n' +
+      '/med taken שם — סמן כנלקח\n' +
+      '/med skip שם — סמן כדולג\n' +
+      '/med remove שם — הסר תרופה',
+      { parse_mode: 'HTML' });
   });
 
   bot.onText(/\/boker/, async (msg) => {

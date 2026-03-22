@@ -8,6 +8,7 @@ const http = require('http');
 const { startBot } = require('./telegram');
 const { startOrefMonitor, sendMockAlert } = require('./oref');
 const { startScheduler } = require('./scheduler');
+const { scheduleMedications } = require('./medications');
 
 const token       = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey      = process.env.GROQ_API_KEY;
@@ -56,6 +57,7 @@ server.listen(PORT, () => {
 const mainChatId = alertChatId || process.env.CHAT_ID;
 if (mainChatId) {
   startScheduler(bot, mainChatId);
+  scheduleMedications(bot, mainChatId);
 }
 
 // ── Pikud HaOref ──────────────────────────────────────────────────────────────

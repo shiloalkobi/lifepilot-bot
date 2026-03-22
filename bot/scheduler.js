@@ -4,6 +4,7 @@ const cron    = require('node-cron');
 const https   = require('https');
 const fs      = require('fs');
 const path    = require('path');
+const { getMorningMedSummary } = require('./medications');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
 
@@ -93,10 +94,13 @@ async function buildMorningMessage() {
     ? `❝ ${quote.text} ❞\n— ${quote.author}`
     : `❝ ${quote.text} ❞\n— ${quote.author}`;
 
+  const medSummary = getMorningMedSummary();
+
   return (
     `🌅 <b>בוקר טוב, שילה!</b>\n` +
     `📅 ${dateStr}\n\n` +
     `🏙️ <b>ראשון לציון:</b> ${weather}\n\n` +
+    (medSummary ? `${medSummary}\n\n` : '') +
     `✨ <b>ציטוט היום:</b>\n${quoteBlock}\n\n` +
     `${tip}`
   );
