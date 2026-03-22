@@ -5,6 +5,7 @@ process.on('unhandledRejection', (err) => {
   console.error('[UnhandledRejection]', err?.message || err);
 });
 
+const http = require('http');
 const { startBot } = require('./telegram');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -19,5 +20,15 @@ if (!apiKey) {
   console.error('❌ Missing GROQ_API_KEY in .env');
   process.exit(1);
 }
+
+// Render requires a listening port — keep-alive HTTP server
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('LifePilot bot is running');
+});
+server.listen(PORT, () => {
+  console.log(`✅ HTTP server listening on port ${PORT}`);
+});
 
 startBot(token);
