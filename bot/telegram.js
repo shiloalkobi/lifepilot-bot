@@ -3,7 +3,24 @@ const { askClaude } = require('./claude');
 const { getHistory, addMessage, resetHistory } = require('./history');
 
 function startBot(token) {
-  const bot = new TelegramBot(token, { polling: true });
+  const bot = new TelegramBot(token, {
+    polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
+  });
+
+  // Handle polling errors gracefully — 409 means another instance is running.
+  // Stop polling, wait 5s, restart so only one instance wins.
+  bot.on('polling_error', (err) => {
+    console.error('[polling_error]', err.message);
+    if (err.code === 'ETELEGRAM' && err.message.includes('409')) {
+      console.warn('[Bot] 409 Conflict — another instance running. Restarting polling in 5s...');
+      bot.stopPolling().then(() => {
+        setTimeout(() => {
+          bot.startPolling();
+          console.log('[Bot] Polling restarted.');
+        }, 5000);
+      }).catch(() => {});
+    }
+  });
 
   bot.onText(/\/start/, (msg) => {
     bot.sendMessage(
