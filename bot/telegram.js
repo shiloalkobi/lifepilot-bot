@@ -7,25 +7,37 @@ const {
   clearCompleted, formatOpenTasks,
 } = require('./tasks');
 
-function startBot(token) {
-  const bot = new TelegramBot(token, {
-    polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
-  });
+function startBot(token, webhookUrl = null) {
+  let bot;
 
-  // Handle polling errors gracefully — 409 means another instance is running.
-  // Stop polling, wait 5s, restart so only one instance wins.
-  bot.on('polling_error', (err) => {
-    console.error('[polling_error]', err.message);
-    if (err.code === 'ETELEGRAM' && err.message.includes('409')) {
-      console.warn('[Bot] 409 Conflict — another instance running. Restarting polling in 5s...');
-      bot.stopPolling().then(() => {
-        setTimeout(() => {
-          bot.startPolling();
-          console.log('[Bot] Polling restarted.');
-        }, 5000);
-      }).catch(() => {});
-    }
-  });
+  if (webhookUrl) {
+    // ── Webhook mode (Render) ─────────────────────────────────────────────────
+    // No polling — Telegram pushes updates to our HTTP server.
+    // processUpdate() is called from index.js for each incoming POST.
+    bot = new TelegramBot(token);
+    bot.setWebHook(webhookUrl)
+      .then(() => console.log(`[Bot] Webhook set → ${webhookUrl}`))
+      .catch((err) => console.error('[Bot] setWebHook error:', err.message));
+    console.log('[Bot] Running in webhook mode');
+  } else {
+    // ── Polling mode (local dev) ──────────────────────────────────────────────
+    bot = new TelegramBot(token, {
+      polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
+    });
+    // First clear any lingering webhook so polling works
+    bot.deleteWebHook().catch(() => {});
+    console.log('[Bot] Running in polling mode');
+
+    bot.on('polling_error', (err) => {
+      console.error('[polling_error]', err.message);
+      if (err.code === 'ETELEGRAM' && err.message.includes('409')) {
+        console.warn('[Bot] 409 Conflict — another instance running. Restarting polling in 5s...');
+        bot.stopPolling().then(() => {
+          setTimeout(() => { bot.startPolling(); console.log('[Bot] Polling restarted.'); }, 5000);
+        }).catch(() => {});
+      }
+    });
+  }
 
   bot.onText(/\/start/, (msg) => {
     bot.sendMessage(
