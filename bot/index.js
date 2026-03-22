@@ -7,7 +7,7 @@ process.on('unhandledRejection', (err) => {
 
 const http = require('http');
 const { startBot } = require('./telegram');
-const { startOrefMonitor } = require('./oref');
+const { startOrefMonitor, sendMockAlert } = require('./oref');
 
 const token   = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey  = process.env.GROQ_API_KEY;
@@ -38,6 +38,10 @@ const bot = startBot(token);
 // Start Pikud HaOref real-time alert monitor (1s polling, integrated)
 if (alertChatId) {
   startOrefMonitor(bot, alertChatId);
+  // Run mock alert test if TEST_ALERT=1 (for format verification)
+  if (process.env.TEST_ALERT === '1') {
+    setTimeout(() => sendMockAlert(bot, alertChatId), 2000);
+  }
 } else {
   console.warn('⚠️ ALERT_CHAT_ID not set — Oref alerts disabled');
 }

@@ -1,5 +1,7 @@
 'use strict';
 
+const https = require('https');
+
 // ── Areas to monitor (מרכז / ראשון לציון) ────────────────────────────────────
 const MONITORED_AREAS = new Set([
   'ראשון לציון', 'ראשון לציון - מזרח', 'ראשון לציון - מערב',
@@ -21,20 +23,21 @@ const ALERT_TYPES = {
   '13': { emoji: '🌊',   label: 'אזהרת צונאמי',                        action: 'התרחקו מהחוף לאלתר',             shelterMin: 0  },
 };
 
-function timestamp() {
-  return new Date().toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem' });
+function nowHebrew() {
+  return new Date().toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 /**
  * Start the Pikud HaOref alert monitor.
- * @param {import('node-telegram-bot-api')} bot - Telegram bot instance
- * @param {string} chatId - Chat ID to send alerts to
+ * @param {import('node-telegram-bot-api')} bot
+ * @param {string} chatId - from process.env.ALERT_CHAT_ID
  */
 function startOrefMonitor(bot, chatId) {
-  const https = require('https');
-  let lastAlertId  = null;
+  // Deduplication: Set of seen alert IDs (capped to prevent memory growth)
+  const seenIds     = new Set();
   let shelterTimer  = null;
   let reminderTimer = null;
+  let pollCount     = 0;
 
   function send(text) {
     bot.sendMessage(chatId, text, { parse_mode: 'HTML' }).catch((err) => {
@@ -60,24 +63,49 @@ function startOrefMonitor(bot, chatId) {
 
   function processAlert(raw) {
     if (!raw || raw.length < 5) return;
-    let alert;
-    try { alert = JSON.parse(raw); } catch { return; }
-    if (!alert.id || alert.id === lastAlertId) return;
-    lastAlertId = alert.id;
 
-    const cities = Array.isArray(alert.data) ? alert.data : [];
+    let alert;
+    try {
+      // Strip UTF-8 BOM if present
+      alert = JSON.parse(raw.replace(/^\uFEFF/, ''));
+    } catch {
+      return;
+    }
+
+    if (!alert.id) return;
+
+    const alertId = String(alert.id);
+
+    // Deduplication — skip already-seen alert IDs
+    if (seenIds.has(alertId)) return;
+    seenIds.add(alertId);
+
+    // Cap Set size to prevent memory growth during long runs
+    if (seenIds.size > 200) {
+      const oldest = seenIds.values().next().value;
+      seenIds.delete(oldest);
+    }
+
+    const cities  = Array.isArray(alert.data) ? alert.data : [];
     const matched = cities.filter((c) => MONITORED_AREAS.has(c));
     if (matched.length === 0) return;
 
     const cat  = String(alert.cat || '1');
-    const type = ALERT_TYPES[cat] || { emoji: '⚠️', label: alert.title || 'התראה', action: alert.desc || '', shelterMin: 10 };
+    const type = ALERT_TYPES[cat] || {
+      emoji: '⚠️',
+      label: alert.title || 'התראה',
+      action: alert.desc || 'היכנסו למרחב המוגן',
+      shelterMin: 10,
+    };
 
+    const time = nowHebrew();
     const message =
-      `${type.emoji} <b>${type.label}</b>\n\n` +
+      `${type.emoji} <b>${type.label}</b>\n` +
+      `🕐 <b>שעה:</b> ${time}\n\n` +
       `📍 <b>אזורים:</b> ${matched.join(', ')}\n\n` +
       `🛡️ ${type.action}`;
 
-    console.log(`[${timestamp()}] [Oref] Alert: ${type.label} → ${matched.join(', ')}`);
+    console.log(`[Oref] ALERT at ${time}: ${type.label} → ${matched.join(', ')}`);
     send(message);
 
     if (type.shelterMin > 0) startShelterCountdown(type.shelterMin);
@@ -91,23 +119,61 @@ function startOrefMonitor(bot, chatId) {
       headers: {
         'X-Requested-With': 'XMLHttpRequest',
         'Referer': 'https://www.oref.org.il/',
-        'User-Agent': 'Mozilla/5.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
       },
     }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
-      res.on('end', () => { processAlert(data.trim()); });
+      res.on('end', () => {
+        pollCount++;
+        processAlert(data.trim());
+      });
     });
-    req.on('error', (err) => console.error('[Oref] fetch error:', err.message));
-    req.setTimeout(4000, () => { req.destroy(); });
+
+    req.on('error', (err) => {
+      // Log but do not crash — next poll will retry automatically
+      console.error(`[Oref] Fetch error (will retry in 1s): ${err.message}`);
+    });
+
+    req.setTimeout(4000, () => {
+      req.destroy();
+      console.warn('[Oref] Request timeout — will retry');
+    });
+
     req.end();
   }
 
-  // Poll every 1 second for near-real-time alerts
+  // Poll every 1 second
   setInterval(poll, 1000);
   poll();
 
-  console.log(`✅ [Oref] Alert monitor running — watching ${MONITORED_AREAS.size} areas (1s polling)`);
+  // Health check log every 60 seconds
+  setInterval(() => {
+    console.log(`[Oref] Polling active — ${pollCount} polls, ${seenIds.size} unique alerts seen`);
+  }, 60 * 1000);
+
+  console.log(`✅ [Oref] Monitor started — ${MONITORED_AREAS.size} areas | 1s polling | chat: ${chatId}`);
 }
 
-module.exports = { startOrefMonitor };
+/**
+ * Send a mock alert for testing the message format.
+ * Call this with TEST_ALERT=1 env var.
+ */
+function sendMockAlert(bot, chatId) {
+  const type = ALERT_TYPES['1'];
+  const time = new Date().toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const message =
+    `${type.emoji} <b>${type.label}</b>\n` +
+    `🕐 <b>שעה:</b> ${time}\n\n` +
+    `📍 <b>אזורים:</b> ראשון לציון, תל אביב - מרכז\n\n` +
+    `🛡️ ${type.action}\n\n` +
+    `<i>⚙️ זוהי התראת בדיקה (mock)</i>`;
+
+  console.log('[Oref] Sending mock alert for format test...');
+  bot.sendMessage(chatId, message, { parse_mode: 'HTML' })
+    .then(() => console.log('[Oref] Mock alert sent successfully ✅'))
+    .catch((err) => console.error('[Oref] Mock alert send error:', err.message));
+}
+
+module.exports = { startOrefMonitor, sendMockAlert };
