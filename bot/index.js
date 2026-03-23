@@ -61,63 +61,55 @@ function markSentToday(key) {
   sentToday[key] = todayIL();
 }
 
-// ── Cron endpoint handler ─────────────────────────────────────────────────────
-async function handleCronRoute(route, res) {
-  if (!mainChatId || !cronActions) {
-    res.writeHead(503, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: false, error: 'Bot not configured' }));
-    return;
-  }
+// ── Response helpers ──────────────────────────────────────────────────────────
+const OK_BODY = '{"ok":true}';
 
-  const json = (obj) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(obj));
+function respondOk(res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(OK_BODY) });
+  res.end(OK_BODY);
+}
+
+function respondErr(res, code, msg) {
+  const body = `{"ok":false,"e":"${msg}"}`;
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+  res.end(body);
+}
+
+// ── Cron endpoint handler ─────────────────────────────────────────────────────
+// Pattern: respond {"ok":true} immediately, do heavy work async after.
+// Mark dedup BEFORE responding to prevent double-fire on concurrent requests.
+function handleCronRoute(route, res) {
+  if (!mainChatId || !cronActions) return respondErr(res, 503, 'not_configured');
+
+  const ACTIONS = {
+    '/cron/morning': ['morning', () => cronActions.sendMorning()],
+    '/cron/english': ['english', () => cronActions.sendEnglishWord()],
+    '/cron/news':    ['news',    () => cronActions.sendDailyNews()],
+    '/cron/summary': ['summary', () => cronActions.sendDailySummary()],
   };
 
-  if (route === '/cron/morning') {
-    if (alreadySentToday('morning')) return json({ ok: true, action: 'already_sent_today' });
-    await cronActions.sendMorning();
-    markSentToday('morning');
-    return json({ ok: true, action: 'morning_sent' });
-  }
-
-  if (route === '/cron/english') {
-    if (alreadySentToday('english')) return json({ ok: true, action: 'already_sent_today' });
-    await cronActions.sendEnglishWord();
-    markSentToday('english');
-    return json({ ok: true, action: 'english_sent' });
-  }
-
-  if (route === '/cron/news') {
-    if (alreadySentToday('news')) return json({ ok: true, action: 'already_sent_today' });
-    await cronActions.sendDailyNews();
-    markSentToday('news');
-    return json({ ok: true, action: 'news_sent' });
-  }
-
-  if (route === '/cron/summary') {
-    if (alreadySentToday('summary')) return json({ ok: true, action: 'already_sent_today' });
-    await cronActions.sendDailySummary();
-    markSentToday('summary');
-    return json({ ok: true, action: 'summary_sent' });
+  const entry = ACTIONS[route];
+  if (entry) {
+    const [key, fn] = entry;
+    if (alreadySentToday(key)) return respondOk(res); // already done today
+    markSentToday(key);   // mark first — prevents double-fire
+    respondOk(res);       // respond immediately (tiny body, no timeout)
+    fn().catch((err) => { // do the real work async, after HTTP response is sent
+      console.error(`[Cron] ${route} async error:`, err.message);
+    });
+    return;
   }
 
   if (route === '/cron/health') {
     const { getUsage } = require('./rate-limiter');
-    const usage = getUsage();
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      ok: true,
-      uptime:  Math.round(process.uptime()),
-      sentToday,
-      rateLimit: usage,
-      ts: new Date().toISOString(),
-    }));
+    const u    = getUsage();
+    const body = `{"ok":true,"up":${Math.round(process.uptime())},"sent":${JSON.stringify(sentToday)},"rl":${JSON.stringify(u)}}`;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+    res.end(body);
     return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: false, error: 'Not found' }));
+  respondErr(res, 404, 'not_found');
 }
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
@@ -136,7 +128,7 @@ const server = http.createServer((req, res) => {
       try { bot.processUpdate(JSON.parse(body)); } catch (err) {
         console.error('[Webhook] processUpdate error:', err.message);
       }
-      res.writeHead(200);
+      res.writeHead(200, { 'Content-Length': '2' });
       res.end('OK');
     });
     return;
@@ -149,17 +141,13 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ ok: false, error: 'Forbidden' }));
       return;
     }
-    handleCronRoute(route, res).catch((err) => {
-      console.error('[Cron] Handler error:', err.message);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: err.message }));
-    });
+    handleCronRoute(route, res);
     return;
   }
 
-  // Default keep-alive
-  res.writeHead(200);
-  res.end('LifePilot bot is running');
+  // Default keep-alive / wake-up ping — 2 bytes
+  res.writeHead(200, { 'Content-Length': '2' });
+  res.end('OK');
 });
 
 server.listen(PORT, () => {
