@@ -23,6 +23,7 @@ const { buildSummaryMessage } = require('./daily-summary');
 const {
   addReminder, deleteReminder, formatPending, formatTimeIL,
 } = require('./reminders');
+const { startPomo, stopPomo, statusPomo, statsPomo } = require('./pomodoro');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -81,6 +82,12 @@ function startBot(token, webhookUrl = null) {
         '/undone 2 — פתח מחדש משימה 2\n' +
         '/deltask 2 — מחק משימה 2\n' +
         '/cleartasks — מחק כל הבוצעות\n\n' +
+        '🍅 *פומודורו:*\n' +
+        '/pomo — התחל סשן 25 דקות\n' +
+        '/pomo 45 — סשן בהתאמה אישית\n' +
+        '/pomo status — סטטוס נוכחי\n' +
+        '/pomo stop — עצור\n' +
+        '/pomo stats — סטטיסטיקה\n\n' +
         '⏰ *תזכורות:*\n' +
         '/remind [טקסט] — קבע תזכורת בשפה טבעית\n' +
         '/reminders — הצג תזכורות ממתינות\n' +
@@ -332,6 +339,17 @@ function startBot(token, webhookUrl = null) {
       bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
     }
   });
+
+  // ── Pomodoro ──────────────────────────────────────────────────────────────────
+
+  bot.onText(/^\/pomo(?:\s+(\d+))?$/, (msg, match) => {
+    const custom = match[1] ? parseInt(match[1]) : null;
+    startPomo(bot, msg.chat.id, custom);
+  });
+
+  bot.onText(/^\/pomo\s+stop$/i, (msg) => stopPomo(bot, msg.chat.id));
+  bot.onText(/^\/pomo\s+status$/i, (msg) => statusPomo(bot, msg.chat.id));
+  bot.onText(/^\/pomo\s+stats$/i, (msg) => statsPomo(bot, msg.chat.id));
 
   // ── Reminders ────────────────────────────────────────────────────────────────
 

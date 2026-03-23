@@ -5,7 +5,8 @@ const { getOpenTasks, getCompletedToday } = require('./tasks');
 const { getTodayHealth } = require('./health');
 const { getTodayMedStatus } = require('./medications');
 const { getDailyWordSync, getStreak } = require('./english');
-const { canCall, increment } = require('./rate-limiter');
+const { getTodayPomoStats }           = require('./pomodoro');
+const { canCall, increment }          = require('./rate-limiter');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -55,7 +56,12 @@ function collectData(offsetDays = 0) {
     } catch { return null; }
   })();
 
-  return { completedTasks, openTasks, health, meds, english };
+  // Pomodoro
+  const pomo = (() => {
+    try { return getTodayPomoStats(); } catch { return null; }
+  })();
+
+  return { completedTasks, openTasks, health, meds, english, pomo };
 }
 
 // ── AI insight ────────────────────────────────────────────────────────────────
@@ -64,7 +70,7 @@ async function generateInsight(data) {
   if (!canCall()) return null;
   increment();
 
-  const { completedTasks, openTasks, health, meds } = data;
+  const { completedTasks, openTasks, health, meds, pomo } = data;
 
   const lines = [];
   if (completedTasks.length > 0 || openTasks.length > 0) {
@@ -77,6 +83,9 @@ async function generateInsight(data) {
   }
   if (meds && meds.total > 0) {
     lines.push(`תרופות: ${meds.taken}/${meds.total} נלקחו`);
+  }
+  if (pomo && pomo.sessions > 0) {
+    lines.push(`פומודורו: ${pomo.sessions} סשנים, ${pomo.totalMinutes} דקות מיקוד`);
   }
 
   if (lines.length === 0) return null;
@@ -101,7 +110,7 @@ async function generateInsight(data) {
 async function buildSummaryMessage(offsetDays = 0) {
   const dateStr = todayHebrew(offsetDays);
   const data    = collectData(offsetDays);
-  const { completedTasks, openTasks, health, meds, english } = data;
+  const { completedTasks, openTasks, health, meds, english, pomo } = data;
 
   const lines = [`📊 <b>סיכום יומי — ${dateStr}</b>\n`];
 
@@ -150,6 +159,13 @@ async function buildSummaryMessage(offsetDays = 0) {
     );
   } else {
     lines.push(`📚 <b>אנגלית:</b> לא דווח`);
+  }
+
+  // ── Pomodoro ──
+  if (pomo && pomo.sessions > 0) {
+    lines.push(`🍅 <b>פומודורו:</b> ${pomo.sessions} סשנים | ${pomo.totalMinutes} דקות מיקוד`);
+  } else {
+    lines.push(`🍅 <b>פומודורו:</b> לא בוצע`);
   }
 
   // ── AI insight ──
