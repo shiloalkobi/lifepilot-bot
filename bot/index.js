@@ -9,6 +9,7 @@ const { startBot }                  = require('./telegram');
 const { startOrefMonitor, sendMockAlert } = require('./oref');
 const { startScheduler }            = require('./scheduler');
 const { scheduleMedications }       = require('./medications');
+const { startReminderScheduler }    = require('./reminders');
 
 const token       = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey      = process.env.GROQ_API_KEY;
@@ -31,6 +32,8 @@ if (mainChatId) {
   cronActions = startScheduler(bot, mainChatId);
   scheduleMedications(bot, mainChatId);
 }
+
+startReminderScheduler(bot);
 
 // ── Pikud HaOref ──────────────────────────────────────────────────────────────
 if (alertChatId) {

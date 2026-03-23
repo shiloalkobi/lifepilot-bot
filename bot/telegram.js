@@ -20,6 +20,9 @@ const {
 } = require('./english');
 const { formatUsage } = require('./rate-limiter');
 const { buildSummaryMessage } = require('./daily-summary');
+const {
+  addReminder, deleteReminder, formatPending, formatTimeIL,
+} = require('./reminders');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -78,6 +81,10 @@ function startBot(token, webhookUrl = null) {
         '/undone 2 — פתח מחדש משימה 2\n' +
         '/deltask 2 — מחק משימה 2\n' +
         '/cleartasks — מחק כל הבוצעות\n\n' +
+        '⏰ *תזכורות:*\n' +
+        '/remind [טקסט] — קבע תזכורת בשפה טבעית\n' +
+        '/reminders — הצג תזכורות ממתינות\n' +
+        '/delremind 2 — מחק תזכורת מס\' 2\n\n' +
         '📊 /summary — סיכום יומי עכשיו\n' +
         '/summary yesterday — סיכום אתמול\n\n' +
         '⚙️ /reset — מחיקת היסטוריית שיחה\n' +
@@ -323,6 +330,63 @@ function startBot(token, webhookUrl = null) {
   bot.onText(/^\/cancel$/, (msg) => {
     if (cancelCheckin(msg.chat.id)) {
       bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
+    }
+  });
+
+  // ── Reminders ────────────────────────────────────────────────────────────────
+
+  // /remind <text> — parse and set a reminder
+  bot.onText(/^\/remind\s+(.+)$/s, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const text   = match[1].trim();
+    try {
+      await bot.sendMessage(chatId, '⏳ מפרסר תזכורת...');
+      const reminder = await addReminder(chatId, text);
+      if (!reminder) {
+        return bot.sendMessage(chatId,
+          '❌ לא הצלחתי להבין את הזמן.\n\nנסה: /remind תזכיר לי בעוד שעה לעשות X'
+        );
+      }
+      bot.sendMessage(chatId,
+        `✅ <b>תזכורת נקבעה!</b>\n\n⏰ <b>${reminder.task}</b>\n📅 ${formatTimeIL(reminder.remindAt)}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (err) {
+      console.error('[/remind] Error:', err.message);
+      bot.sendMessage(chatId, '⚠️ שגיאה בקביעת התזכורת. נסה שוב.');
+    }
+  });
+
+  // /remind with no args
+  bot.onText(/^\/remind$/, (msg) => {
+    bot.sendMessage(msg.chat.id,
+      '⏰ <b>קביעת תזכורת:</b>\n\n' +
+      '<code>/remind תזכיר לי בעוד שעה לצלצל לרופא</code>\n' +
+      '<code>/remind מחר ב-9 לשלוח מייל</code>\n' +
+      '<code>/remind remind me in 30 minutes to check the oven</code>',
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // /reminders — list pending
+  bot.onText(/^\/reminders$/, (msg) => {
+    bot.sendMessage(msg.chat.id, formatPending(msg.chat.id), { parse_mode: 'HTML' });
+  });
+
+  // /delremind <n> — delete by list position or ID
+  bot.onText(/^\/delremind\s+(\d+)$/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const n      = parseInt(match[1]);
+    const { listPending: lp } = require('./reminders');
+    const pending = lp(chatId);
+
+    // Try by list position first (1-based), fall back to raw ID
+    const reminder = pending[n - 1] || pending.find((r) => r.id === n);
+    if (!reminder) {
+      return bot.sendMessage(chatId, `❌ תזכורת ${n} לא נמצאה.`);
+    }
+    if (deleteReminder(chatId, reminder.id)) {
+      bot.sendMessage(chatId, `🗑️ תזכורת נמחקה: <b>${reminder.task}</b>`, { parse_mode: 'HTML' });
     }
   });
 
