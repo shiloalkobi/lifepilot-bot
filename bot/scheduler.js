@@ -131,18 +131,19 @@ function startScheduler(bot, chatId) {
   cron.schedule('0 4 * * *', sendMorning, { timezone: 'UTC' });
 
   // Daily English word at 10:00 Israel = 07:00 UTC
-  cron.schedule('0 7 * * *', async () => {
+  cron.schedule('0 7 * * *', sendEnglishWord, { timezone: 'UTC' });
+
+  async function sendEnglishWord() {
     try {
-      const word = getDailyWord();
+      const word = await getDailyWord();
       await bot.sendMessage(chatId, formatWord(word, '📚 מילת האנגלית של היום'), { parse_mode: 'HTML' });
       console.log('[Scheduler] English word sent:', word.word);
     } catch (err) {
       console.error('[Scheduler] English word error:', err.message);
     }
-  }, { timezone: 'UTC' });
+  }
 
-  // Daily summary at 22:00 Israel = 19:00 UTC
-  cron.schedule('0 19 * * *', async () => {
+  async function sendDailySummary() {
     try {
       const msg = await buildSummaryMessage(0);
       await bot.sendMessage(chatId, msg, { parse_mode: 'HTML' });
@@ -150,11 +151,14 @@ function startScheduler(bot, chatId) {
     } catch (err) {
       console.error('[Scheduler] Daily summary error:', err.message);
     }
-  }, { timezone: 'UTC' });
+  }
+
+  // Daily summary at 22:00 Israel = 19:00 UTC
+  cron.schedule('0 19 * * *', sendDailySummary, { timezone: 'UTC' });
 
   console.log('✅ [Scheduler] Morning 07:00 + English 10:00 + Summary 22:00 (IL) scheduled');
 
-  return { sendMorning };
+  return { sendMorning, sendEnglishWord, sendDailySummary };
 }
 
 module.exports = { startScheduler, buildMorningMessage };
