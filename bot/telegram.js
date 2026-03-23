@@ -19,6 +19,7 @@ const {
   startQuiz, isInQuiz, processQuizAnswer, formatStreak,
 } = require('./english');
 const { formatUsage } = require('./rate-limiter');
+const { buildSummaryMessage } = require('./daily-summary');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -77,6 +78,8 @@ function startBot(token, webhookUrl = null) {
         '/undone 2 — פתח מחדש משימה 2\n' +
         '/deltask 2 — מחק משימה 2\n' +
         '/cleartasks — מחק כל הבוצעות\n\n' +
+        '📊 /summary — סיכום יומי עכשיו\n' +
+        '/summary yesterday — סיכום אתמול\n\n' +
         '⚙️ /reset — מחיקת היסטוריית שיחה\n' +
         '/help — עזרה\n\n' +
         'כל הודעה אחרת → Gemini AI',
@@ -320,6 +323,21 @@ function startBot(token, webhookUrl = null) {
   bot.onText(/^\/cancel$/, (msg) => {
     if (cancelCheckin(msg.chat.id)) {
       bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
+    }
+  });
+
+  // /summary — on-demand daily summary; /summary yesterday for previous day
+  bot.onText(/^\/summary(.*)$/, async (msg, match) => {
+    const arg = (match[1] || '').trim().toLowerCase();
+    const offset = (arg === 'yesterday' || arg === 'אתמול') ? -1 : 0;
+    const label  = offset === -1 ? 'אתמול' : 'היום';
+    try {
+      await bot.sendMessage(msg.chat.id, `⏳ בונה סיכום ${label}...`, { parse_mode: 'HTML' });
+      const message = await buildSummaryMessage(offset);
+      bot.sendMessage(msg.chat.id, message, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/summary] Error:', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בבניית הסיכום.');
     }
   });
 
