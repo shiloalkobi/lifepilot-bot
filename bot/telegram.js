@@ -24,6 +24,7 @@ const {
   addReminder, deleteReminder, formatPending, formatTimeIL,
 } = require('./reminders');
 const { startPomo, stopPomo, statusPomo, statsPomo } = require('./pomodoro');
+const { sendNews } = require('./news');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -82,6 +83,8 @@ function startBot(token, webhookUrl = null) {
         '/undone 2 — פתח מחדש משימה 2\n' +
         '/deltask 2 — מחק משימה 2\n' +
         '/cleartasks — מחק כל הבוצעות\n\n' +
+        '📰 /news — חדשות טכנולוגיה עכשיו\n' +
+        '/news full — 10 כתבות עם קישורים\n\n' +
         '🍅 *פומודורו:*\n' +
         '/pomo — התחל סשן 25 דקות\n' +
         '/pomo 45 — סשן בהתאמה אישית\n' +
@@ -338,6 +341,14 @@ function startBot(token, webhookUrl = null) {
     if (cancelCheckin(msg.chat.id)) {
       bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
     }
+  });
+
+  // ── News ─────────────────────────────────────────────────────────────────────
+
+  bot.onText(/^\/news(\s+full)?$/i, async (msg, match) => {
+    const full = !!(match[1]);
+    await bot.sendMessage(msg.chat.id, '📰 טוען חדשות...');
+    sendNews(bot, msg.chat.id, full);
   });
 
   // ── Pomodoro ──────────────────────────────────────────────────────────────────

@@ -47,7 +47,7 @@ if (alertChatId) {
 
 // ── "Sent today" deduplication ────────────────────────────────────────────────
 // In-memory flags — reset at midnight IL
-const sentToday = { morning: null, english: null, summary: null };
+const sentToday = { morning: null, english: null, news: null, summary: null };
 
 function todayIL() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
@@ -86,6 +86,13 @@ async function handleCronRoute(route, res) {
     await cronActions.sendEnglishWord();
     markSentToday('english');
     return json({ ok: true, action: 'english_sent' });
+  }
+
+  if (route === '/cron/news') {
+    if (alreadySentToday('news')) return json({ ok: true, action: 'already_sent_today' });
+    await cronActions.sendDailyNews();
+    markSentToday('news');
+    return json({ ok: true, action: 'news_sent' });
   }
 
   if (route === '/cron/summary') {
