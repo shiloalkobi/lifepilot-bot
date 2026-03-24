@@ -10,6 +10,7 @@ const { startOrefMonitor, sendMockAlert } = require('./oref');
 const { startScheduler }            = require('./scheduler');
 const { scheduleMedications }       = require('./medications');
 const { startReminderScheduler }    = require('./reminders');
+const { startSiteMonitor }          = require('./sites');
 
 const token       = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey      = process.env.GROQ_API_KEY;
@@ -34,6 +35,9 @@ if (mainChatId) {
 }
 
 startReminderScheduler(bot);
+
+// ── WordPress / Site Monitor ──────────────────────────────────────────────────
+startSiteMonitor(bot, mainChatId || alertChatId);
 
 // ── Pikud HaOref ──────────────────────────────────────────────────────────────
 if (alertChatId) {

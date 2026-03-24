@@ -25,6 +25,7 @@ const {
 } = require('./reminders');
 const { startPomo, stopPomo, statusPomo, statsPomo } = require('./pomodoro');
 const { sendNews } = require('./news');
+const { addSite, removeSite, load: loadSites, formatList: formatSiteList, runChecks } = require('./sites');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -83,6 +84,10 @@ function startBot(token, webhookUrl = null) {
         '/undone 2 — פתח מחדש משימה 2\n' +
         '/deltask 2 — מחק משימה 2\n' +
         '/cleartasks — מחק כל הבוצעות\n\n' +
+        '🌐 /sites — סטטוס אתרים\n' +
+        '/site add <url> <שם> — הוסף אתר למעקב\n' +
+        '/site remove <שם> — הסר אתר\n' +
+        '/site check — בדיקה מיידית\n\n' +
         '📰 /news — חדשות טכנולוגיה עכשיו\n' +
         '/news full — 10 כתבות עם קישורים\n\n' +
         '🍅 *פומודורו:*\n' +
@@ -341,6 +346,41 @@ function startBot(token, webhookUrl = null) {
     if (cancelCheckin(msg.chat.id)) {
       bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
     }
+  });
+
+  // ── WordPress Site Monitor ───────────────────────────────────────────────────
+
+  // /sites — list all monitored sites
+  bot.onText(/^\/sites$/, (msg) => {
+    bot.sendMessage(msg.chat.id, formatSiteList(loadSites()), { parse_mode: 'HTML' });
+  });
+
+  // /site add <url> <name>
+  bot.onText(/^\/site\s+add\s+(https?:\/\/\S+|\S+\.\S+)\s+(.+)$/i, (msg, match) => {
+    const url  = match[1].trim();
+    const name = match[2].trim();
+    const res  = addSite(url, name);
+    if (!res.ok) return bot.sendMessage(msg.chat.id, `⚠️ האתר כבר קיים ברשימה.`);
+    bot.sendMessage(msg.chat.id, `✅ <b>${name}</b> נוסף למעקב.\n🔗 ${url}`, { parse_mode: 'HTML' });
+  });
+
+  // /site remove <name>
+  bot.onText(/^\/site\s+remove\s+(.+)$/i, (msg, match) => {
+    const name = match[1].trim();
+    if (removeSite(name)) {
+      bot.sendMessage(msg.chat.id, `🗑️ <b>${name}</b> הוסר מהמעקב.`, { parse_mode: 'HTML' });
+    } else {
+      bot.sendMessage(msg.chat.id, `❌ לא נמצא אתר בשם "${name}".`);
+    }
+  });
+
+  // /site check — force immediate check
+  bot.onText(/^\/site\s+check$/i, async (msg) => {
+    const sites = loadSites();
+    if (sites.length === 0) return bot.sendMessage(msg.chat.id, '📭 אין אתרים במעקב.');
+    await bot.sendMessage(msg.chat.id, `⏳ בודק ${sites.length} אתרים...`);
+    await runChecks(bot, msg.chat.id);
+    bot.sendMessage(msg.chat.id, formatSiteList(loadSites()), { parse_mode: 'HTML' });
   });
 
   // ── News ─────────────────────────────────────────────────────────────────────
