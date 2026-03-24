@@ -27,6 +27,7 @@ const {
 const { startPomo, stopPomo, statusPomo, statsPomo } = require('./pomodoro');
 const { sendNews } = require('./news');
 const { addSite, removeSite, load: loadSites, formatList: formatSiteList, runChecks } = require('./sites');
+const { addNote, deleteNote, searchNotes, getNotesByTag, formatList: formatNoteList, load: loadNotes, fmtNote } = require('./notes');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -85,6 +86,12 @@ function startBot(token, webhookUrl = null) {
         '/undone 2 — פתח מחדש משימה 2\n' +
         '/deltask 2 — מחק משימה 2\n' +
         '/cleartasks — מחק כל הבוצעות\n\n' +
+        '📝 *הערות:*\n' +
+        '/note [טקסט] — שמור הערה (עם תיוג AI)\n' +
+        '/notes — 10 הערות אחרונות\n' +
+        '/note search [מילה] — חיפוש\n' +
+        '/note tag [תגית] — לפי תגית\n' +
+        '/delnote [ID] — מחק הערה\n\n' +
         '🌐 /sites — סטטוס אתרים\n' +
         '/site add <url> <שם> — הוסף אתר למעקב\n' +
         '/site remove <שם> — הסר אתר\n' +
@@ -347,6 +354,58 @@ function startBot(token, webhookUrl = null) {
   bot.onText(/^\/cancel$/, (msg) => {
     if (cancelCheckin(msg.chat.id)) {
       bot.sendMessage(msg.chat.id, '❌ דיווח הבריאות בוטל.');
+    }
+  });
+
+  // ── Notes & Snippets ─────────────────────────────────────────────────────────
+
+  // /note <content> — save a new note
+  bot.onText(/^\/note\s+(?!search|tag)(.+)$/si, async (msg, match) => {
+    const content = match[1].trim();
+    try {
+      const note = await addNote(content);
+      const tagsStr = note.tags.length ? `\n🏷️ תגיות: ${note.tags.join(', ')}` : '';
+      bot.sendMessage(msg.chat.id,
+        `✅ <b>הערה נשמרה #${note.id}</b>\n${note.title}${tagsStr}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (err) {
+      console.error('[/note] Error:', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בשמירת ההערה.');
+    }
+  });
+
+  // /notes — list last 10
+  bot.onText(/^\/notes$/, (msg) => {
+    const notes = loadNotes().slice(-10).reverse();
+    bot.sendMessage(msg.chat.id, formatNoteList(notes, `📋 <b>הערות אחרונות (${notes.length})</b>`), { parse_mode: 'HTML' });
+  });
+
+  // /note search <keyword>
+  bot.onText(/^\/note\s+search\s+(.+)$/i, (msg, match) => {
+    const results = searchNotes(match[1].trim());
+    bot.sendMessage(msg.chat.id,
+      formatNoteList(results, `🔍 <b>תוצאות עבור "${match[1].trim()}" (${results.length})</b>`),
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // /note tag <tag>
+  bot.onText(/^\/note\s+tag\s+(.+)$/i, (msg, match) => {
+    const results = getNotesByTag(match[1].trim());
+    bot.sendMessage(msg.chat.id,
+      formatNoteList(results, `🏷️ <b>תגית "${match[1].trim()}" (${results.length})</b>`),
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // /delnote <id>
+  bot.onText(/^\/delnote\s+(\d+)$/, (msg, match) => {
+    const id = parseInt(match[1]);
+    if (deleteNote(id)) {
+      bot.sendMessage(msg.chat.id, `🗑️ הערה #${id} נמחקה.`);
+    } else {
+      bot.sendMessage(msg.chat.id, `❌ הערה #${id} לא נמצאה.`);
     }
   });
 
