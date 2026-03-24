@@ -19,7 +19,8 @@ const {
   startQuiz, isInQuiz, processQuizAnswer, formatStreak,
 } = require('./english');
 const { formatUsage } = require('./rate-limiter');
-const { buildSummaryMessage } = require('./daily-summary');
+const { buildSummaryMessage }        = require('./daily-summary');
+const { buildWeeklySummaryMessage }  = require('./weekly-summary');
 const {
   addReminder, deleteReminder, formatPending, formatTimeIL,
 } = require('./reminders');
@@ -101,7 +102,8 @@ function startBot(token, webhookUrl = null) {
         '/reminders — הצג תזכורות ממתינות\n' +
         '/delremind 2 — מחק תזכורת מס\' 2\n\n' +
         '📊 /summary — סיכום יומי עכשיו\n' +
-        '/summary yesterday — סיכום אתמול\n\n' +
+        '/summary yesterday — סיכום אתמול\n' +
+        '/weekly — סיכום שבועי\n\n' +
         '⚙️ /reset — מחיקת היסטוריית שיחה\n' +
         '/help — עזרה\n\n' +
         'כל הודעה אחרת → Gemini AI',
@@ -456,6 +458,18 @@ function startBot(token, webhookUrl = null) {
     }
     if (deleteReminder(chatId, reminder.id)) {
       bot.sendMessage(chatId, `🗑️ תזכורת נמחקה: <b>${reminder.task}</b>`, { parse_mode: 'HTML' });
+    }
+  });
+
+  // /weekly — on-demand weekly summary
+  bot.onText(/^\/weekly$/, async (msg) => {
+    try {
+      await bot.sendMessage(msg.chat.id, '⏳ בונה סיכום שבועי...');
+      const message = await buildWeeklySummaryMessage();
+      bot.sendMessage(msg.chat.id, message, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/weekly] Error:', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בבניית הסיכום השבועי.');
     }
   });
 

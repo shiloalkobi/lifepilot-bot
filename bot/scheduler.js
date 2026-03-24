@@ -8,6 +8,7 @@ const { getMorningMedSummary } = require('./medications');
 const { hadEntryYesterday } = require('./health');
 const { getDailyWord, formatWord } = require('./english'); // getDailyWord is async
 const { buildSummaryMessage }      = require('./daily-summary');
+const { buildWeeklySummaryMessage } = require('./weekly-summary');
 const { sendNews }                 = require('./news');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
@@ -144,6 +145,19 @@ function startScheduler(bot, chatId) {
     }
   }
 
+  async function sendWeeklySummary() {
+    try {
+      const msg = await buildWeeklySummaryMessage();
+      await bot.sendMessage(chatId, msg, { parse_mode: 'HTML' });
+      console.log('[Scheduler] Weekly summary sent');
+    } catch (err) {
+      console.error('[Scheduler] Weekly summary error:', err.message);
+    }
+  }
+
+  // Weekly summary: Friday 14:00 IL = Friday 11:00 UTC
+  cron.schedule('0 11 * * 5', sendWeeklySummary, { timezone: 'UTC' });
+
   async function sendDailyNews() {
     await sendNews(bot, chatId, false);
     console.log('[Scheduler] Daily news sent');
@@ -165,9 +179,9 @@ function startScheduler(bot, chatId) {
   // Daily summary at 22:00 Israel = 19:00 UTC
   cron.schedule('0 19 * * *', sendDailySummary, { timezone: 'UTC' });
 
-  console.log('✅ [Scheduler] Morning 07:00 + English 10:00 + News 12:00 + Summary 22:00 (IL) scheduled');
+  console.log('✅ [Scheduler] Morning 07:00 + English 10:00 + News 12:00 + Summary 22:00 + Weekly Fri 14:00 (IL) scheduled');
 
-  return { sendMorning, sendEnglishWord, sendDailyNews, sendDailySummary };
+  return { sendMorning, sendEnglishWord, sendDailyNews, sendDailySummary, sendWeeklySummary };
 }
 
 module.exports = { startScheduler, buildMorningMessage };
