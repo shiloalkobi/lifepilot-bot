@@ -1,6 +1,6 @@
 'use strict';
 
-const DAILY_LIMIT = 100;
+const DAILY_LIMIT = 500;
 
 // ── State (in-memory, resets at midnight IL) ──────────────────────────────────
 let count    = 0;

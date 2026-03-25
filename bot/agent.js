@@ -25,6 +25,7 @@ const {
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
 
+console.log('[Agent] API key present:', !!process.env.GEMINI_API_KEY);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Load Shilo's profile
@@ -628,8 +629,10 @@ function toGeminiHistory(messages) {
 
 // ── Main entry point ──────────────────────────────────────────────────────────
 async function handleMessage(bot, chatId, text) {
+  console.log('[Agent] START:', text);
+
   if (!canCall()) {
-    return '⚠️ הגעתי למגבלת 100 קריאות API היום. נתאפס בחצות.\n\n/usage — לראות סטטוס';
+    return '⚠️ הגעתי למגבלת 500 קריאות API היום. נתאפס בחצות.\n\n/usage — לראות סטטוס';
   }
   increment();
 
@@ -638,7 +641,7 @@ async function handleMessage(bot, chatId, text) {
   const memory   = loadMemory(chatId);
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     systemInstruction: buildSystemPrompt(memory),
     tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
     generationConfig: { temperature: 0.7 },
@@ -647,21 +650,35 @@ async function handleMessage(bot, chatId, text) {
   const chat = model.startChat({ history: toGeminiHistory(messages) });
 
   const lastMessage = messages[messages.length - 1].content;
-  let response = await chat.sendMessage(lastMessage);
+  let response;
+  try {
+    response = await chat.sendMessage(lastMessage);
+  } catch (err) {
+    console.error('[Agent] FULL ERROR:', err.stack || err);
+    if (err.message?.includes('429')) {
+      const reply = '⏳ הגבלת קריאות API — נסה שוב בעוד כמה דקות.';
+      addMessage(chatId, 'model', reply);
+      return reply;
+    }
+    throw err;
+  }
+  console.log('[Agent] Gemini response:', JSON.stringify(response.response));
 
   // ── ReAct loop — max 4 tool-call rounds ───────────────────────────────────
   for (let depth = 0; depth < 4; depth++) {
     const candidate = response.response.candidates?.[0];
     if (!candidate) break;
 
-    const parts    = candidate.content?.parts ?? [];
+    const parts     = candidate.content?.parts ?? [];
     const funcCalls = parts.filter(p => p.functionCall);
     if (!funcCalls.length) break; // model returned text — done
 
     // Execute all tool calls (in parallel where safe)
     const toolResults = await Promise.all(
       funcCalls.map(async p => {
+        console.log('[Agent] Tool:', p.functionCall.name, JSON.stringify(p.functionCall.args));
         const result = await executeTool(p.functionCall.name, p.functionCall.args, { bot, chatId });
+        console.log('[Agent] Tool result:', String(result).substring(0, 200));
         return {
           functionResponse: {
             name: p.functionCall.name,
@@ -680,7 +697,9 @@ async function handleMessage(bot, chatId, text) {
     increment();
     try {
       response = await chat.sendMessage(toolResults);
+      console.log('[Agent] Gemini response:', JSON.stringify(response.response));
     } catch (err) {
+      console.error('[Agent] FULL ERROR:', err.stack || err);
       if (err.message?.includes('429')) {
         const reply = '⏳ הגבלת קריאות API — נסה שוב בעוד כמה דקות.';
         addMessage(chatId, 'model', reply);
