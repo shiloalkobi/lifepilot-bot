@@ -66,16 +66,21 @@ function markSentToday(key) {
 }
 
 // ── Response helpers ──────────────────────────────────────────────────────────
+// Keep responses TINY — cron-job.org has a strict response-size limit.
+// No Content-Type, no Date (disabled on server), Connection: close (no Keep-Alive header).
 const OK_BODY = '{"ok":true}';
+const OK_LEN  = String(Buffer.byteLength(OK_BODY)); // '11'
 
 function respondOk(res) {
-  res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(OK_BODY) });
+  res.sendDate = false; // belt-and-suspenders alongside server.sendDate = false
+  res.writeHead(200, { 'Content-Length': OK_LEN, 'Connection': 'close' });
   res.end(OK_BODY);
 }
 
 function respondErr(res, code, msg) {
   const body = `{"ok":false,"e":"${msg}"}`;
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+  res.sendDate = false;
+  res.writeHead(code, { 'Content-Length': String(Buffer.byteLength(body)), 'Connection': 'close' });
   res.end(body);
 }
 
@@ -151,9 +156,13 @@ const server = http.createServer((req, res) => {
   }
 
   // Default keep-alive / wake-up ping — 2 bytes
-  res.writeHead(200, { 'Content-Length': '2' });
+  res.sendDate = false;
+  res.writeHead(200, { 'Content-Length': '2', 'Connection': 'close' });
   res.end('OK');
 });
+
+// Disable automatic Date header — keeps responses tiny for cron-job.org
+server.sendDate = false;
 
 server.listen(PORT, () => {
   console.log(`✅ HTTP server listening on port ${PORT}`);
