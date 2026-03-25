@@ -2,7 +2,7 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI = require('openai');
 const { canCall, increment }           = require('./rate-limiter');
 const { getHistory, addMessage }       = require('./history');
 const { loadMemory, formatMemoryBlock } = require('./agent-memory');
@@ -25,8 +25,12 @@ const {
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
 
-console.log('[Agent] API key present:', !!process.env.GEMINI_API_KEY);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+});
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 // Load Shilo's profile
 let shiloProfile = '';
@@ -44,10 +48,10 @@ function getDayHebrew() {
 function buildCurrentContext(chatId) {
   try {
     const health  = getTodayHealth();
-    const tasks   = getOpenTasks()   ?? [];
-    const meds    = getTodayMedStatus() ?? [];
-    const pomo    = getTodayPomoStats();
-    const pending = listPending(chatId) ?? [];
+    const tasks     = getOpenTasks()      ?? [];
+    const medStatus = getTodayMedStatus() ?? {};
+    const pomo      = getTodayPomoStats();
+    const pending   = listPending(chatId) ?? [];
     return JSON.stringify({
       datetime:            nowIL(),
       day_hebrew:          getDayHebrew(),
@@ -57,8 +61,10 @@ function buildCurrentContext(chatId) {
       pain_today:          health?.painLevel ?? null,
       mood_today:          health?.mood      ?? null,
       sleep_today:         health?.sleep     ?? null,
-      meds_pending: meds.filter(m => !m.taken && !m.skipped).map(m => m.name),
-      meds_taken:   meds.filter(m => m.taken).map(m => m.name),
+      meds_total:   medStatus.total   ?? 0,
+      meds_taken:   medStatus.taken   ?? 0,
+      meds_pending: medStatus.pending ?? 0,
+      meds_missed:  medStatus.missed  ?? 0,
       reminders_pending:   pending.length,
       pomo_sessions_today: pomo?.sessions     ?? 0,
       pomo_minutes_today:  pomo?.totalMinutes ?? 0,
@@ -438,6 +444,12 @@ const TOOL_DECLARATIONS = [
   },
 ];
 
+// ── Convert TOOL_DECLARATIONS → OpenAI/Groq format ───────────────────────────
+const GROQ_TOOLS = TOOL_DECLARATIONS.map(t => ({
+  type: 'function',
+  function: { name: t.name, description: t.description, parameters: t.parameters },
+}));
+
 // ── Tool executor ─────────────────────────────────────────────────────────────
 async function executeTool(name, args, ctx) {
   const { bot, chatId } = ctx;
@@ -499,11 +511,9 @@ async function executeTool(name, args, ctx) {
 
       // ── Medications ────────────────────────────────────────────────────────
       case 'get_med_status': {
-        const meds = getTodayMedStatus();
-        if (!meds.length) return 'אין תרופות מוגדרות';
-        return meds.map(m =>
-          `${m.name}: ${m.taken ? '✅ נלקח' : m.skipped ? '⏭️ דולג' : '⏳ ממתין'}`
-        ).join('\n');
+        const s = getTodayMedStatus();
+        if (!s || s.total === 0) return 'אין תרופות מוגדרות';
+        return `תרופות היום: ${s.taken}/${s.total} נלקחו | ${s.pending} ממתינות | ${s.missed} הוחמצו | ${s.skipped} דולגו`;
       }
       case 'mark_med_taken': {
         const result = markTaken(args.medication_name);
@@ -618,12 +628,12 @@ async function executeTool(name, args, ctx) {
   }
 }
 
-// ── Convert history to Gemini format ─────────────────────────────────────────
-function toGeminiHistory(messages) {
+// ── Convert history to OpenAI format ─────────────────────────────────────────
+function toOpenAIHistory(messages) {
   // All messages except the last (which is the current user message)
   return messages.slice(0, -1).map(m => ({
-    role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-    parts: [{ text: m.content || '' }],
+    role: m.role === 'model' ? 'assistant' : (m.role === 'assistant' ? 'assistant' : 'user'),
+    content: m.content || '',
   }));
 }
 
@@ -640,67 +650,76 @@ async function handleMessage(bot, chatId, text) {
   const messages = getHistory(chatId);
   const memory   = loadMemory(chatId);
 
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash-001',
-    systemInstruction: buildSystemPrompt(memory),
-    tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
-    generationConfig: { temperature: 0.7 },
-  });
+  // Build message array for Groq
+  const chatMessages = [
+    { role: 'system', content: buildSystemPrompt(memory) },
+    ...toOpenAIHistory(messages),
+    { role: 'user', content: text },
+  ];
 
-  const chat = model.startChat({ history: toGeminiHistory(messages) });
-
-  const lastMessage = messages[messages.length - 1].content;
   let response;
   try {
-    response = await chat.sendMessage(lastMessage);
+    response = await groq.chat.completions.create({
+      model:                GROQ_MODEL,
+      messages:             chatMessages,
+      tools:                GROQ_TOOLS,
+      tool_choice:          'auto',
+      parallel_tool_calls:  false,
+      temperature:          0.7,
+    });
   } catch (err) {
     console.error('[Agent] FULL ERROR:', err.stack || err);
-    if (err.message?.includes('429')) {
+    if (err.status === 429 || err.message?.includes('429')) {
       const reply = '⏳ הגבלת קריאות API — נסה שוב בעוד כמה דקות.';
       addMessage(chatId, 'model', reply);
       return reply;
     }
     throw err;
   }
-  console.log('[Agent] Gemini response:', JSON.stringify(response.response));
+  console.log('[Agent] Groq finish_reason:', response.choices[0]?.finish_reason);
+
+  // Add assistant message to history buffer
+  chatMessages.push(response.choices[0].message);
 
   // ── ReAct loop — max 4 tool-call rounds ───────────────────────────────────
   for (let depth = 0; depth < 4; depth++) {
-    const candidate = response.response.candidates?.[0];
-    if (!candidate) break;
+    const toolCalls = response.choices[0]?.message?.tool_calls;
+    if (!toolCalls?.length) break; // model returned text — done
 
-    const parts     = candidate.content?.parts ?? [];
-    const funcCalls = parts.filter(p => p.functionCall);
-    if (!funcCalls.length) break; // model returned text — done
-
-    // Execute all tool calls (in parallel where safe)
+    // Execute all tool calls
     const toolResults = await Promise.all(
-      funcCalls.map(async p => {
-        console.log('[Agent] Tool:', p.functionCall.name, JSON.stringify(p.functionCall.args));
-        const result = await executeTool(p.functionCall.name, p.functionCall.args, { bot, chatId });
+      toolCalls.map(async tc => {
+        let args = {};
+        try { args = JSON.parse(tc.function.arguments) ?? {}; } catch {}
+        console.log('[Agent] Tool:', tc.function.name, JSON.stringify(args));
+        const result = await executeTool(tc.function.name, args, { bot, chatId });
         console.log('[Agent] Tool result:', String(result).substring(0, 200));
-        return {
-          functionResponse: {
-            name: p.functionCall.name,
-            response: { result: String(result) },
-          },
-        };
+        return { role: 'tool', tool_call_id: tc.id, content: String(result) };
       })
     );
 
-    // Need an API call to send results back
+    chatMessages.push(...toolResults);
+
     if (!canCall()) {
       const reply = '⚠️ הגבלת API — לא הצלחתי לסיים את הפעולה.';
       addMessage(chatId, 'model', reply);
       return reply;
     }
     increment();
+
     try {
-      response = await chat.sendMessage(toolResults);
-      console.log('[Agent] Gemini response:', JSON.stringify(response.response));
+      response = await groq.chat.completions.create({
+        model:       GROQ_MODEL,
+        messages:    chatMessages,
+        tools:       GROQ_TOOLS,
+        tool_choice: 'auto',
+        temperature: 0.7,
+      });
+      console.log('[Agent] Groq finish_reason:', response.choices[0]?.finish_reason);
+      chatMessages.push(response.choices[0].message);
     } catch (err) {
       console.error('[Agent] FULL ERROR:', err.stack || err);
-      if (err.message?.includes('429')) {
+      if (err.status === 429 || err.message?.includes('429')) {
         const reply = '⏳ הגבלת קריאות API — נסה שוב בעוד כמה דקות.';
         addMessage(chatId, 'model', reply);
         return reply;
@@ -709,7 +728,7 @@ async function handleMessage(bot, chatId, text) {
     }
   }
 
-  const reply = response.response?.text?.() || 'סליחה, לא הצלחתי לעבד את הבקשה.';
+  const reply = response.choices[0]?.message?.content || 'סליחה, לא הצלחתי לעבד את הבקשה.';
   addMessage(chatId, 'model', reply);
   return reply;
 }
