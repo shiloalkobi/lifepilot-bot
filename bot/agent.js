@@ -676,6 +676,7 @@ async function handleMessage(bot, chatId, text) {
     throw err;
   }
   console.log('[Agent] Gemini finish_reason:', response.choices[0]?.finish_reason);
+  console.log('[Agent] Full message:', JSON.stringify(response.choices[0].message));
 
   // Add assistant message to history buffer
   chatMessages.push(response.choices[0].message);
@@ -728,6 +729,7 @@ async function handleMessage(bot, chatId, text) {
   }
 
   const reply = response.choices[0]?.message?.content || 'סליחה, לא הצלחתי לעבד את הבקשה.';
+  console.log('[Agent] REPLY:', reply);
   addMessage(chatId, 'model', reply);
   return reply;
 }
