@@ -61,7 +61,7 @@ async function generateAiSummary(stories) {
   const headlines = stories.slice(0, 5).map((s, i) => `${i + 1}. ${s.title}`).join('\n');
 
   try {
-    const model  = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
     const result = await model.generateContent(
       `אלו כותרות הטכנולוגיה המובילות ב-Hacker News היום:\n${headlines}\n\n` +
       `כתוב סיכום קצר של 2-3 משפטים בעברית על הטרנדים הבולטים. ` +

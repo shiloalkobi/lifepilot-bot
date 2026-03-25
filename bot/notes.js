@@ -30,7 +30,7 @@ async function suggestTags(content) {
   if (!canCall()) return [];
   increment();
   try {
-    const model  = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
     const result = await model.generateContent(
       `הערה הבאה נשמרה על ידי מפתח:\n"${content.slice(0, 300)}"\n\n` +
       `הצע 1-2 תגיות קצרות ורלוונטיות בעברית (מילה אחת כל אחת).\n` +

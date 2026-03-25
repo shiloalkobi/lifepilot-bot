@@ -641,7 +641,7 @@ async function handleMessage(bot, chatId, text) {
   const memory   = loadMemory(chatId);
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.0-flash-001',
     systemInstruction: buildSystemPrompt(memory),
     tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
     generationConfig: { temperature: 0.7 },

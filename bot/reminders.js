@@ -46,7 +46,7 @@ async function parseReminder(text) {
 
   const nowStr = nowIL();
 
-  const model  = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
   const prompt =
     `עכשיו: ${nowStr} (שעון ישראל, UTC+3).\n` +
     `המשתמש אומר: "${text}"\n\n` +

@@ -229,7 +229,7 @@ async function askClaude(messages) {
   const history = toGeminiHistory(messages);
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash-001',
     systemInstruction: SYSTEM_PROMPT,
     tools: googleReady ? TOOLS : [],
   });
