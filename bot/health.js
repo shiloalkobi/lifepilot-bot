@@ -238,6 +238,26 @@ function checkHighPainAlert() {
   return `⚠️ <b>שים לב:</b> רמת הכאב גבוהה (${avgP}/10 בממוצע) כבר 3 ימים רצופים.\nשקול לפנות לרופא או לעדכן טיפול.`;
 }
 
+// ── Direct log (agent use — no interactive flow) ──────────────────────────────
+function logDirect({ pain, mood, sleep, symptoms, notes }) {
+  const entries = load();
+  const today   = todayIL();
+  const existing = entries.findIndex(e => e.date === today);
+  const entry = {
+    date:       today,
+    painLevel:  pain,
+    mood:       mood   || null,
+    sleep:      sleep  || null,
+    symptoms:   symptoms || '',
+    notes:      notes    || '',
+    createdAt:  new Date().toISOString(),
+  };
+  if (existing >= 0) entries[existing] = entry;
+  else entries.push(entry);
+  save(entries);
+  return entry;
+}
+
 // ── Yesterday missing check (for morning briefing) ───────────────────────────
 function hadEntryYesterday() {
   const yesterday = dateBeforeIL(1);
@@ -250,6 +270,7 @@ module.exports = {
   isInCheckin,
   processCheckinStep,
   cancelCheckin,
+  logDirect,
   getTodayHealth,
   getWeekSummary,
   formatTodayStatus,

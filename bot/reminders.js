@@ -126,6 +126,24 @@ function formatPending(chatId) {
   return `⏰ <b>תזכורות ממתינות (${pending.length}):</b>\n\n${lines.join('\n\n')}\n\n<i>/delremind [מספר] למחיקה</i>`;
 }
 
+// ── Direct add (agent use — no Gemini parsing) ────────────────────────────────
+function addReminderDirect(chatId, task, remindAt) {
+  const dt = new Date(remindAt);
+  if (isNaN(dt.getTime()) || dt <= new Date()) return null;
+  const reminders = load();
+  const reminder  = {
+    id:        nextId(reminders),
+    task,
+    remindAt,
+    chatId:    String(chatId),
+    createdAt: new Date().toISOString(),
+    sent:      false,
+  };
+  reminders.push(reminder);
+  save(reminders);
+  return reminder;
+}
+
 // ── Scheduler: check every 30s, fire due reminders ───────────────────────────
 
 function startReminderScheduler(bot) {
@@ -169,6 +187,7 @@ function startReminderScheduler(bot) {
 
 module.exports = {
   addReminder,
+  addReminderDirect,
   listPending,
   deleteReminder,
   formatPending,

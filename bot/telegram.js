@@ -1,6 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { askClaude } = require('./claude');
-const { getHistory, addMessage, resetHistory } = require('./history');
+const { handleMessage } = require('./agent');
+const { resetHistory } = require('./history');
 const { buildMorningMessage } = require('./scheduler');
 const {
   addTask, markDone, markUndone, deleteTask,
@@ -595,16 +595,14 @@ function startBot(token, webhookUrl = null) {
       return;
     }
 
-    // ── AI chat ──────────────────────────────────────────────────────────────
+    // ── AI Agent ─────────────────────────────────────────────────────────────
     bot.sendChatAction(chatId, 'typing');
-    addMessage(chatId, 'user', msg.text);
 
     try {
-      const reply = await askClaude(getHistory(chatId));
-      addMessage(chatId, 'assistant', reply);
-      bot.sendMessage(chatId, reply);
+      const reply = await handleMessage(bot, chatId, msg.text);
+      bot.sendMessage(chatId, reply, { parse_mode: 'HTML' });
     } catch (err) {
-      console.error('Claude error:', err.message);
+      console.error('[Agent] error:', err.message);
       const errMsg = err.message?.includes('429')
         ? '⏳ הגעתי למגבלת הקריאות של ה-AI. נסה שוב בעוד כמה דקות.'
         : '⚠️ שגיאה בחיבור ל-AI. נסה שוב.';
