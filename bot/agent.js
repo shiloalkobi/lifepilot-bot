@@ -25,12 +25,45 @@ const {
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
 
+console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
 console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+});
 const gemini = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
 });
-const GEMINI_MODEL = 'gemini-2.5-flash';
+
+async function callLLM(messages, tools) {
+  try {
+    const res = await groq.chat.completions.create({
+      model:               'llama-3.3-70b-versatile',
+      messages,
+      tools,
+      tool_choice:          'auto',
+      parallel_tool_calls:  false,
+      temperature:          0.7,
+    });
+    console.log('[Agent] Provider: Groq | finish_reason:', res.choices[0]?.finish_reason);
+    return res;
+  } catch (err) {
+    if (err.status === 429 || err.message?.includes('429')) {
+      console.warn('[Agent] Groq 429 — falling back to Gemini');
+      const res = await gemini.chat.completions.create({
+        model:       'gemini-2.5-flash',
+        messages,
+        tools,
+        tool_choice: 'auto',
+        temperature: 0.7,
+      });
+      console.log('[Agent] Provider: Gemini | finish_reason:', res.choices[0]?.finish_reason);
+      return res;
+    }
+    throw err;
+  }
+}
 
 // Load Shilo's profile
 let shiloProfile = '';
@@ -659,13 +692,7 @@ async function handleMessage(bot, chatId, text) {
 
   let response;
   try {
-    response = await gemini.chat.completions.create({
-      model:       GEMINI_MODEL,
-      messages:    chatMessages,
-      tools:       TOOLS,
-      tool_choice: 'auto',
-      temperature: 0.7,
-    });
+    response = await callLLM(chatMessages, TOOLS);
   } catch (err) {
     console.error('[Agent] FULL ERROR:', err.stack || err);
     if (err.status === 429 || err.message?.includes('429')) {
@@ -675,7 +702,6 @@ async function handleMessage(bot, chatId, text) {
     }
     throw err;
   }
-  console.log('[Agent] Gemini finish_reason:', response.choices[0]?.finish_reason);
   console.log('[Agent] Full message:', JSON.stringify(response.choices[0].message));
 
   // Add assistant message to history buffer
@@ -708,14 +734,7 @@ async function handleMessage(bot, chatId, text) {
     increment();
 
     try {
-      response = await gemini.chat.completions.create({
-        model:       GEMINI_MODEL,
-        messages:    chatMessages,
-        tools:       TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.7,
-      });
-      console.log('[Agent] Gemini finish_reason:', response.choices[0]?.finish_reason);
+      response = await callLLM(chatMessages, TOOLS);
       chatMessages.push(response.choices[0].message);
     } catch (err) {
       console.error('[Agent] FULL ERROR:', err.stack || err);

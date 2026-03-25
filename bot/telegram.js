@@ -601,7 +601,7 @@ function startBot(token, webhookUrl = null) {
     try {
       const reply = await handleMessage(bot, chatId, msg.text);
       console.log('[Telegram] Sending reply:', reply?.substring(0, 100));
-      bot.sendMessage(chatId, reply, { parse_mode: 'HTML' })
+      bot.sendMessage(chatId, reply)
         .catch(sendErr => console.error('[Telegram] sendMessage error:', sendErr.message));
     } catch (err) {
       console.error('[Agent] error:', err.message);
