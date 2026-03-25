@@ -25,12 +25,12 @@ const {
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
 
-console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
-const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: 'https://api.groq.com/openai/v1',
+console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
+const gemini = new OpenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
 });
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // Load Shilo's profile
 let shiloProfile = '';
@@ -445,7 +445,7 @@ const TOOL_DECLARATIONS = [
 ];
 
 // ── Convert TOOL_DECLARATIONS → OpenAI/Groq format ───────────────────────────
-const GROQ_TOOLS = TOOL_DECLARATIONS.map(t => ({
+const TOOLS = TOOL_DECLARATIONS.map(t => ({
   type: 'function',
   function: { name: t.name, description: t.description, parameters: t.parameters },
 }));
@@ -659,13 +659,12 @@ async function handleMessage(bot, chatId, text) {
 
   let response;
   try {
-    response = await groq.chat.completions.create({
-      model:                GROQ_MODEL,
-      messages:             chatMessages,
-      tools:                GROQ_TOOLS,
-      tool_choice:          'auto',
-      parallel_tool_calls:  false,
-      temperature:          0.7,
+    response = await gemini.chat.completions.create({
+      model:       GEMINI_MODEL,
+      messages:    chatMessages,
+      tools:       TOOLS,
+      tool_choice: 'auto',
+      temperature: 0.7,
     });
   } catch (err) {
     console.error('[Agent] FULL ERROR:', err.stack || err);
@@ -676,7 +675,7 @@ async function handleMessage(bot, chatId, text) {
     }
     throw err;
   }
-  console.log('[Agent] Groq finish_reason:', response.choices[0]?.finish_reason);
+  console.log('[Agent] Gemini finish_reason:', response.choices[0]?.finish_reason);
 
   // Add assistant message to history buffer
   chatMessages.push(response.choices[0].message);
@@ -708,14 +707,14 @@ async function handleMessage(bot, chatId, text) {
     increment();
 
     try {
-      response = await groq.chat.completions.create({
-        model:       GROQ_MODEL,
+      response = await gemini.chat.completions.create({
+        model:       GEMINI_MODEL,
         messages:    chatMessages,
-        tools:       GROQ_TOOLS,
+        tools:       TOOLS,
         tool_choice: 'auto',
         temperature: 0.7,
       });
-      console.log('[Agent] Groq finish_reason:', response.choices[0]?.finish_reason);
+      console.log('[Agent] Gemini finish_reason:', response.choices[0]?.finish_reason);
       chatMessages.push(response.choices[0].message);
     } catch (err) {
       console.error('[Agent] FULL ERROR:', err.stack || err);
