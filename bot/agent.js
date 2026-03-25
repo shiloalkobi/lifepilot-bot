@@ -43,24 +43,24 @@ function getDayHebrew() {
 function buildCurrentContext(chatId) {
   try {
     const health  = getTodayHealth();
-    const tasks   = getOpenTasks();
-    const meds    = getTodayMedStatus();
+    const tasks   = getOpenTasks()   ?? [];
+    const meds    = getTodayMedStatus() ?? [];
     const pomo    = getTodayPomoStats();
-    const pending = listPending(chatId);
+    const pending = listPending(chatId) ?? [];
     return JSON.stringify({
       datetime:            nowIL(),
       day_hebrew:          getDayHebrew(),
       open_tasks:          tasks.length,
       tasks_high_priority: tasks.filter(t => t.priority === 'high').length,
       health_logged_today: !!health,
-      pain_today:          health?.painLevel || null,
-      mood_today:          health?.mood || null,
-      sleep_today:         health?.sleep || null,
+      pain_today:          health?.painLevel ?? null,
+      mood_today:          health?.mood      ?? null,
+      sleep_today:         health?.sleep     ?? null,
       meds_pending: meds.filter(m => !m.taken && !m.skipped).map(m => m.name),
       meds_taken:   meds.filter(m => m.taken).map(m => m.name),
       reminders_pending:   pending.length,
-      pomo_sessions_today: pomo?.sessions || 0,
-      pomo_minutes_today:  pomo?.totalMinutes || 0,
+      pomo_sessions_today: pomo?.sessions     ?? 0,
+      pomo_minutes_today:  pomo?.totalMinutes ?? 0,
     });
   } catch (err) {
     return JSON.stringify({ datetime: nowIL(), error: err.message });
@@ -641,7 +641,7 @@ async function handleMessage(bot, chatId, text) {
     model: 'gemini-2.5-flash',
     systemInstruction: buildSystemPrompt(memory),
     tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+    generationConfig: { temperature: 0.7 },
   });
 
   const chat = model.startChat({ history: toGeminiHistory(messages) });
@@ -654,7 +654,8 @@ async function handleMessage(bot, chatId, text) {
     const candidate = response.response.candidates?.[0];
     if (!candidate) break;
 
-    const funcCalls = candidate.content.parts.filter(p => p.functionCall);
+    const parts    = candidate.content?.parts ?? [];
+    const funcCalls = parts.filter(p => p.functionCall);
     if (!funcCalls.length) break; // model returned text — done
 
     // Execute all tool calls (in parallel where safe)
@@ -677,10 +678,19 @@ async function handleMessage(bot, chatId, text) {
       return reply;
     }
     increment();
-    response = await chat.sendMessage(toolResults);
+    try {
+      response = await chat.sendMessage(toolResults);
+    } catch (err) {
+      if (err.message?.includes('429')) {
+        const reply = '⏳ הגבלת קריאות API — נסה שוב בעוד כמה דקות.';
+        addMessage(chatId, 'model', reply);
+        return reply;
+      }
+      throw err;
+    }
   }
 
-  const reply = response.response.text() || 'סליחה, לא הצלחתי לעבד את הבקשה.';
+  const reply = response.response?.text?.() || 'סליחה, לא הצלחתי לעבד את הבקשה.';
   addMessage(chatId, 'model', reply);
   return reply;
 }
