@@ -41,10 +41,13 @@ async function transcribeVoice(fileUrl) {
   const base64 = buffer.toString('base64');
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model  = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  const model  = genAI.getGenerativeModel({
+    model:           'gemini-3-flash-preview',
+    systemInstruction: 'You are a Hebrew transcription service. Always output Hebrew text only.',
+  });
 
   const result = await model.generateContent([
-    { text: 'Transcribe this voice message exactly. Return only the transcription, no explanations or labels.' },
+    { text: 'Transcribe this audio to text. The speaker is speaking Hebrew (עברית). Return ONLY the Hebrew transcription, nothing else.' },
     { inlineData: { mimeType: 'audio/ogg', data: base64 } },
   ]);
 
