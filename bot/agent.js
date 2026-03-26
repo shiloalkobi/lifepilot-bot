@@ -7,6 +7,9 @@ const { canCall, increment }           = require('./rate-limiter');
 const { getHistory, addMessage }       = require('./history');
 const { loadMemory, formatMemoryBlock } = require('./agent-memory');
 
+// ── Retry helper ─────────────────────────────────────────────────────────────
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // ── Module imports ────────────────────────────────────────────────────────────
 const { addTask, markDone, deleteTask, getOpenTasks, getCompletedToday } = require('./tasks');
 const { logDirect, getTodayHealth, getWeekSummary }                      = require('./health');
@@ -37,6 +40,31 @@ const gemini = new OpenAI({
 });
 
 async function callLLM(messages, tools) {
+  // FORCE_GEMINI=1 skips Groq entirely (used in tests / when Groq quota is exhausted)
+  if (process.env.FORCE_GEMINI === '1') {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await gemini.chat.completions.create({
+          model:       'gemini-2.0-flash-001',
+          messages,
+          tools,
+          tool_choice: 'auto',
+          temperature: 0.7,
+        });
+        console.log('[Agent] Provider: Gemini (forced) | finish_reason:', res.choices[0]?.finish_reason);
+        return res;
+      } catch (err) {
+        if ((err.status === 429 || err.message?.includes('429')) && attempt < 2) {
+          const waitSec = attempt === 0 ? 30 : 60;
+          console.warn(`[Agent] Gemini 429 — waiting ${waitSec}s before retry ${attempt + 1}/2`);
+          await _sleep(waitSec * 1000);
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
   try {
     const res = await groq.chat.completions.create({
       model:               'llama-3.3-70b-versatile',
@@ -116,10 +144,11 @@ function buildSystemPrompt(memory) {
 ISO: ${nowIL()} | יום: ${getDayHebrew()}
 
 ## פרופיל
-שילה אלקובי | ראשון לציון | Node.js/WordPress/AI
+שילה אלקובי | ראשון לציון | Node.js/WordPress/AI | גבר
 CRPS ברגל שמאל (DRG שתל) — כאב כרוני, ניהול יומי
 ${memBlock ? '## זיכרון\n' + memBlock + '\n' : ''}
 ## כללים — CRITICAL
+0. שילה הוא גבר — תמיד פנה אליו בלשון זכר. לעולם לא בלשון נקבה.
 1. ALWAYS use tools before answering. NEVER answer from memory about tasks, health, medications, or reminders — always call the appropriate tool first.
 2. Time calculations (add_reminder): use the Israel time shown above and calculate precisely. "בעוד 10 דקות" = add 10 minutes to current time.
 3. Chain tools when needed: "כאב + תזכורת" → log_health then add_reminder.
@@ -456,9 +485,24 @@ const TOOLS = TOOL_DECLARATIONS.map(t => ({
   function: { name: t.name, description: t.description, parameters: t.parameters },
 }));
 
+// ── Test-mode tool call tracker ───────────────────────────────────────────────
+const _toolCalls = [];
+function _resetToolCalls() { _toolCalls.length = 0; }
+function _getToolCalls() { return [..._toolCalls]; }
+
 // ── Tool executor ─────────────────────────────────────────────────────────────
 async function executeTool(name, args, ctx) {
   const { bot, chatId } = ctx;
+
+  // Coerce known numeric fields — Groq/Gemini sometimes returns numbers as strings
+  const numericFields = ['pain', 'mood', 'sleep', 'task_id', 'task_index', 'reminder_id', 'note_id', 'minutes', 'position', 'days', 'count', 'maxResults'];
+  for (const field of numericFields) {
+    if (field in args && typeof args[field] === 'string') {
+      args[field] = Number(args[field]);
+    }
+  }
+
+  if (process.env.TEST_MODE === '1') _toolCalls.push({ name, args });
   console.log(`[Agent] Tool: ${name}`, args);
 
   try {
@@ -680,6 +724,25 @@ async function handleMessage(bot, chatId, text) {
   // Add assistant message to history buffer
   chatMessages.push(response.choices[0].message);
 
+  // ── Handle empty stop (no text, no tool_calls) — nudge once ─────────────
+  {
+    const msg = response.choices[0]?.message;
+    const isEmpty = !msg?.tool_calls?.length && (!msg?.content || !msg.content.trim());
+    if (isEmpty && response.choices[0]?.finish_reason === 'stop') {
+      console.warn('[Agent] Empty stop response — nudging model to use a tool');
+      chatMessages.push({ role: 'user', content: 'נא להשתמש בכלי המתאים כדי לבצע את הפעולה.' });
+      if (canCall()) {
+        increment();
+        try {
+          response = await callLLM(chatMessages, TOOLS);
+          chatMessages.push(response.choices[0].message);
+        } catch (err) {
+          console.error('[Agent] Nudge retry error:', err.message);
+        }
+      }
+    }
+  }
+
   // ── ReAct loop — max 4 tool-call rounds ───────────────────────────────────
   for (let depth = 0; depth < 4; depth++) {
     const toolCalls = response.choices[0]?.message?.tool_calls;
@@ -720,10 +783,11 @@ async function handleMessage(bot, chatId, text) {
     }
   }
 
-  const reply = response.choices[0]?.message?.content || 'סליחה, לא הצלחתי לעבד את הבקשה.';
+  const rawContent = response.choices[0]?.message?.content;
+  const reply = (rawContent && rawContent.trim()) ? rawContent.trim() : 'לא הצלחתי להבין. אפשר לנסח אחרת?';
   console.log('[Agent] REPLY:', reply);
   addMessage(chatId, 'model', reply);
   return reply;
 }
 
-module.exports = { handleMessage };
+module.exports = { handleMessage, _resetToolCalls, _getToolCalls };

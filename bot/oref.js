@@ -193,11 +193,11 @@ function startOrefMonitor(bot, chatId) {
   setInterval(poll, 2000);
   poll();
 
-  // Health check log every 60 seconds
+  // Health check log every 10 minutes
   setInterval(() => {
     const errNote = primaryErrors > 0 ? ` | Tzofar errors: ${primaryErrors}` : '';
     console.log(`[Oref] Status: source=${source} | polls=${pollCount} | seen=${seenIds.size}${errNote}`);
-  }, 60 * 1000);
+  }, 10 * 60 * 1000);
 
   // Daily health check at 09:00 Israel (06:00 UTC)
   cron.schedule('0 6 * * *', async () => {
