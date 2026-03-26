@@ -559,9 +559,49 @@ function startBot(token, webhookUrl = null) {
 
   // Handle all non-command messages
   bot.on('message', async (msg) => {
-    if (!msg.text || msg.text.startsWith('/')) return;
-
     const chatId = msg.chat.id;
+
+    // ── Voice messages ───────────────────────────────────────────────────────
+    if (msg.voice) {
+      bot.sendChatAction(chatId, 'typing');
+      try {
+        const { transcribeVoice } = require('../skills/voice');
+        const file    = await bot.getFile(msg.voice.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+        console.log('[Voice] Transcribing voice message...');
+        const transcribed = await transcribeVoice(fileUrl);
+        console.log('[Voice] Transcribed:', transcribed.substring(0, 100));
+        const reply = await handleMessage(bot, chatId, transcribed);
+        bot.sendMessage(chatId, reply).catch((e) => console.error('[Voice] sendMessage:', e.message));
+      } catch (err) {
+        console.error('[Voice]', err.message);
+        bot.sendMessage(chatId, '⚠️ שגיאה בתמלול ההודעה הקולית. נסה שנית.');
+      }
+      return;
+    }
+
+    // ── Photo messages ───────────────────────────────────────────────────────
+    if (msg.photo) {
+      bot.sendChatAction(chatId, 'typing');
+      try {
+        const { describeImage } = require('../skills/vision');
+        const largest = msg.photo[msg.photo.length - 1];
+        const file    = await bot.getFile(largest.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+        console.log('[Vision] Describing photo...');
+        const description = await describeImage(fileUrl);
+        console.log('[Vision] Description:', description.substring(0, 100));
+        const caption  = msg.caption ? ` המשתמש כתב: "${msg.caption}"` : '';
+        const reply    = await handleMessage(bot, chatId, `[תמונה שנשלחה]: ${description}${caption}`);
+        bot.sendMessage(chatId, reply).catch((e) => console.error('[Vision] sendMessage:', e.message));
+      } catch (err) {
+        console.error('[Vision]', err.message);
+        bot.sendMessage(chatId, '⚠️ שגיאה בניתוח התמונה. נסה שנית.');
+      }
+      return;
+    }
+
+    if (!msg.text || msg.text.startsWith('/')) return;
 
     // ── English quiz intercept ───────────────────────────────────────────────
     if (isInQuiz(chatId)) {
