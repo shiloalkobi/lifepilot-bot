@@ -51,6 +51,15 @@ function ilToDate(ilStr) {
   return new Date(new Date(ilStr).getTime() - offsetMs);
 }
 
+// Parse remindAt regardless of format:
+//   - bare ISO (no TZ suffix) → treat as Israel-local via ilToDate()
+//   - has Z / +HH:MM / -HH:MM → parse directly, no conversion needed
+function toDate(str) {
+  if (!str) return new Date(NaN);
+  const hasTimezone = /[Zz]|[+-]\d{2}:?\d{2}$/.test(str);
+  return hasTimezone ? new Date(str) : ilToDate(str);
+}
+
 // ── AI Parser ─────────────────────────────────────────────────────────────────
 
 async function parseReminder(text) {
@@ -141,7 +150,7 @@ function formatPending(chatId) {
 
 // ── Direct add (agent use — no Gemini parsing) ────────────────────────────────
 function addReminderDirect(chatId, task, remindAt) {
-  const dt = ilToDate(remindAt);
+  const dt = toDate(remindAt);
   if (isNaN(dt.getTime()) || dt <= new Date()) return null;
   const reminders = load();
   const reminder  = {
@@ -162,7 +171,7 @@ function addReminderDirect(chatId, task, remindAt) {
 function startReminderScheduler(bot) {
   // Restore timers for reminders that are still in the future
   function scheduleReminder(reminder) {
-    const delay = ilToDate(reminder.remindAt) - Date.now();
+    const delay = toDate(reminder.remindAt) - Date.now();
     if (delay <= 0) return; // already overdue — fire on next poll cycle
     setTimeout(() => fireReminder(bot, reminder), delay);
   }
@@ -184,17 +193,17 @@ function startReminderScheduler(bot) {
   }
 
   // On startup: schedule all pending reminders that are in the future
-  const pending = load().filter((r) => !r.sent && ilToDate(r.remindAt) > new Date());
+  const pending = load().filter((r) => !r.sent && toDate(r.remindAt) > new Date());
   pending.forEach((r) => scheduleReminder(r));
   console.log(`[Reminders] Restored ${pending.length} pending reminders`);
 
   // Poll every 30s to catch any that slipped through (Render restart edge case)
   setInterval(() => {
-    const nowIsrael = nowIL();
+    const now = new Date();
     const all = load().filter((r) => !r.sent);
     const due = all.filter((r) => {
-      console.log('[Reminders] Checking:', r.task, '| due:', r.remindAt, '| now:', nowIsrael);
-      return r.remindAt <= nowIsrael;
+      console.log('[Reminders] Checking:', r.task, '| due:', r.remindAt, '| now:', now.toISOString());
+      return toDate(r.remindAt) <= now;
     });
     for (const r of due) {
       fireReminder(bot, r);
