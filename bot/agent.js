@@ -46,7 +46,7 @@ async function callLLM(messages, tools) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await gemini.chat.completions.create({
-          model:       'gemini-3-flash-preview',
+          model:       'gemini-3.1-flash-lite-preview',
           messages,
           tools,
           tool_choice: 'auto',
@@ -81,7 +81,7 @@ async function callLLM(messages, tools) {
     if (err.status === 429 || err.message?.includes('429')) {
       console.warn('[Agent] Groq 429 — falling back to Gemini');
       const res = await gemini.chat.completions.create({
-        model:       'gemini-3-flash-preview',
+        model:       'gemini-3.1-flash-lite-preview',
         messages,
         tools,
         tool_choice: 'auto',
@@ -482,10 +482,21 @@ async function handleMessage(bot, chatId, text) {
     // Execute all tool calls
     const toolResults = await Promise.all(
       toolCalls.map(async tc => {
+        // Fix: Gemini sometimes merges tool name + args into one string,
+        // e.g. name = 'add_reminder{"task":"..."}' — split them apart.
+        let toolName = tc.function.name;
+        let rawArgs  = tc.function.arguments;
+        const braceIdx = toolName.indexOf('{');
+        if (braceIdx !== -1) {
+          rawArgs  = toolName.substring(braceIdx);
+          toolName = toolName.substring(0, braceIdx).trim();
+          console.log('[Agent] Fixed malformed tool name:', tc.function.name, '→', toolName);
+        }
+
         let args = {};
-        try { args = JSON.parse(tc.function.arguments) ?? {}; } catch {}
-        console.log('[Agent] Tool:', tc.function.name, JSON.stringify(args));
-        const result = await executeAnyTool(tc.function.name, args, { bot, chatId });
+        try { args = JSON.parse(rawArgs) ?? {}; } catch {}
+        console.log('[Agent] Tool:', toolName, JSON.stringify(args));
+        const result = await executeAnyTool(toolName, args, { bot, chatId });
         console.log('[Agent] Tool result:', String(result).substring(0, 200));
         return { role: 'tool', tool_call_id: tc.id, content: String(result) };
       })
