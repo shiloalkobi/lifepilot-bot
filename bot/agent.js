@@ -6,6 +6,7 @@ const OpenAI = require('openai');
 const { canCall, increment }           = require('./rate-limiter');
 const { getHistory, addMessage }       = require('./history');
 const { loadMemory, formatMemoryBlock } = require('./agent-memory');
+const { initRegistry, getAllToolDeclarations, executeAnyTool } = require('./skills-registry');
 
 // ── Retry helper ─────────────────────────────────────────────────────────────
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -678,6 +679,9 @@ async function executeTool(name, args, ctx) {
   }
 }
 
+// ── Register built-ins + load skills ──────────────────────────────────────────
+initRegistry(TOOL_DECLARATIONS, executeTool);
+
 // ── Convert history to OpenAI format ─────────────────────────────────────────
 function toOpenAIHistory(messages) {
   // All messages except the last (which is the current user message)
@@ -709,7 +713,7 @@ async function handleMessage(bot, chatId, text) {
 
   let response;
   try {
-    response = await callLLM(chatMessages, TOOLS);
+    response = await callLLM(chatMessages, getAllToolDeclarations());
   } catch (err) {
     console.error('[Agent] FULL ERROR:', err.stack || err);
     if (err.status === 429 || err.message?.includes('429')) {
@@ -734,7 +738,7 @@ async function handleMessage(bot, chatId, text) {
       if (canCall()) {
         increment();
         try {
-          response = await callLLM(chatMessages, TOOLS);
+          response = await callLLM(chatMessages, getAllToolDeclarations());
           chatMessages.push(response.choices[0].message);
         } catch (err) {
           console.error('[Agent] Nudge retry error:', err.message);
@@ -754,7 +758,7 @@ async function handleMessage(bot, chatId, text) {
         let args = {};
         try { args = JSON.parse(tc.function.arguments) ?? {}; } catch {}
         console.log('[Agent] Tool:', tc.function.name, JSON.stringify(args));
-        const result = await executeTool(tc.function.name, args, { bot, chatId });
+        const result = await executeAnyTool(tc.function.name, args, { bot, chatId });
         console.log('[Agent] Tool result:', String(result).substring(0, 200));
         return { role: 'tool', tool_call_id: tc.id, content: String(result) };
       })
@@ -770,7 +774,7 @@ async function handleMessage(bot, chatId, text) {
     increment();
 
     try {
-      response = await callLLM(chatMessages, TOOLS);
+      response = await callLLM(chatMessages, getAllToolDeclarations());
       chatMessages.push(response.choices[0].message);
     } catch (err) {
       console.error('[Agent] FULL ERROR:', err.stack || err);

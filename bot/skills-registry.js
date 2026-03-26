@@ -3,127 +3,141 @@
 /**
  * Skills Registry
  *
- * Merges the existing 33 built-in tools from agent.js with any dynamically
- * loaded skills. Exposes a unified interface:
+ * Merges the existing built-in tools from agent.js with dynamically loaded
+ * skills. Exposes three functions for agent.js integration:
  *
- *   getToolDeclarations()          → all tools (built-ins + skills), deduplicated
- *   executeTool(name, args, ctx)   → dispatches to built-in handler or skill
+ *   initRegistry(toolDeclarations, executeToolFn)
+ *     — call once after agent.js builds TOOL_DECLARATIONS and executeTool
  *
- * Built-in tools always take priority — skills cannot override them.
+ *   getAllToolDeclarations()
+ *     — returns full OpenAI-format tool list (built-ins + skill tools)
+ *     — replace every use of the TOOLS constant in callLLM calls
  *
- * NOTE: This module does NOT modify agent.js. It is designed to be the
- * integration point once you're ready to wire it in.
+ *   executeAnyTool(toolName, args, ctx)
+ *     — dispatches to a skill if it owns the tool, otherwise to built-in
+ *     — replace every call to executeTool() in the ReAct loop
+ *
+ * Built-in tools always win — skills with conflicting names are silently
+ * dropped at init time.
  */
 
 const { loadSkills, getSkillToolDeclarations, findSkillForTool } = require('./skills-loader');
 
-// ── Lazy-load the built-in tool declarations and executor from agent.js ───────
-// We import only what we need and avoid re-running side effects.
-let _agentModule = null;
-function getAgentModule() {
-  if (!_agentModule) {
-    // agent.js exports { handleMessage, _resetToolCalls, _getToolCalls }
-    // We need internal access for the registry — agent must export these.
-    // For now, the registry works stand-alone; integration wires it later.
-    _agentModule = {};
-  }
-  return _agentModule;
-}
+// ── Registry state ─────────────────────────────────────────────────────────────
+let _initialized    = false;
+let _builtInDecls   = [];          // raw TOOL_DECLARATIONS from agent.js
+let _builtInNames   = new Set();   // fast lookup for built-in tool names
+let _builtInExec    = null;        // executeTool function from agent.js
+let _skills         = [];          // loaded skill modules
+let _skillToolsMap  = new Map();   // toolName → skill module
+let _skillOpenAI    = [];          // OpenAI-format declarations for skill tools
 
-// ── Registry state ────────────────────────────────────────────────────────────
-let _skills        = null; // loaded once, then cached
-let _skillToolsMap = null; // Map<toolName, skill>
+/**
+ * Initialize the registry with the agent's built-in tools and executor.
+ * Must be called after both TOOL_DECLARATIONS and executeTool are defined.
+ *
+ * @param {Array}    toolDeclarations - the TOOL_DECLARATIONS array from agent.js
+ * @param {Function} executeToolFn   - the executeTool(name, args, ctx) function
+ */
+function initRegistry(toolDeclarations, executeToolFn) {
+  _builtInDecls  = toolDeclarations;
+  _builtInExec   = executeToolFn;
+  _builtInNames  = new Set(toolDeclarations.map((t) => t.name));
 
-function ensureLoaded() {
-  if (_skills !== null) return;
-  _skills        = loadSkills();
+  // Load skills and filter out any that conflict with built-ins
+  _skills = loadSkills();
   _skillToolsMap = new Map();
+  const filteredSkillDecls = [];
+
   for (const skill of _skills) {
     for (const t of skill.tools) {
+      if (_builtInNames.has(t.name)) {
+        console.warn(`[Skills] Tool "${t.name}" from skill "${skill.name}" conflicts with built-in — skipped`);
+        continue;
+      }
+      if (_skillToolsMap.has(t.name)) {
+        console.warn(`[Skills] Tool "${t.name}" already registered by another skill — skipped`);
+        continue;
+      }
       _skillToolsMap.set(t.name, skill);
+      filteredSkillDecls.push(t);
     }
   }
+
+  // Pre-build the OpenAI format for skill tools
+  _skillOpenAI = filteredSkillDecls.map((t) => ({
+    type: 'function',
+    function: {
+      name:       t.name,
+      description: t.description,
+      parameters:  t.parameters || { type: 'object', properties: {}, required: [] },
+    },
+  }));
+
+  _initialized = true;
+  console.log(
+    `[Skills] Registry ready: ${_builtInNames.size} built-in tools + ` +
+    `${_skillToolsMap.size} skill tools (${_skills.length} skill(s))`
+  );
 }
 
 /**
- * Returns all skill-provided tool declarations (OpenAI format).
- * Built-in tool names are passed in as a Set to filter out conflicts.
+ * Returns all tool declarations in OpenAI format: built-ins first, then skills.
+ * Safe to call before initRegistry — returns empty array for skill portion.
  *
- * @param {Set<string>} builtInNames - set of already-registered tool names
- * @returns {Array} additional tool declarations from skills
+ * @returns {Array}
  */
-function getSkillDeclarations(builtInNames = new Set()) {
-  ensureLoaded();
-  const all = getSkillToolDeclarations(_skills);
-  const filtered = all.filter((t) => {
-    if (builtInNames.has(t.function.name)) {
-      console.warn(`[Skills] Tool "${t.function.name}" conflicts with built-in — skipped`);
-      return false;
-    }
-    return true;
-  });
-  return filtered;
+function getAllToolDeclarations() {
+  const builtInOpenAI = _builtInDecls.map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+  return [...builtInOpenAI, ..._skillOpenAI];
 }
 
 /**
- * Check whether a given tool name belongs to a skill (not built-in).
- * @param {string} toolName
- * @returns {boolean}
+ * Execute any tool — skill tools handled here, everything else forwarded
+ * to the built-in executor.
+ *
+ * @param {string}   toolName
+ * @param {Object}   args
+ * @param {Object}   ctx - { bot, chatId }
+ * @returns {Promise<string>}
  */
-function isSkillTool(toolName) {
-  ensureLoaded();
-  return _skillToolsMap.has(toolName);
-}
-
-/**
- * Execute a skill tool.
- * @param {string} toolName
- * @param {Object} args
- * @param {Object} ctx - { bot, chatId }
- * @returns {Promise<string>} result string
- */
-async function executeSkillTool(toolName, args, ctx) {
-  ensureLoaded();
+async function executeAnyTool(toolName, args, ctx) {
+  // Check skill tools first
   const skill = _skillToolsMap.get(toolName);
-  if (!skill) return `Unknown skill tool: ${toolName}`;
-
-  try {
-    const result = await skill.execute(toolName, args, ctx);
-    return String(result ?? '');
-  } catch (err) {
-    console.error(`[Skills] Error executing "${toolName}" in skill "${skill.name}":`, err.message);
-    return `Error in skill "${skill.name}": ${err.message}`;
-  }
-}
-
-/**
- * Reload all skills (hot-reload support).
- * Clears the cache so the next call to any registry function re-scans disk.
- */
-function reloadSkills() {
-  // Clear require cache for skill modules so they're re-read from disk
-  if (_skills) {
-    for (const skill of _skills) {
-      const skillKey = Object.keys(require.cache).find((k) =>
-        k.includes(`skills`) && k.endsWith('index.js') &&
-        k.includes(skill.name.replace(/[^a-z0-9]/gi, '-'))
-      );
-      if (skillKey) delete require.cache[skillKey];
+  if (skill) {
+    try {
+      const result = await skill.execute(toolName, args, ctx);
+      console.log(`[Skills] "${toolName}" executed by skill "${skill.name}"`);
+      return String(result ?? '');
+    } catch (err) {
+      console.error(`[Skills] Error in "${toolName}" (skill "${skill.name}"):`, err.message);
+      return `Error in skill "${skill.name}": ${err.message}`;
     }
   }
-  _skills        = null;
-  _skillToolsMap = null;
-  ensureLoaded();
-  console.log('[Skills] Reloaded');
+
+  // Fall back to built-in executor
+  if (_builtInExec) return _builtInExec(toolName, args, ctx);
+  return `Unknown tool: ${toolName}`;
 }
 
-/**
- * Returns a summary of all loaded skills for debugging.
- */
+// ── Additional utilities (unchanged from previous version) ────────────────────
+
+function reloadSkills() {
+  if (_builtInExec) {
+    initRegistry(_builtInDecls, _builtInExec);
+  } else {
+    console.warn('[Skills] reloadSkills called before initRegistry');
+  }
+}
+
 function getRegistryStatus() {
-  ensureLoaded();
   return {
-    skillCount: _skills.length,
+    initialized: _initialized,
+    builtInCount: _builtInNames.size,
+    skillCount:  _skills.length,
     skills: _skills.map((s) => ({
       name:      s.name,
       tools:     s.tools.map((t) => t.name),
@@ -133,9 +147,10 @@ function getRegistryStatus() {
 }
 
 module.exports = {
-  getSkillDeclarations,
-  isSkillTool,
-  executeSkillTool,
+  initRegistry,
+  getAllToolDeclarations,
+  executeAnyTool,
+  // Legacy / utility exports kept for completeness
   reloadSkills,
   getRegistryStatus,
 };
