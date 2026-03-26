@@ -52,7 +52,7 @@ async function callLLM(messages, tools) {
           tool_choice: 'auto',
           temperature: 0.7,
         });
-        console.log('[Agent] Provider: Gemini (forced) | finish_reason:', res.choices[0]?.finish_reason);
+        console.log(`[Agent] Provider: Gemini (forced) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
         return res;
       } catch (err) {
         if ((err.status === 429 || err.message?.includes('429')) && attempt < 2) {
@@ -75,7 +75,7 @@ async function callLLM(messages, tools) {
       parallel_tool_calls:  false,
       temperature:          0.7,
     });
-    console.log('[Agent] Provider: Groq | finish_reason:', res.choices[0]?.finish_reason);
+    console.log(`[Agent] Provider: Groq | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
     return res;
   } catch (err) {
     if (err.status === 429 || err.message?.includes('429')) {
@@ -87,7 +87,7 @@ async function callLLM(messages, tools) {
         tool_choice: 'auto',
         temperature: 0.7,
       });
-      console.log('[Agent] Provider: Gemini | finish_reason:', res.choices[0]?.finish_reason);
+      console.log(`[Agent] Provider: Gemini | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
       return res;
     }
     throw err;
@@ -158,326 +158,53 @@ ${memBlock ? '## זיכרון\n' + memBlock + '\n' : ''}
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
+// Descriptions kept to ≤15 words to minimize token usage (Groq: 100K/day budget).
 const TOOL_DECLARATIONS = [
   // Tasks
-  {
-    name: 'add_task',
-    description: 'הוסף משימה חדשה לרשימה. כשהמשתמש אומר שצריך לעשות משהו, לזכור משהו, או מבקש להוסיף משימה.',
-    parameters: {
-      type: 'object',
-      properties: {
-        text:     { type: 'string', description: 'תיאור המשימה' },
-        priority: { type: 'string', enum: ['high', 'medium', 'low'], description: 'עדיפות. high = דחוף, medium = רגיל. ברירת מחדל: medium' },
-      },
-      required: ['text'],
-    },
-  },
-  {
-    name: 'get_tasks',
-    description: 'קבל את רשימת המשימות הפתוחות הנוכחית. כשהמשתמש שואל מה יש לו לעשות.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'complete_task',
-    description: 'סמן משימה כבוצעת לפי מספר רץ. כשהמשתמש אומר שסיים משימה.',
-    parameters: {
-      type: 'object',
-      properties: {
-        task_index: { type: 'number', description: 'מספר המשימה (1-based) מהרשימה' },
-      },
-      required: ['task_index'],
-    },
-  },
-  {
-    name: 'delete_task',
-    description: 'מחק משימה מהרשימה לצמיתות.',
-    parameters: {
-      type: 'object',
-      properties: {
-        task_index: { type: 'number', description: 'מספר המשימה (1-based)' },
-      },
-      required: ['task_index'],
-    },
-  },
+  { name: 'add_task',       description: 'הוסף משימה חדשה לרשימה.', parameters: { type: 'object', properties: { text: { type: 'string' }, priority: { type: 'string', enum: ['high', 'medium', 'low'] } }, required: ['text'] } },
+  { name: 'get_tasks',      description: 'קבל רשימת המשימות הפתוחות.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'complete_task',  description: 'סמן משימה כבוצעת לפי מספר.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
+  { name: 'delete_task',    description: 'מחק משימה לצמיתות.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
   // Health
-  {
-    name: 'log_health',
-    description: 'רשום דיווח בריאות ישיר (ללא שאלון אינטראקטיבי). כשהמשתמש מזכיר כאב, שינה, מצב רוח, או תסמינים.',
-    parameters: {
-      type: 'object',
-      properties: {
-        pain:     { type: 'number', description: 'רמת כאב 1-10. חובה. "כאב חזק"→8, "קצת כאב"→4, "ללא כאב"→1' },
-        mood:     { type: 'number', description: 'מצב רוח 1-10. אופציונלי.' },
-        sleep:    { type: 'number', description: 'שעות שינה אמש. אופציונלי.' },
-        symptoms: { type: 'string', description: 'תסמינים פיזיים. אופציונלי.' },
-        notes:    { type: 'string', description: 'הערות חופשיות. אופציונלי.' },
-      },
-      required: ['pain'],
-    },
-  },
-  {
-    name: 'get_health_today',
-    description: 'קבל את דיווח הבריאות של היום. לבדוק אם דיווח כבר, או להציג מצב נוכחי.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'get_health_summary',
-    description: 'קבל סיכום בריאות עבור N ימים אחרונים. לניתוח מגמות, "איך הבריאות השבוע".',
-    parameters: {
-      type: 'object',
-      properties: {
-        days: { type: 'number', description: 'מספר ימים אחורה. ברירת מחדל: 7' },
-      },
-      required: [],
-    },
-  },
+  { name: 'log_health',         description: 'רשום כאב/שינה/מצב רוח ישירות ללא שאלון.', parameters: { type: 'object', properties: { pain: { type: 'number', description: '1-10 (חובה)' }, mood: { type: 'number' }, sleep: { type: 'number', description: 'שעות שינה' }, symptoms: { type: 'string' }, notes: { type: 'string' } }, required: ['pain'] } },
+  { name: 'get_health_today',   description: 'קבל דיווח הבריאות של היום.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'get_health_summary', description: 'קבל סיכום בריאות N ימים אחרונים.', parameters: { type: 'object', properties: { days: { type: 'number', description: 'ברירת מחדל: 7' } }, required: [] } },
   // Medications
-  {
-    name: 'get_med_status',
-    description: 'קבל סטטוס תרופות היום — מה נלקח, ממתין, דולג. כשהמשתמש שואל על תרופות.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'mark_med_taken',
-    description: 'סמן תרופה כנלקחה. כשהמשתמש אומר שלקח תרופה.',
-    parameters: {
-      type: 'object',
-      properties: {
-        medication_name: { type: 'string', description: 'שם התרופה (לא תלוי רישיות)' },
-      },
-      required: ['medication_name'],
-    },
-  },
+  { name: 'get_med_status', description: 'הצג סטטוס תרופות היום.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'mark_med_taken', description: 'סמן תרופה כנלקחה.', parameters: { type: 'object', properties: { medication_name: { type: 'string' } }, required: ['medication_name'] } },
   // Reminders
-  {
-    name: 'add_reminder',
-    description: 'קבע תזכורת לזמן מסוים. כשהמשתמש אומר "תזכיר לי", "remind me", או מציין זמן עתידי. חשב את remind_at מהזמן הנוכחי.',
-    parameters: {
-      type: 'object',
-      properties: {
-        task:      { type: 'string', description: 'על מה להזכיר' },
-        remind_at: { type: 'string', description: `ISO 8601 datetime בשעון ישראל. חשב מ-${nowIL()}. "בעוד שעה"=+1h, "בעוד 30 דקות"=+30m, "מחר ב-9"=מחר 09:00` },
-      },
-      required: ['task', 'remind_at'],
-    },
-  },
-  {
-    name: 'get_reminders',
-    description: 'הצג את כל התזכורות הממתינות.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'delete_reminder',
-    description: 'מחק תזכורת ממתינת לפי ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        reminder_id: { type: 'number', description: 'ID התזכורת' },
-      },
-      required: ['reminder_id'],
-    },
-  },
+  { name: 'add_reminder',    description: 'קבע תזכורת; חשב remind_at מהשעה הנוכחית בsystem prompt.', parameters: { type: 'object', properties: { task: { type: 'string' }, remind_at: { type: 'string', description: 'ISO 8601 datetime בשעון ישראל' } }, required: ['task', 'remind_at'] } },
+  { name: 'get_reminders',   description: 'הצג כל התזכורות הממתינות.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'delete_reminder', description: 'מחק תזכורת לפי ID.', parameters: { type: 'object', properties: { reminder_id: { type: 'number' } }, required: ['reminder_id'] } },
   // Notes
-  {
-    name: 'save_note',
-    description: 'שמור הערה או snippet. כשהמשתמש רוצה לשמור מידע, קוד, רעיון, או לינק לשימוש מאוחר יותר.',
-    parameters: {
-      type: 'object',
-      properties: {
-        content: { type: 'string', description: 'תוכן ההערה המלא' },
-      },
-      required: ['content'],
-    },
-  },
-  {
-    name: 'search_notes',
-    description: 'חפש בהערות השמורות לפי מילת מפתח.',
-    parameters: {
-      type: 'object',
-      properties: {
-        keyword: { type: 'string', description: 'מילה לחיפוש' },
-      },
-      required: ['keyword'],
-    },
-  },
-  {
-    name: 'get_recent_notes',
-    description: 'קבל את ההערות האחרונות.',
-    parameters: {
-      type: 'object',
-      properties: {
-        count: { type: 'number', description: 'כמה הערות. ברירת מחדל: 5' },
-      },
-      required: [],
-    },
-  },
+  { name: 'save_note',      description: 'שמור הערה, קוד, רעיון או לינק.', parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } },
+  { name: 'search_notes',   description: 'חפש בהערות השמורות לפי מילת מפתח.', parameters: { type: 'object', properties: { keyword: { type: 'string' } }, required: ['keyword'] } },
+  { name: 'get_recent_notes', description: 'קבל N הערות אחרונות.', parameters: { type: 'object', properties: { count: { type: 'number', description: 'ברירת מחדל: 5' } }, required: [] } },
   // English
-  {
-    name: 'get_daily_word',
-    description: 'קבל את מילת האנגלית של היום. כשהמשתמש שואל על המילה היומית או רוצה ללמוד.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'get_english_stats',
-    description: 'קבל סטטיסטיקת לימוד אנגלית — streak, ניקוד, ימי תרגול.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
+  { name: 'get_daily_word',    description: 'קבל מילת האנגלית היומית.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'get_english_stats', description: 'קבל סטטיסטיקת לימוד אנגלית וstreak.', parameters: { type: 'object', properties: {}, required: [] } },
   // Pomodoro
-  {
-    name: 'start_pomodoro',
-    description: 'התחל סשן פומודורו. כשהמשתמש רוצה להתמקד, לעבוד, או מזכיר טיימר.',
-    parameters: {
-      type: 'object',
-      properties: {
-        minutes: { type: 'number', description: 'אורך הסשן בדקות. ברירת מחדל: 25' },
-      },
-      required: [],
-    },
-  },
-  {
-    name: 'stop_pomodoro',
-    description: 'עצור את סשן הפומודורו הנוכחי.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'get_pomodoro_stats',
-    description: 'קבל סטטיסטיקת פומודורו של היום.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
+  { name: 'start_pomodoro',    description: 'התחל סשן פומודורו (ברירת מחדל 25 דקות).', parameters: { type: 'object', properties: { minutes: { type: 'number' } }, required: [] } },
+  { name: 'stop_pomodoro',     description: 'עצור את סשן הפומודורו הנוכחי.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'get_pomodoro_stats', description: 'קבל סטטיסטיקת פומודורו של היום.', parameters: { type: 'object', properties: {}, required: [] } },
   // News
-  {
-    name: 'get_tech_news',
-    description: 'שלח חדשות טכנולוגיה מ-Hacker News. כשהמשתמש שואל על חדשות, tech news.',
-    parameters: {
-      type: 'object',
-      properties: {
-        full: { type: 'boolean', description: 'true=10 כתבות עם קישורים, false=5 עם סיכום AI' },
-      },
-      required: [],
-    },
-  },
+  { name: 'get_tech_news', description: 'שלח חדשות טכנולוגיה מ-Hacker News.', parameters: { type: 'object', properties: { full: { type: 'boolean', description: 'true=10 כתבות, false=5 עם AI' } }, required: [] } },
   // Sites
-  {
-    name: 'get_site_status',
-    description: 'הצג סטטוס של כל האתרים במעקב.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'check_sites_now',
-    description: 'בצע בדיקת up/down מיידית לכל האתרים.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
+  { name: 'get_site_status', description: 'הצג סטטוס up/down של האתרים.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'check_sites_now', description: 'בצע בדיקת up/down מיידית לאתרים.', parameters: { type: 'object', properties: {}, required: [] } },
   // Context
-  {
-    name: 'get_current_context',
-    description: 'קבל סנפשוט של המצב הנוכחי — משימות, בריאות, תרופות, תזכורות, פומודורו. השתמש בתחילת בקשות מורכבות.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
+  { name: 'get_current_context', description: 'קבל סנפשוט נוכחי: משימות, בריאות, תרופות, תזכורות.', parameters: { type: 'object', properties: {}, required: [] } },
   // Calendar
-  {
-    name: 'get_calendar_events',
-    description: 'מביא אירועים מ-Google Calendar.',
-    parameters: {
-      type: 'object',
-      properties: {
-        days: { type: 'number', description: '1=היום, 7=השבוע. ברירת מחדל: 7' },
-      },
-      required: [],
-    },
-  },
-  {
-    name: 'find_calendar_events',
-    description: 'מחפש אירוע ביומן לפי שם. השתמש לפני עדכון/מחיקה.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'שם האירוע (חלקי)' },
-        days:  { type: 'number', description: 'כמה ימים קדימה. ברירת מחדל: 30' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'create_calendar_event',
-    description: 'יוצר אירוע חדש ב-Google Calendar.',
-    parameters: {
-      type: 'object',
-      properties: {
-        summary:       { type: 'string', description: 'שם האירוע' },
-        startDateTime: { type: 'string', description: 'ISO 8601 שעת התחלה' },
-        endDateTime:   { type: 'string', description: 'ISO 8601 שעת סיום' },
-      },
-      required: ['summary', 'startDateTime', 'endDateTime'],
-    },
-  },
-  {
-    name: 'update_calendar_event',
-    description: 'מעדכן אירוע קיים. יש לקרוא find_calendar_events קודם.',
-    parameters: {
-      type: 'object',
-      properties: {
-        eventId:       { type: 'string', description: 'ID של האירוע' },
-        summary:       { type: 'string', description: 'שם חדש (אופציונלי)' },
-        startDateTime: { type: 'string', description: 'שעת התחלה חדשה ISO 8601 (אופציונלי)' },
-        endDateTime:   { type: 'string', description: 'שעת סיום חדשה ISO 8601 (אופציונלי)' },
-      },
-      required: ['eventId'],
-    },
-  },
-  {
-    name: 'delete_calendar_event',
-    description: 'מוחק אירוע מ-Google Calendar.',
-    parameters: {
-      type: 'object',
-      properties: {
-        eventId: { type: 'string', description: 'ID האירוע' },
-        summary: { type: 'string', description: 'שם האירוע (לאישור)' },
-      },
-      required: ['eventId'],
-    },
-  },
-  {
-    name: 'get_unread_emails',
-    description: 'מביא מיילים שלא נקראו מ-Gmail.',
-    parameters: {
-      type: 'object',
-      properties: {
-        maxResults: { type: 'number', description: 'כמה מיילים. ברירת מחדל: 5' },
-      },
-      required: [],
-    },
-  },
+  { name: 'get_calendar_events',  description: 'מביא אירועים מ-Google Calendar.', parameters: { type: 'object', properties: { days: { type: 'number', description: '1=היום, 7=שבוע (ברירת מחדל)' } }, required: [] } },
+  { name: 'find_calendar_events', description: 'מחפש אירוע ביומן לפי שם — קרא לפני עדכון/מחיקה.', parameters: { type: 'object', properties: { query: { type: 'string' }, days: { type: 'number' } }, required: ['query'] } },
+  { name: 'create_calendar_event', description: 'יוצר אירוע חדש ב-Google Calendar.', parameters: { type: 'object', properties: { summary: { type: 'string' }, startDateTime: { type: 'string', description: 'ISO 8601' }, endDateTime: { type: 'string', description: 'ISO 8601' } }, required: ['summary', 'startDateTime', 'endDateTime'] } },
+  { name: 'update_calendar_event', description: 'מעדכן אירוע קיים; דרוש eventId מ-find_calendar_events.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' }, startDateTime: { type: 'string' }, endDateTime: { type: 'string' } }, required: ['eventId'] } },
+  { name: 'delete_calendar_event', description: 'מוחק אירוע מ-Google Calendar לפי eventId.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' } }, required: ['eventId'] } },
+  { name: 'get_unread_emails',     description: 'מביא מיילים שלא נקראו מ-Gmail.', parameters: { type: 'object', properties: { maxResults: { type: 'number', description: 'ברירת מחדל: 5' } }, required: [] } },
   // Social
-  {
-    name: 'save_social_draft',
-    description: 'שמור טיוטת פוסט לסושיאל מדיה.',
-    parameters: {
-      type: 'object',
-      properties: {
-        platform:    { type: 'string', description: 'Instagram / Facebook / TikTok' },
-        content:     { type: 'string', description: 'טקסט הפוסט' },
-        hashtags:    { type: 'string', description: 'האשטגים (אופציונלי)' },
-        imagePrompt: { type: 'string', description: 'prompt לתמונה (אופציונלי)' },
-      },
-      required: ['platform', 'content'],
-    },
-  },
-  {
-    name: 'list_social_drafts',
-    description: 'הצג כל טיוטות הפוסטים השמורות.',
-    parameters: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'delete_social_draft',
-    description: 'מחק טיוטת פוסט לפי ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'ID הטיוטה' },
-      },
-      required: ['id'],
-    },
-  },
+  { name: 'save_social_draft',   description: 'שמור טיוטת פוסט לסושיאל מדיה.', parameters: { type: 'object', properties: { platform: { type: 'string', description: 'Instagram/Facebook/TikTok' }, content: { type: 'string' }, hashtags: { type: 'string' }, imagePrompt: { type: 'string' } }, required: ['platform', 'content'] } },
+  { name: 'list_social_drafts',  description: 'הצג כל טיוטות הפוסטים.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'delete_social_draft', description: 'מחק טיוטת פוסט לפי ID.', parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
 ];
 
 // ── Convert TOOL_DECLARATIONS → OpenAI/Groq format ───────────────────────────
@@ -684,8 +411,8 @@ initRegistry(TOOL_DECLARATIONS, executeTool);
 
 // ── Convert history to OpenAI format ─────────────────────────────────────────
 function toOpenAIHistory(messages) {
-  // All messages except the last (which is the current user message)
-  return messages.slice(0, -1).map(m => ({
+  // Exclude the last (current) message; keep only the last 8 for token efficiency
+  return messages.slice(0, -1).slice(-8).map(m => ({
     role: m.role === 'model' ? 'assistant' : (m.role === 'assistant' ? 'assistant' : 'user'),
     content: m.content || '',
   }));

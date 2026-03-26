@@ -31,7 +31,11 @@ function nowIL() {
 }
 
 function formatTimeIL(isoStr) {
-  return new Date(isoStr).toLocaleString('he-IL', {
+  // isoStr may be IL-local (no TZ suffix, e.g. "2026-03-26T14:00:00")
+  // or UTC (with Z / +HH:MM suffix). Always display in Israel timezone.
+  const hasTimezone = /[Zz]|[+-]\d{2}:?\d{2}$/.test(isoStr);
+  const dt = hasTimezone ? new Date(isoStr) : ilToDate(isoStr);
+  return dt.toLocaleString('he-IL', {
     timeZone: 'Asia/Jerusalem',
     weekday: 'long', day: 'numeric', month: 'long',
     hour: '2-digit', minute: '2-digit',

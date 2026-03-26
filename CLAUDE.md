@@ -88,3 +88,49 @@ user: שילה אלקובי
 
 קצר טווח: backend, כלי AI, פרויקטי SaaS.
 ארוך טווח: מוצרי AI, מערכות אוטומציה חכמות.
+
+---
+
+# LifePilot Bot — ארכיטקטורה
+
+## מבנה כללי
+- `bot/index.js` — HTTP server + Telegram webhook + cron scheduler
+- `bot/telegram.js` — ניתוב הודעות: `/slash` commands עוקפים את ה-agent; טקסט חופשי הולך ל-agent
+- `bot/agent.js` — לב ה-agent: ReAct loop (max 4 rounds), Groq primary / Gemini fallback
+- `bot/skills-registry.js` + `skills/` — מערכת הרחבות: כלים חיצוניים ללא שינוי agent.js
+
+## Agent — פרמטרים קריטיים
+- Rate limit: 500 קריאות/יום (rate-limiter.js), ~47 שימוש טיפוסי
+- History: 8 הודעות אחרונות בלבד (חיסכון בטוקנים)
+- Groq 100K/day → tool descriptions מקוצרות ל-15 מילים מקסימום
+- FORCE_GEMINI=1 — עוקף Groq (לטסטים / כשהquota נגמר)
+- Token logging: כל callLLM מדפיס tokens ב-log
+
+## כלים (33 built-in + skills)
+| קטגוריה | כלים |
+|---------|------|
+| Tasks | add_task, get_tasks, complete_task, delete_task |
+| Health | log_health, get_health_today, get_health_summary |
+| Medications | get_med_status, mark_med_taken |
+| Reminders | add_reminder, get_reminders, delete_reminder |
+| Notes | save_note, search_notes, get_recent_notes |
+| English | get_daily_word, get_english_stats |
+| Pomodoro | start_pomodoro, stop_pomodoro, get_pomodoro_stats |
+| News | get_tech_news |
+| Sites | get_site_status, check_sites_now |
+| Context | get_current_context |
+| Calendar/Gmail | get/find/create/update/delete_calendar_event, get_unread_emails |
+| Social | save/list/delete_social_draft |
+
+## Proactive (מתוכנן — Phase 3)
+10 triggers: no health log 2+ days, pain≥7 3+ days, 8+ tasks stale, English streak broken, meds overdue 4h+, Friday momentum check.
+Anti-spam: max 2/day, 08:00-21:00 IL only, cooldowns 2-7 days per trigger.
+
+## Skills system
+`skills/<name>/index.js` exports `{ name, description, tools[], execute(toolName, args, ctx) }`.
+הloader סורק אוטומטית. built-ins תמיד מנצחים בקונפליקטים.
+לחיבור skill חדש: ראה `skills/README.md`.
+
+## טיימזון
+Asia/Jerusalem תמיד. `remind_at` מאוחסן כ-IL-local string ומוסב ל-UTC ב-`ilToDate()`.
+`formatTimeIL()` מטפל גם ב-UTC (Z suffix) וגם ב-IL-local (ללא suffix).
