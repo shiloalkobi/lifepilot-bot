@@ -43,7 +43,7 @@ function getUserDifficulty(progress) {
 
 // ── AI word generation ────────────────────────────────────────────────────────
 async function generateWordFromAI(difficulty, excludeWords) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const excluded = excludeWords.slice(-50).join(', ') || 'none';
 
@@ -94,7 +94,7 @@ function pickStaticWord(difficulty, excludeWords) {
 
 // ── AI quiz options ───────────────────────────────────────────────────────────
 async function generateQuizOptions(word) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const prompt = `The English word "${word.word}" means "${word.translation}" in Hebrew.
 Generate 3 plausible but WRONG Hebrew translations that could trick a learner.

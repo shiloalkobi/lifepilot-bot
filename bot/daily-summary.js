@@ -91,7 +91,7 @@ async function generateInsight(data) {
   if (lines.length === 0) return null;
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
     const prompt =
       `נתוני היום של שילה אלקובי:\n${lines.join('\n')}\n\n` +
       `כתוב תובנה אישית קצרה (2-3 משפטים בעברית) — מה השיג/ה היום, מה לשים לב אליו מחר, ` +

@@ -46,7 +46,7 @@ async function callLLM(messages, tools) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await gemini.chat.completions.create({
-          model:       'gemini-2.0-flash-001',
+          model:       'gemini-3-flash-preview',
           messages,
           tools,
           tool_choice: 'auto',
@@ -81,7 +81,7 @@ async function callLLM(messages, tools) {
     if (err.status === 429 || err.message?.includes('429')) {
       console.warn('[Agent] Groq 429 — falling back to Gemini');
       const res = await gemini.chat.completions.create({
-        model:       'gemini-2.5-flash',
+        model:       'gemini-3-flash-preview',
         messages,
         tools,
         tool_choice: 'auto',

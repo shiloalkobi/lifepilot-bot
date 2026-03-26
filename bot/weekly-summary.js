@@ -144,7 +144,7 @@ async function generateWeeklyInsight(data) {
   if (!lines.length) return null;
 
   try {
-    const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
+    const model  = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
     const result = await model.generateContent(
       `נתוני השבוע של שילה אלקובי:\n${lines.join('\n')}\n\n` +
       `כתוב 2-3 המלצות קצרות ואקציונביליות לשבוע הבא בעברית. ` +

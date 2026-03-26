@@ -41,7 +41,7 @@ async function transcribeVoice(fileUrl) {
   const base64 = buffer.toString('base64');
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
+  const model  = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const result = await model.generateContent([
     { text: 'Transcribe this voice message exactly. Return only the transcription, no explanations or labels.' },
