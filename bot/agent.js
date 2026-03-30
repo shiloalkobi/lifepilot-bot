@@ -227,6 +227,8 @@ const EXTENDED_KEYWORDS = [
   'health summary', 'סיכום בריאות',
   'medications', 'תרופות', 'med',
   'pomodoro stats',
+  // Web search triggers
+  'חיפוש', 'search', 'מחיר', 'כמה עולה', 'מה זה', 'תחפש', 'תבדוק', 'מה המחיר',
 ];
 
 function selectTools(userText) {
@@ -235,10 +237,14 @@ function selectTools(userText) {
   const decls = needsExtended
     ? TOOL_DECLARATIONS
     : TOOL_DECLARATIONS.filter(t => CORE_TOOL_NAMES.has(t.name));
-  return decls.map(t => ({
+  const builtInTools = decls.map(t => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
+  // Always append skill tools (web_search, etc.) from the registry
+  const allDecls = getAllToolDeclarations();
+  const skillTools = allDecls.slice(TOOL_DECLARATIONS.length);
+  return [...builtInTools, ...skillTools];
 }
 
 // ── Convert TOOL_DECLARATIONS → OpenAI/Groq format (full set, used by registry) ─
