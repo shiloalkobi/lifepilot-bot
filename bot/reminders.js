@@ -181,8 +181,8 @@ function startReminderScheduler(bot) {
     const r = reminders.find((x) => x.id === reminder.id);
     if (!r || r.sent) return; // already fired or deleted
 
-    r.sent = true;
-    save(reminders);
+    const remaining = reminders.filter((x) => x.id !== r.id);
+    save(remaining);
 
     bot.sendMessage(r.chatId,
       `⏰ <b>תזכורת:</b> ${r.task}`,
@@ -197,18 +197,14 @@ function startReminderScheduler(bot) {
   pending.forEach((r) => scheduleReminder(r));
   console.log(`[Reminders] Restored ${pending.length} pending reminders`);
 
-  // Poll every 30s to catch any that slipped through (Render restart edge case)
+  // Poll every 60s to catch any that slipped through (Render restart edge case)
   setInterval(() => {
     const now = new Date();
-    const all = load().filter((r) => !r.sent);
-    const due = all.filter((r) => {
-      console.log('[Reminders] Checking:', r.task, '| due:', r.remindAt, '| now:', now.toISOString());
-      return toDate(r.remindAt) <= now;
-    });
+    const due = load().filter((r) => !r.sent && toDate(r.remindAt) <= now);
     for (const r of due) {
       fireReminder(bot, r);
     }
-  }, 30 * 1000);
+  }, 60 * 1000);
 }
 
 module.exports = {
