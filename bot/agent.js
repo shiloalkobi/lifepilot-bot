@@ -467,6 +467,25 @@ function parseToolCall(tc) {
   return { name, args: parsed };
 }
 
+// ── Strip orphaned tool_calls from history before sending to Groq ─────────────
+// Groq rule: every assistant message with tool_calls MUST be followed by a tool
+// result. Any that aren't cause 400. This happens when tool execution throws.
+function sanitizeHistory(messages) {
+  const clean = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role === 'assistant' && msg.tool_calls?.length) {
+      const next = messages[i + 1];
+      if (next?.role !== 'tool') {
+        console.warn('[Agent] Dropping orphaned tool_call from history:', msg.tool_calls[0]?.function?.name);
+        continue;
+      }
+    }
+    clean.push(msg);
+  }
+  return clean;
+}
+
 // ── Register built-ins + load skills ──────────────────────────────────────────
 initRegistry(TOOL_DECLARATIONS, executeTool);
 
@@ -502,7 +521,7 @@ async function handleMessage(bot, chatId, text) {
 
   let response;
   try {
-    response = await callLLM(chatMessages, tools);
+    response = await callLLM(sanitizeHistory(chatMessages), tools);
   } catch (err) {
     console.error('[Agent] FULL ERROR:', err.stack || err);
     if (err.status === 429 || err.message?.includes('429')) {
@@ -527,7 +546,7 @@ async function handleMessage(bot, chatId, text) {
       if (canCall()) {
         increment();
         try {
-          response = await callLLM(chatMessages, tools);
+          response = await callLLM(sanitizeHistory(chatMessages), tools);
           chatMessages.push(response.choices[0].message);
         } catch (err) {
           console.error('[Agent] Nudge retry error:', err.message);
@@ -546,8 +565,14 @@ async function handleMessage(bot, chatId, text) {
       toolCalls.map(async tc => {
         const { name: toolName, args } = parseToolCall(tc);
         console.log('[Agent] Tool:', toolName, JSON.stringify(args));
-        const result = await executeAnyTool(toolName, args, { bot, chatId });
-        console.log('[Agent] Tool result:', String(result).substring(0, 200));
+        let result;
+        try {
+          result = await executeAnyTool(toolName, args, { bot, chatId });
+          console.log('[Agent] Tool result:', String(result).substring(0, 200));
+        } catch (err) {
+          console.error(`[Agent] Tool threw [${toolName}]:`, err.message);
+          result = `error: ${err.message}`;
+        }
         return { role: 'tool', tool_call_id: tc.id, content: String(result) };
       })
     );
@@ -562,7 +587,7 @@ async function handleMessage(bot, chatId, text) {
     increment();
 
     try {
-      response = await callLLM(chatMessages, tools);
+      response = await callLLM(sanitizeHistory(chatMessages), tools);
       chatMessages.push(response.choices[0].message);
     } catch (err) {
       console.error('[Agent] FULL ERROR:', err.stack || err);
