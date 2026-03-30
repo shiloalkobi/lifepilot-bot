@@ -144,7 +144,7 @@ function buildSystemPrompt(memory) {
 זמן: ${nowDisplay} | ${nowIL()} | ${getDayHebrew()}
 CRPS רגל שמאל (DRG) — כאב כרוני
 ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
-• השתמש בכלים רק כשהמשתמש מבקש פעולה מפורשת או שואל על נתונים ספציפיים — לעולם אל תקרא לכלים לסיפורים, הסברים, שיחת חולין או שאלות על אנשים/נושאים
+• כלים: קרא רק כשמשתמש מבקש במפורש — משימה/תזכורת/בריאות/תרופות/חיפוש/מזג אוויר. אסור לקרוא ל-get_current_context על שאלות כלליות, סיפורים, שיחת חולין, או שאלות על אנשים/נושאים
 • תזכורות: חשב בדיוק מהשעה הנ"ל
 • שרשור: "כאב+תזכורת" → log_health → add_reminder
 • 1-4 שורות, ✅, plain text, שאלה אחת מקסימום
@@ -254,6 +254,7 @@ function _getToolCalls() { return [..._toolCalls]; }
 // ── Tool executor ─────────────────────────────────────────────────────────────
 async function executeTool(name, args, ctx) {
   const { bot, chatId } = ctx;
+  args = (args && typeof args === 'object') ? args : {};
 
   // Coerce known numeric fields — Groq/Gemini sometimes returns numbers as strings
   const numericFields = ['pain', 'mood', 'sleep', 'task_id', 'task_index', 'reminder_id', 'note_id', 'minutes', 'position', 'days', 'count', 'maxResults'];
@@ -461,6 +462,8 @@ function parseToolCall(tc) {
   } catch (e) {
     console.error('[Agent] Failed to parse tool args:', args);
   }
+  // Groq sometimes sends "null" — JSON.parse("null") = null, not an object
+  if (!parsed || typeof parsed !== 'object') parsed = {};
   return { name, args: parsed };
 }
 
