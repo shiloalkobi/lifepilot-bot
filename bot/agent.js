@@ -144,7 +144,7 @@ function buildSystemPrompt(memory) {
 זמן: ${nowDisplay} | ${nowIL()} | ${getDayHebrew()}
 CRPS רגל שמאל (DRG) — כאב כרוני
 ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
-• כלים לפני כל תשובה — לא מזיכרון (tasks/health/meds/reminders)
+• השתמש בכלים רק כשהמשתמש מבקש פעולה מפורשת או שואל על נתונים ספציפיים — לעולם אל תקרא לכלים לסיפורים, הסברים, שיחת חולין או שאלות על אנשים/נושאים
 • תזכורות: חשב בדיוק מהשעה הנ"ל
 • שרשור: "כאב+תזכורת" → log_health → add_reminder
 • 1-4 שורות, ✅, plain text, שאלה אחת מקסימום
@@ -439,6 +439,31 @@ async function executeTool(name, args, ctx) {
   }
 }
 
+// ── Sanitize malformed tool calls from Groq ───────────────────────────────────
+// Groq bug: sometimes returns name = 'add_reminder{"key":"val"}' with args in name.
+// Mutates tc.function in place so history pushed to chatMessages stays clean.
+function parseToolCall(tc) {
+  let name = tc.function.name;
+  let args = tc.function.arguments;
+
+  const braceIdx = name.indexOf('{');
+  if (braceIdx !== -1) {
+    console.warn('[Agent] Malformed tool name, splitting:', name.slice(0, 60));
+    args = name.slice(braceIdx);
+    name = name.slice(0, braceIdx).trim();
+    tc.function.name      = name;
+    tc.function.arguments = args;
+  }
+
+  let parsed = {};
+  try {
+    parsed = typeof args === 'string' ? JSON.parse(args) : (args || {});
+  } catch (e) {
+    console.error('[Agent] Failed to parse tool args:', args);
+  }
+  return { name, args: parsed };
+}
+
 // ── Register built-ins + load skills ──────────────────────────────────────────
 initRegistry(TOOL_DECLARATIONS, executeTool);
 
@@ -516,19 +541,7 @@ async function handleMessage(bot, chatId, text) {
     // Execute all tool calls
     const toolResults = await Promise.all(
       toolCalls.map(async tc => {
-        // Fix: Gemini sometimes merges tool name + args into one string,
-        // e.g. name = 'add_reminder{"task":"..."}' — split them apart.
-        let toolName = tc.function.name;
-        let rawArgs  = tc.function.arguments;
-        const braceIdx = toolName.indexOf('{');
-        if (braceIdx !== -1) {
-          rawArgs  = toolName.substring(braceIdx);
-          toolName = toolName.substring(0, braceIdx).trim();
-          console.log('[Agent] Fixed malformed tool name:', tc.function.name, '→', toolName);
-        }
-
-        let args = {};
-        try { args = JSON.parse(rawArgs) ?? {}; } catch {}
+        const { name: toolName, args } = parseToolCall(tc);
         console.log('[Agent] Tool:', toolName, JSON.stringify(args));
         const result = await executeAnyTool(toolName, args, { bot, chatId });
         console.log('[Agent] Tool result:', String(result).substring(0, 200));
