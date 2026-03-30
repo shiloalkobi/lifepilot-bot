@@ -155,7 +155,7 @@ ${memBlock ? '## זיכרון\n' + memBlock + '\n' : ''}
 3. Chain tools when needed: "כאב + תזכורת" → log_health then add_reminder.
 4. Short replies, 1-4 lines. Confirm with ✅. Plain text, no HTML tags.
 5. אל תשאל יותר משאלה אחת בהודעה.
-6. For casual greetings and small talk (היי, מה שלומך, מה נשמע, בוקר טוב, ערב טוב, לילה טוב, שלום), respond naturally WITHOUT calling any tools. Only use tools when the user asks about specific data (tasks, health, reminders, medications, etc.).`;
+6. For casual greetings and small talk, respond naturally and warmly WITHOUT calling tools. Show genuine interest — ask how the user is doing, what's on their mind. Be a friend, not just an assistant.`;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ const TOOL_DECLARATIONS = [
   { name: 'complete_task',  description: 'סמן משימה כבוצעת לפי מספר.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
   { name: 'delete_task',    description: 'מחק משימה לצמיתות.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
   // Health
-  { name: 'log_health',         description: 'רשום כאב/שינה/מצב רוח ישירות ללא שאלון.', parameters: { type: 'object', properties: { pain: { description: 'pain 1-10 (חובה)' }, mood: { description: 'mood 1-10' }, sleep: { description: 'שעות שינה' }, symptoms: { type: 'string' }, notes: { type: 'string' } }, required: ['pain'] } },
+  { name: 'log_health',         description: 'רשום כאב/שינה/מצב רוח ישירות ללא שאלון.', parameters: { type: 'object', properties: { pain: { type: 'number', description: 'pain 1-10 (חובה)' }, mood: { type: 'number', description: 'mood 1-10' }, sleep: { type: 'number', description: 'שעות שינה' }, symptoms: { type: 'string' }, notes: { type: 'string' } }, required: ['pain'] } },
   { name: 'get_health_today',   description: 'קבל דיווח הבריאות של היום.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'get_health_summary', description: 'קבל סיכום בריאות N ימים אחרונים.', parameters: { type: 'object', properties: { days: { type: 'number', description: 'ברירת מחדל: 7' } }, required: [] } },
   // Medications
