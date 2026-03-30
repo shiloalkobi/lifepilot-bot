@@ -154,7 +154,8 @@ ${memBlock ? '## זיכרון\n' + memBlock + '\n' : ''}
 2. Time calculations (add_reminder): use the Israel time shown above and calculate precisely. "בעוד 10 דקות" = add 10 minutes to current time.
 3. Chain tools when needed: "כאב + תזכורת" → log_health then add_reminder.
 4. Short replies, 1-4 lines. Confirm with ✅. Plain text, no HTML tags.
-5. אל תשאל יותר משאלה אחת בהודעה.`;
+5. אל תשאל יותר משאלה אחת בהודעה.
+6. For casual greetings and small talk (היי, מה שלומך, מה נשמע, בוקר טוב, ערב טוב, לילה טוב, שלום), respond naturally WITHOUT calling any tools. Only use tools when the user asks about specific data (tasks, health, reminders, medications, etc.).`;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -166,7 +167,7 @@ const TOOL_DECLARATIONS = [
   { name: 'complete_task',  description: 'סמן משימה כבוצעת לפי מספר.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
   { name: 'delete_task',    description: 'מחק משימה לצמיתות.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
   // Health
-  { name: 'log_health',         description: 'רשום כאב/שינה/מצב רוח ישירות ללא שאלון.', parameters: { type: 'object', properties: { pain: { type: 'number', description: '1-10 (חובה)' }, mood: { type: 'number' }, sleep: { type: 'number', description: 'שעות שינה' }, symptoms: { type: 'string' }, notes: { type: 'string' } }, required: ['pain'] } },
+  { name: 'log_health',         description: 'רשום כאב/שינה/מצב רוח ישירות ללא שאלון.', parameters: { type: 'object', properties: { pain: { description: 'pain 1-10 (חובה)' }, mood: { description: 'mood 1-10' }, sleep: { description: 'שעות שינה' }, symptoms: { type: 'string' }, notes: { type: 'string' } }, required: ['pain'] } },
   { name: 'get_health_today',   description: 'קבל דיווח הבריאות של היום.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'get_health_summary', description: 'קבל סיכום בריאות N ימים אחרונים.', parameters: { type: 'object', properties: { days: { type: 'number', description: 'ברירת מחדל: 7' } }, required: [] } },
   // Medications
@@ -207,7 +208,40 @@ const TOOL_DECLARATIONS = [
   { name: 'delete_social_draft', description: 'מחק טיוטת פוסט לפי ID.', parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
 ];
 
-// ── Convert TOOL_DECLARATIONS → OpenAI/Groq format ───────────────────────────
+// ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
+const CORE_TOOL_NAMES = new Set([
+  'get_tasks', 'add_task', 'complete_task', 'delete_task',
+  'log_health', 'get_health_today',
+  'add_reminder', 'get_reminders',
+  'get_current_context',
+]);
+
+const EXTENDED_KEYWORDS = [
+  'news', 'חדשות', 'english', 'אנגלית', 'מילה', 'streak',
+  'pomodoro', 'פומודורו', 'טיימר',
+  'sites', 'אתרים', 'אתר',
+  'calendar', 'יומן', 'אירוע', 'פגישה',
+  'email', 'מייל', 'gmail',
+  'social', 'פוסט', 'instagram', 'facebook', 'tiktok',
+  'notes', 'הערות', 'הערה', 'חפש',
+  'health summary', 'סיכום בריאות',
+  'medications', 'תרופות', 'med',
+  'pomodoro stats',
+];
+
+function selectTools(userText) {
+  const lower = userText.toLowerCase();
+  const needsExtended = EXTENDED_KEYWORDS.some(kw => lower.includes(kw));
+  const decls = needsExtended
+    ? TOOL_DECLARATIONS
+    : TOOL_DECLARATIONS.filter(t => CORE_TOOL_NAMES.has(t.name));
+  return decls.map(t => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+}
+
+// ── Convert TOOL_DECLARATIONS → OpenAI/Groq format (full set, used by registry) ─
 const TOOLS = TOOL_DECLARATIONS.map(t => ({
   type: 'function',
   function: { name: t.name, description: t.description, parameters: t.parameters },
@@ -430,6 +464,7 @@ async function handleMessage(bot, chatId, text) {
   addMessage(chatId, 'user', text);
   const messages = getHistory(chatId);
   const memory   = loadMemory(chatId);
+  const tools    = selectTools(text);
 
   // Build message array for Groq
   const chatMessages = [
@@ -440,7 +475,7 @@ async function handleMessage(bot, chatId, text) {
 
   let response;
   try {
-    response = await callLLM(chatMessages, getAllToolDeclarations());
+    response = await callLLM(chatMessages, tools);
   } catch (err) {
     console.error('[Agent] FULL ERROR:', err.stack || err);
     if (err.status === 429 || err.message?.includes('429')) {
@@ -465,7 +500,7 @@ async function handleMessage(bot, chatId, text) {
       if (canCall()) {
         increment();
         try {
-          response = await callLLM(chatMessages, getAllToolDeclarations());
+          response = await callLLM(chatMessages, tools);
           chatMessages.push(response.choices[0].message);
         } catch (err) {
           console.error('[Agent] Nudge retry error:', err.message);
@@ -512,7 +547,7 @@ async function handleMessage(bot, chatId, text) {
     increment();
 
     try {
-      response = await callLLM(chatMessages, getAllToolDeclarations());
+      response = await callLLM(chatMessages, tools);
       chatMessages.push(response.choices[0].message);
     } catch (err) {
       console.error('[Agent] FULL ERROR:', err.stack || err);
