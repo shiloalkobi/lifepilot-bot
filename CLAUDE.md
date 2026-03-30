@@ -122,7 +122,20 @@ user: שילה אלקובי
 | Calendar/Gmail | get/find/create/update/delete_calendar_event, get_unread_emails |
 | Social | save/list/delete_social_draft |
 
-## Proactive (מתוכנן — Phase 3)
+## Shabbat Mode
+- Shabbat window fetched from Hebcal API (Rishon LeZion)
+- All messages blocked during Shabbat
+- Exception: Pikud HaOref alerts always pass through
+- Friday 16:30 IL: Shabbat eve message with candle times + parasha + tasks
+- Files: `bot/shabbat.js`, `bot/proactive.js`
+
+## Proactive Scheduler
+- 08:00 IL daily: morning task count
+- 21:00 IL daily: health reminder if not logged
+- 16:30 IL Friday: full Shabbat eve briefing (Hebcal API)
+- Requires: `TELEGRAM_CHAT_ID` env var (falls back to `ALERT_CHAT_ID`)
+
+## Proactive (Phase 3 — future)
 10 triggers: no health log 2+ days, pain≥7 3+ days, 8+ tasks stale, English streak broken, meds overdue 4h+, Friday momentum check.
 Anti-spam: max 2/day, 08:00-21:00 IL only, cooldowns 2-7 days per trigger.
 

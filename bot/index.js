@@ -8,6 +8,7 @@ const http = require('http');
 const cron = require('node-cron');
 const { startBot }                  = require('./telegram');
 const { startOrefMonitor, sendMockAlert } = require('./oref');
+const { startProactiveScheduler }   = require('./proactive');
 const { startScheduler }            = require('./scheduler');
 const { scheduleMedications }       = require('./medications');
 const { startReminderScheduler }    = require('./reminders');
@@ -36,6 +37,16 @@ if (mainChatId) {
 }
 
 startReminderScheduler(bot);
+
+// ── Proactive scheduler (Shabbat + morning + health reminder) ─────────────────
+{
+  const proactiveChatId = process.env.TELEGRAM_CHAT_ID || mainChatId;
+  if (proactiveChatId) {
+    startProactiveScheduler(bot, proactiveChatId);
+  } else {
+    console.warn('[Proactive] TELEGRAM_CHAT_ID not set — scheduler disabled');
+  }
+}
 
 // ── AI News cron — 08:30 Israel time daily ────────────────────────────────────
 {

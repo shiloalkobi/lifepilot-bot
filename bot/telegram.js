@@ -561,6 +561,20 @@ function startBot(token, webhookUrl = null) {
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
 
+    // ── Shabbat mode — silent except for Pikud HaOref ───────────────────────
+    {
+      const { isShabbatPrecise } = require('./shabbat');
+      const { isPikudAlert }     = require('./proactive');
+      if (isShabbatPrecise()) {
+        const text = msg.text || '';
+        if (!isPikudAlert(text)) {
+          console.log('[Shabbat] Message blocked during Shabbat');
+          return;
+        }
+        console.log('[Shabbat] Pikud HaOref alert — bypassing Shabbat mode');
+      }
+    }
+
     // ── Voice messages ───────────────────────────────────────────────────────
     if (msg.voice) {
       bot.sendChatAction(chatId, 'typing');
