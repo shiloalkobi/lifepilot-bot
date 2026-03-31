@@ -265,6 +265,8 @@ const EXTENDED_KEYWORDS = [
   'pomodoro stats',
   // Web search triggers
   'חיפוש', 'search', 'מחיר', 'כמה עולה', 'מה זה', 'תחפש', 'תבדוק', 'מה המחיר',
+  // OCR triggers
+  'סרוק', 'ocr', 'חלץ טקסט', 'קבלה', 'מרשם', 'כרטיס ביקור',
 ];
 
 function selectTools(userText) {

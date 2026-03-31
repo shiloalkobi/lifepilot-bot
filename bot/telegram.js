@@ -598,15 +598,75 @@ function startBot(token, webhookUrl = null) {
     if (msg.photo) {
       bot.sendChatAction(chatId, 'typing');
       try {
-        const { describeImage } = require('../skills/vision');
-        const largest = msg.photo[msg.photo.length - 1];
-        const file    = await bot.getFile(largest.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+        const { describeImage, ocrImage } = require('../skills/vision');
+        const largest  = msg.photo[msg.photo.length - 1];
+        const file     = await bot.getFile(largest.file_id);
+        const fileUrl  = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+        const userNote = msg.caption ? `\n📝 ${msg.caption}` : '';
+
+        // ── OCR-first: classify + extract ───────────────────────────────────
+        let ocr = null;
+        try {
+          console.log('[OCR] Analyzing image type...');
+          ocr = await ocrImage(fileUrl);
+          console.log('[OCR] Detected type:', ocr.type);
+        } catch (ocrErr) {
+          console.warn('[OCR] Parse failed, falling back to description:', ocrErr.message);
+        }
+
+        if (ocr && ocr.type !== 'other') {
+          let reply;
+
+          if (ocr.type === 'prescription') {
+            const meds = ocr.structured?.medications || [];
+            const medLines = meds.length
+              ? meds.map(m => `• <b>${m.name}</b>${m.dosage ? ` — ${m.dosage}` : ''}${m.frequency ? ` (${m.frequency})` : ''}`).join('\n')
+              : ocr.extractedText;
+            const content = `מרשם רופא:\n${meds.length ? meds.map(m => `${m.name}${m.dosage ? ' — ' + m.dosage : ''}${m.frequency ? ' (' + m.frequency + ')' : ''}`).join('\n') : ocr.extractedText}${userNote}`;
+            const note = await addNote(content);
+            reply = `💊 <b>מרשם זוהה ונשמר #${note.id}</b>\n\n${medLines}\n\n💡 להוסיף ליומן תרופות: <code>/med add שם HH:MM</code>`;
+
+          } else if (ocr.type === 'receipt') {
+            const s = ocr.structured || {};
+            const lines = [
+              s.store  ? `חנות: ${s.store}`   : '',
+              s.amount ? `סכום: ${s.amount}`   : '',
+              s.date   ? `תאריך: ${s.date}`    : '',
+            ].filter(Boolean).join('\n');
+            const content = `קבלה${s.store ? ' — ' + s.store : ''}${s.amount ? ' — ' + s.amount : ''}${s.date ? ' (' + s.date + ')' : ''}\n${ocr.extractedText}${userNote}`;
+            const note = await addNote(content);
+            reply = `🧾 <b>קבלה נשמרה #${note.id}</b>\n${lines || ocr.extractedText.substring(0, 200)}`;
+
+          } else if (ocr.type === 'business_card') {
+            const s = ocr.structured || {};
+            const lines = [
+              s.name    ? `שם: ${s.name}`       : '',
+              s.phone   ? `טל: ${s.phone}`       : '',
+              s.email   ? `אימייל: ${s.email}`   : '',
+              s.company ? `חברה: ${s.company}`   : '',
+            ].filter(Boolean).join('\n');
+            const content = `כרטיס ביקור:\n${lines || ocr.extractedText}${userNote}`;
+            const note = await addNote(content);
+            reply = `👤 <b>כרטיס ביקור נשמר #${note.id}</b>\n${lines || ocr.extractedText}`;
+
+          } else if (ocr.type === 'text') {
+            const agentMsg = `[OCR מתמונה]: ${ocr.extractedText}${userNote}`;
+            reply = await handleMessage(bot, chatId, agentMsg);
+          }
+
+          if (reply) {
+            bot.sendMessage(chatId, reply, { parse_mode: 'HTML' })
+              .catch(e => console.error('[OCR] sendMessage:', e.message));
+            return;
+          }
+        }
+
+        // ── Fallback: general image description → agent ──────────────────────
         console.log('[Vision] Describing photo...');
         const description = await describeImage(fileUrl);
         console.log('[Vision] Description:', description.substring(0, 100));
-        const caption  = msg.caption ? ` המשתמש כתב: "${msg.caption}"` : '';
-        const reply    = await handleMessage(bot, chatId, `[תמונה שנשלחה]: ${description}${caption}`);
+        const caption = msg.caption ? ` המשתמש כתב: "${msg.caption}"` : '';
+        const reply   = await handleMessage(bot, chatId, `[תמונה שנשלחה]: ${description}${caption}`);
         bot.sendMessage(chatId, reply).catch((e) => console.error('[Vision] sendMessage:', e.message));
       } catch (err) {
         console.error('[Vision]', err.message);
