@@ -33,6 +33,7 @@ const {
   findEventsByQuery, updateCalendarEvent, deleteCalendarEvent,
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
+const { getExpenses } = require('./expenses');
 
 console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
 console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
@@ -188,7 +189,8 @@ ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 • תזכורות: חשב בדיוק מהשעה הנ"ל
 • שרשור: "כאב+תזכורת" → log_health → add_reminder
 • 1-4 שורות, ✅, plain text, שאלה אחת מקסימום
-• שיחת חולין: ענה בחום ללא כלים — שאל בחזרה, היה חבר`;
+• שיחת חולין: ענה בחום ללא כלים — שאל בחזרה, היה חבר
+• כשהודעה מתחילה ב-[תמונה שנשלחה] — עיבדת תמונה בהצלחה דרך Vision AI, תאר מה ראית`;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -241,6 +243,8 @@ const TOOL_DECLARATIONS = [
   { name: 'save_social_draft',   description: 'שמור טיוטת פוסט לסושיאל מדיה.', parameters: { type: 'object', properties: { platform: { type: 'string', description: 'Instagram/Facebook/TikTok' }, content: { type: 'string' }, hashtags: { type: 'string' }, imagePrompt: { type: 'string' } }, required: ['platform', 'content'] } },
   { name: 'list_social_drafts',  description: 'הצג כל טיוטות הפוסטים.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'delete_social_draft', description: 'מחק טיוטת פוסט לפי ID.', parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  // Expenses
+  { name: 'get_expenses', description: 'הצג קבלות/הוצאות שנסרקו מתמונות.', parameters: { type: 'object', properties: {}, required: [] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -250,6 +254,7 @@ const CORE_TOOL_NAMES = new Set([
   'add_reminder', 'get_reminders',
   'get_current_context',
   'get_rate_stats',
+  'get_expenses',
 ]);
 
 const EXTENDED_KEYWORDS = [
@@ -475,6 +480,15 @@ async function executeTool(name, args, ctx) {
       case 'save_social_draft':   return saveDraft(args);
       case 'list_social_drafts':  return listDrafts();
       case 'delete_social_draft': return deleteDraft(args.id);
+
+      // ── Expenses ───────────────────────────────────────────────────────────
+      case 'get_expenses': {
+        const exps = getExpenses();
+        if (!exps.length) return 'אין קבלות שמורות עדיין';
+        return exps.slice(0, 20).map(e =>
+          `#${e.id}: ${e.store || '?'} | ${e.amount || '?'} | ${e.date || '?'}`
+        ).join('\n');
+      }
 
       // ── Rate Stats ─────────────────────────────────────────────────────────
       case 'get_rate_stats': return formatStats();

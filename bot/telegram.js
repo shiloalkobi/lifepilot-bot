@@ -599,6 +599,7 @@ function startBot(token, webhookUrl = null) {
       bot.sendChatAction(chatId, 'typing');
       try {
         const { describeImage, ocrImage } = require('../skills/vision');
+        const { saveExpense } = require('./expenses');
         const largest  = msg.photo[msg.photo.length - 1];
         const file     = await bot.getFile(largest.file_id);
         const fileUrl  = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
@@ -635,7 +636,8 @@ function startBot(token, webhookUrl = null) {
             ].filter(Boolean).join('\n');
             const content = `קבלה${s.store ? ' — ' + s.store : ''}${s.amount ? ' — ' + s.amount : ''}${s.date ? ' (' + s.date + ')' : ''}\n${ocr.extractedText}${userNote}`;
             const note = await addNote(content);
-            reply = `🧾 <b>קבלה נשמרה #${note.id}</b>\n${lines || ocr.extractedText.substring(0, 200)}`;
+            const expense = saveExpense({ store: s.store, amount: s.amount, date: s.date, extractedText: ocr.extractedText, noteId: note.id });
+            reply = `🧾 <b>קבלה נשמרה #${note.id} (הוצאה #${expense.id})</b>\n${lines || ocr.extractedText.substring(0, 200)}`;
 
           } else if (ocr.type === 'business_card') {
             const s = ocr.structured || {};

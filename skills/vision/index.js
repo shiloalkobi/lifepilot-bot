@@ -64,16 +64,17 @@ async function ocrImage(fileUrl) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model  = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
-  const prompt = `נתח את התמונה הזו ובצע OCR.
+  const prompt = `נתח את התמונה הזו ובצע OCR מלא. התמונה עשויה להכיל טקסט בעברית, אנגלית, או שניהם יחד.
 1. זהה את סוג התמונה: מרשם/קבלה/כרטיס ביקור/טקסט/אחר
-2. חלץ את כל הטקסט
-3. החזר JSON בלבד (ללא מלל נוסף, ללא markdown):
+2. חלץ את כל הטקסט — כולל מספרים, תאריכים, סכומים בשקלים (₪ או NIS), מע"מ, עודף
+3. לקבלות: חלץ את שם החנות/עסק, סכום סופי לתשלום, תאריך (פורמט DD/MM/YYYY או MM/YYYY), ופריטים בודדים אם קיימים
+4. החזר JSON בלבד (ללא מלל נוסף, ללא markdown, ללא \`\`\`):
 {
   "type": "prescription" | "receipt" | "business_card" | "text" | "other",
-  "extractedText": "כל הטקסט שחולץ מהתמונה",
+  "extractedText": "כל הטקסט שחולץ מהתמונה (כולל עברית ואנגלית)",
   "structured": {
     // למרשם: "medications": [{"name":"...","dosage":"...","frequency":"..."}]
-    // לקבלה: "amount":"...","store":"...","date":"..."
+    // לקבלה: "store":"שם החנות","amount":"סכום סופי כולל סימן מטבע","date":"DD/MM/YYYY","items":[{"desc":"...","price":"..."}]
     // לכרטיס ביקור: "name":"...","phone":"...","email":"...","company":"..."
   }
 }`;
