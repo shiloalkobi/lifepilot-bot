@@ -38,6 +38,15 @@ if (mainChatId) {
 
 startReminderScheduler(bot);
 
+// ── Rate limiter alert hook ───────────────────────────────────────────────────
+{
+  const { setAlertFn } = require('./rate-limiter');
+  const alertTarget = process.env.TELEGRAM_CHAT_ID || mainChatId;
+  if (alertTarget) {
+    setAlertFn((msg) => bot.sendMessage(alertTarget, msg, { parse_mode: 'HTML' }));
+  }
+}
+
 // ── Proactive scheduler (Shabbat + morning + health reminder) ─────────────────
 {
   const proactiveChatId = process.env.TELEGRAM_CHAT_ID || mainChatId;

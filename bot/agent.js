@@ -3,7 +3,12 @@
 const fs   = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
-const { canCall, increment }           = require('./rate-limiter');
+const {
+  canCall, increment,
+  canCallGemini, incrementGemini,
+  canCallGroq, addGroqTokens,
+  formatStats,
+} = require('./rate-limiter');
 const { getHistory, addMessage }       = require('./history');
 const { loadMemory, formatMemoryBlock } = require('./agent-memory');
 const { initRegistry, getAllToolDeclarations, executeAnyTool } = require('./skills-registry');
@@ -88,35 +93,45 @@ async function callLLM(messages, tools) {
     }
   }
 
-  // Primary: Gemini 2.5 Flash
-  try {
-    const res = await gemini.chat.completions.create({
-      model:       'gemini-2.5-flash',
-      messages,
-      tools,
-      tool_choice: 'auto',
-      temperature: 0.7,
-    });
-    console.log(`[Agent] Provider: Gemini 2.5 Flash (primary) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
-    return res;
-  } catch (err) {
-    if (err.status === 429 || err.message?.includes('429')) {
-      console.warn('[Agent] Gemini 429 — falling back to Groq');
-    } else {
-      console.warn('[Agent] Gemini error — falling back to Groq:', err.message);
+  // Primary: Gemini 2.5 Flash — skip if at 95% of daily quota
+  if (canCallGemini()) {
+    try {
+      const res = await gemini.chat.completions.create({
+        model:       'gemini-2.5-flash',
+        messages,
+        tools,
+        tool_choice: 'auto',
+        temperature: 0.7,
+      });
+      incrementGemini();
+      console.log(`[Agent] Provider: Gemini 2.5 Flash (primary) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
+      return res;
+    } catch (err) {
+      if (err.status === 429 || err.message?.includes('429')) {
+        console.warn('[Agent] Gemini 429 — falling back to Groq');
+      } else {
+        console.warn('[Agent] Gemini error — falling back to Groq:', err.message);
+      }
     }
-    // Fallback: Groq
-    const res = await groq.chat.completions.create({
-      model:               'llama-3.3-70b-versatile',
-      messages,
-      tools,
-      tool_choice:          'auto',
-      parallel_tool_calls:  false,
-      temperature:          0.7,
-    });
-    console.log(`[Agent] Provider: Groq (fallback) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
-    return res;
+  } else {
+    console.warn('[RateLimit] Gemini 95% — switching to Groq');
   }
+
+  // Fallback: Groq
+  if (!canCallGroq()) {
+    throw new Error('daily_quota_exhausted');
+  }
+  const res = await groq.chat.completions.create({
+    model:               'llama-3.3-70b-versatile',
+    messages,
+    tools,
+    tool_choice:          'auto',
+    parallel_tool_calls:  false,
+    temperature:          0.7,
+  });
+  addGroqTokens(res.usage?.total_tokens ?? 0);
+  console.log(`[Agent] Provider: Groq (fallback) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
+  return res;
 }
 
 // Load Shilo's profile
@@ -220,6 +235,8 @@ const TOOL_DECLARATIONS = [
   { name: 'update_calendar_event', description: 'מעדכן אירוע קיים; דרוש eventId מ-find_calendar_events.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' }, startDateTime: { type: 'string' }, endDateTime: { type: 'string' } }, required: ['eventId'] } },
   { name: 'delete_calendar_event', description: 'מוחק אירוע מ-Google Calendar לפי eventId.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' } }, required: ['eventId'] } },
   { name: 'get_unread_emails',     description: 'מביא מיילים שלא נקראו מ-Gmail.', parameters: { type: 'object', properties: { maxResults: { type: 'number', description: 'ברירת מחדל: 5' } }, required: [] } },
+  // Rate Limit
+  { name: 'get_rate_stats', description: 'הצג מצב מכסת API: Gemini, Groq, כללי.', parameters: { type: 'object', properties: {}, required: [] } },
   // Social
   { name: 'save_social_draft',   description: 'שמור טיוטת פוסט לסושיאל מדיה.', parameters: { type: 'object', properties: { platform: { type: 'string', description: 'Instagram/Facebook/TikTok' }, content: { type: 'string' }, hashtags: { type: 'string' }, imagePrompt: { type: 'string' } }, required: ['platform', 'content'] } },
   { name: 'list_social_drafts',  description: 'הצג כל טיוטות הפוסטים.', parameters: { type: 'object', properties: {}, required: [] } },
@@ -232,6 +249,7 @@ const CORE_TOOL_NAMES = new Set([
   'log_health', 'get_health_today',
   'add_reminder', 'get_reminders',
   'get_current_context',
+  'get_rate_stats',
 ]);
 
 const EXTENDED_KEYWORDS = [
@@ -456,6 +474,9 @@ async function executeTool(name, args, ctx) {
       case 'list_social_drafts':  return listDrafts();
       case 'delete_social_draft': return deleteDraft(args.id);
 
+      // ── Rate Stats ─────────────────────────────────────────────────────────
+      case 'get_rate_stats': return formatStats();
+
       default:
         return `כלי לא מוכר: ${name}`;
     }
@@ -549,6 +570,11 @@ async function handleMessage(bot, chatId, text) {
     response = await callLLM(sanitizeHistory(chatMessages), tools);
   } catch (err) {
     console.error('[Agent] FULL ERROR:', err.stack || err);
+    if (err.message === 'daily_quota_exhausted') {
+      const reply = '🔴 המכסה היומית של כל הספקים אזלה. מתאפס בחצות שעון ישראל.';
+      addMessage(chatId, 'model', reply);
+      return reply;
+    }
     if (err.status === 429 || err.message?.includes('429')) {
       const reply = '⏳ הגבלת קריאות API — נסה שוב בעוד כמה דקות.';
       addMessage(chatId, 'model', reply);
