@@ -40,19 +40,41 @@ const gemini = new OpenAI({
   baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
 });
 
+// ── Gemini tool format converter ──────────────────────────────────────────────
+// Gemini 2.5 native API uses uppercase types; kept here for future native use.
+function toGeminiTools(declarations) {
+  return [{
+    functionDeclarations: declarations.map(t => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters ? {
+        type: 'OBJECT',
+        properties: Object.fromEntries(
+          Object.entries(t.parameters.properties || {})
+            .map(([k, v]) => [k, {
+              type: (v.type || 'string').toUpperCase(),
+              description: v.description || ''
+            }])
+        ),
+        required: t.parameters.required || []
+      } : { type: 'OBJECT', properties: {} }
+    }))
+  }];
+}
+
 async function callLLM(messages, tools) {
   // FORCE_GEMINI=1 skips Groq entirely (used in tests / when Groq quota is exhausted)
   if (process.env.FORCE_GEMINI === '1') {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await gemini.chat.completions.create({
-          model:       'gemini-3.1-flash-lite-preview',
+          model:       'gemini-2.5-flash',
           messages,
           tools,
           tool_choice: 'auto',
           temperature: 0.7,
         });
-        console.log(`[Agent] Provider: Gemini (forced) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
+        console.log(`[Agent] Provider: Gemini 2.5 Flash (forced) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
         return res;
       } catch (err) {
         if ((err.status === 429 || err.message?.includes('429')) && attempt < 2) {
@@ -66,7 +88,24 @@ async function callLLM(messages, tools) {
     }
   }
 
+  // Primary: Gemini 2.5 Flash
   try {
+    const res = await gemini.chat.completions.create({
+      model:       'gemini-2.5-flash',
+      messages,
+      tools,
+      tool_choice: 'auto',
+      temperature: 0.7,
+    });
+    console.log(`[Agent] Provider: Gemini 2.5 Flash (primary) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
+    return res;
+  } catch (err) {
+    if (err.status === 429 || err.message?.includes('429')) {
+      console.warn('[Agent] Gemini 429 — falling back to Groq');
+    } else {
+      console.warn('[Agent] Gemini error — falling back to Groq:', err.message);
+    }
+    // Fallback: Groq
     const res = await groq.chat.completions.create({
       model:               'llama-3.3-70b-versatile',
       messages,
@@ -75,22 +114,8 @@ async function callLLM(messages, tools) {
       parallel_tool_calls:  false,
       temperature:          0.7,
     });
-    console.log(`[Agent] Provider: Groq | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
+    console.log(`[Agent] Provider: Groq (fallback) | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
     return res;
-  } catch (err) {
-    if (err.status === 429 || err.message?.includes('429')) {
-      console.warn('[Agent] Groq 429 — falling back to Gemini');
-      const res = await gemini.chat.completions.create({
-        model:       'gemini-3.1-flash-lite-preview',
-        messages,
-        tools,
-        tool_choice: 'auto',
-        temperature: 0.7,
-      });
-      console.log(`[Agent] Provider: Gemini | finish_reason: ${res.choices[0]?.finish_reason} | tokens: ${res.usage?.total_tokens ?? '?'}`);
-      return res;
-    }
-    throw err;
   }
 }
 
