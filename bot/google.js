@@ -146,12 +146,41 @@ async function getUnreadEmails(maxResults = 5, query = '') {
   const auth  = getAuthClient();
   const gmail = google.gmail({ version: 'v1', auth });
 
-  const q = query ? `is:unread is:inbox ${query}` : DEFAULT_GMAIL_FILTER;
+  const q = query
+    ? `is:unread is:inbox -category:promotions -category:social -category:spam ${query}`
+    : DEFAULT_GMAIL_FILTER;
 
   const res = await gmail.users.messages.list({ userId: 'me', q, maxResults });
 
   const messages = res.data.messages || [];
   if (messages.length === 0) return 'אין מיילים שלא נקראו.';
+
+  const details = await Promise.all(
+    messages.map((m) =>
+      gmail.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] })
+    )
+  );
+
+  return details.map((d) => {
+    const headers = d.data.payload.headers;
+    const from    = headers.find((h) => h.name === 'From')?.value    || 'לא ידוע';
+    const subject = headers.find((h) => h.name === 'Subject')?.value || 'ללא נושא';
+    const date    = headers.find((h) => h.name === 'Date')?.value    || '';
+    const id      = d.data.id;
+    return `📧 [${id}] מ: ${from.replace(/<.*>/, '').trim()}\n   נושא: ${subject}\n   תאריך: ${date}`;
+  }).join('\n\n');
+}
+
+async function searchEmails(query, maxResults = 10) {
+  const auth  = getAuthClient();
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const q = query || 'newer_than:7d -category:promotions';
+
+  const res = await gmail.users.messages.list({ userId: 'me', q, maxResults });
+
+  const messages = res.data.messages || [];
+  if (messages.length === 0) return 'לא נמצאו מיילים לפי החיפוש.';
 
   const details = await Promise.all(
     messages.map((m) =>
@@ -222,5 +251,6 @@ module.exports = {
   updateCalendarEvent,
   deleteCalendarEvent,
   getUnreadEmails,
+  searchEmails,
   getEmailBody,
 };
