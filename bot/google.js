@@ -318,7 +318,8 @@ function extractCurrencyFromText(text) {
   return 'ILS';
 }
 
-async function scanEmailsForInvoices(maxResults = 20) {
+async function scanEmailsForInvoices(maxResults = 10) {
+  console.log('[PDF] pdfParse available:', typeof pdfParse);
   const auth  = getAuthClient();
   const gmail = google.gmail({ version: 'v1', auth });
 
@@ -404,6 +405,27 @@ async function scanEmailsForInvoices(maxResults = 20) {
   }).filter(Boolean);
 }
 
+async function sendEmail(to, subject, body) {
+  const auth  = getAuthClient();
+  const gmail = google.gmail({ version: 'v1', auth });
+  const message = [
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(body).toString('base64'),
+  ].join('\n');
+  const encoded = Buffer.from(message)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encoded } });
+  return `✅ מייל נשלח אל ${to}`;
+}
+
 module.exports = {
   getCalendarEvents,
   createCalendarEvent,
@@ -414,4 +436,5 @@ module.exports = {
   searchEmails,
   getEmailBody,
   scanEmailsForInvoices,
+  sendEmail,
 };

@@ -14,6 +14,7 @@ const TOKEN_PATH = path.join(__dirname, 'google_token.json');
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
 ];
 
 const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'));

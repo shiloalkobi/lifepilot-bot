@@ -31,7 +31,7 @@ const { load: loadSites, runChecks }                    = require('./sites');
 const {
   getCalendarEvents, createCalendarEvent, getUnreadEmails,
   findEventsByQuery, updateCalendarEvent, deleteCalendarEvent,
-  searchEmails, getEmailBody, scanEmailsForInvoices,
+  searchEmails, getEmailBody, scanEmailsForInvoices, sendEmail,
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
 const { getExpenses, saveInvoice, getExpenseSummary, exportToCSV } = require('./expenses');
@@ -241,6 +241,7 @@ const TOOL_DECLARATIONS = [
   { name: 'get_unread_emails',     description: 'הצג מיילים חדשים שלא נקראו בלבד — לשאלות כמו "יש לי מיילים חדשים?", "מה יש לי במייל?". אל תשתמש לחיפוש לפי נושא/שולח/תוכן.', parameters: { type: 'object', properties: { maxResults: { type: 'number', description: 'ברירת מחדל: 5' }, query: { type: 'string', description: 'Gmail query למשל: has:attachment, from:X, subject:Y' } }, required: [] } },
   { name: 'get_email_body',        description: 'קרא תוכן מלא של מייל לפי ID — לסיכום או עיון.', parameters: { type: 'object', properties: { emailId: { type: 'string', description: 'ID מ-get_unread_emails' } }, required: ['emailId'] } },
   { name: 'search_emails',         description: 'חפש מיילים לפי קריטריונים — גם נקראים וגם לא נקראים. השתמש בכלי זה כשמחפשים: חשבוניות, קבלות, מיילים מאדם ספציפי, מיילים עם קבצים, מיילים לפי תאריך. דוגמאות: from:X, subject:חשבונית, has:attachment, newer_than:7d.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Gmail search: from:X, subject:Y, has:attachment, newer_than:7d' }, maxResults: { type: 'number' } }, required: ['query'] } },
+  { name: 'send_email',            description: 'שלח מייל מהחשבון שלך. ציין נמען, נושא וגוף.', parameters: { type: 'object', properties: { to: { type: 'string', description: 'כתובת אימייל' }, subject: { type: 'string', description: 'נושא המייל' }, body: { type: 'string', description: 'תוכן המייל' } }, required: ['to', 'subject', 'body'] } },
   // Rate Limit
   { name: 'get_rate_stats', description: 'הצג מצב מכסת API: Gemini, Groq, כללי.', parameters: { type: 'object', properties: {}, required: [] } },
   // Social
@@ -270,7 +271,7 @@ const EXTENDED_KEYWORDS = [
   'pomodoro', 'פומודורו', 'טיימר',
   'sites', 'אתרים', 'אתר',
   'calendar', 'יומן', 'אירוע', 'פגישה', 'פגישות', 'עדכן פגישה',
-  'email', 'מייל', 'אימייל', 'gmail', 'inbox', 'תסכם מייל', 'שלח מייל', 'תשלח', 'חפש מייל', 'מצא מייל',
+  'email', 'מייל', 'אימייל', 'gmail', 'inbox', 'תסכם מייל', 'שלח מייל', 'תשלח מייל', 'שליחת מייל', 'תשלח', 'חפש מייל', 'מצא מייל',
   'social', 'פוסט', 'instagram', 'facebook', 'tiktok',
   'notes', 'הערות', 'הערה', 'חפש',
   'health summary', 'סיכום בריאות',
@@ -488,6 +489,7 @@ async function executeTool(name, args, ctx) {
       case 'get_unread_emails':      return await getUnreadEmails(Number(args.maxResults) || 5, args.query || '');
       case 'get_email_body':         return await getEmailBody(args.emailId);
       case 'search_emails':          return await searchEmails(args.query, Number(args.maxResults) || 10);
+      case 'send_email':             return await sendEmail(args.to, args.subject, args.body);
 
       // ── Social ─────────────────────────────────────────────────────────────
       case 'save_social_draft':   return saveDraft(args);
