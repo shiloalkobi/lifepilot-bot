@@ -11,6 +11,7 @@ const { getDailyWord, formatWord } = require('./english'); // getDailyWord is as
 const { buildSummaryMessage }      = require('./daily-summary');
 const { buildWeeklySummaryMessage } = require('./weekly-summary');
 const { sendNews }                 = require('./news');
+const { getCalendarEvents }        = require('./google');
 const { fetchAINews } = require('../skills/ai-news');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
@@ -93,10 +94,11 @@ function getDailyTip() {
 
 // ── Build the morning message ─────────────────────────────────────────────────
 async function buildMorningMessage() {
-  const [weather, aiStories, quote] = await Promise.all([
+  const [weather, aiStories, quote, calendarToday] = await Promise.all([
     fetchWeather(),
     fetchAINews().catch(() => []),
     Promise.resolve(getDailyQuote()),
+    getCalendarEvents(1).catch(() => null),
   ]);
 
   const dateStr = getHebrewDateLine();
@@ -139,6 +141,13 @@ async function buildMorningMessage() {
     lines.push('');
   } else if (!hadEntryYesterday()) {
     lines.push('📝 <b>תזכורת:</b> לא מילאת דיווח בריאות אתמול. /health');
+    lines.push('');
+  }
+
+  // Today's calendar events
+  if (calendarToday && calendarToday !== 'אין אירועים בתקופה זו.') {
+    lines.push('📅 <b>פגישות היום:</b>');
+    lines.push(calendarToday);
     lines.push('');
   }
 

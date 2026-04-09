@@ -31,6 +31,7 @@ const { load: loadSites, runChecks }                    = require('./sites');
 const {
   getCalendarEvents, createCalendarEvent, getUnreadEmails,
   findEventsByQuery, updateCalendarEvent, deleteCalendarEvent,
+  getEmailBody,
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
 const { getExpenses } = require('./expenses');
@@ -237,7 +238,8 @@ const TOOL_DECLARATIONS = [
   { name: 'create_calendar_event', description: 'יוצר אירוע חדש ב-Google Calendar.', parameters: { type: 'object', properties: { summary: { type: 'string' }, startDateTime: { type: 'string', description: 'ISO 8601' }, endDateTime: { type: 'string', description: 'ISO 8601' } }, required: ['summary', 'startDateTime', 'endDateTime'] } },
   { name: 'update_calendar_event', description: 'מעדכן אירוע קיים; דרוש eventId מ-find_calendar_events.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' }, startDateTime: { type: 'string' }, endDateTime: { type: 'string' } }, required: ['eventId'] } },
   { name: 'delete_calendar_event', description: 'מוחק אירוע מ-Google Calendar לפי eventId.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' } }, required: ['eventId'] } },
-  { name: 'get_unread_emails',     description: 'מביא מיילים שלא נקראו מ-Gmail.', parameters: { type: 'object', properties: { maxResults: { type: 'number', description: 'ברירת מחדל: 5' } }, required: [] } },
+  { name: 'get_unread_emails',     description: 'מביא מיילים שלא נקראו מ-Gmail. ללא קידומים/ספאם.', parameters: { type: 'object', properties: { maxResults: { type: 'number', description: 'ברירת מחדל: 5' }, query: { type: 'string', description: 'Gmail query למשל: has:attachment, from:X, subject:Y' } }, required: [] } },
+  { name: 'get_email_body',        description: 'קרא תוכן מלא של מייל לפי ID — לסיכום או עיון.', parameters: { type: 'object', properties: { emailId: { type: 'string', description: 'ID מ-get_unread_emails' } }, required: ['emailId'] } },
   // Rate Limit
   { name: 'get_rate_stats', description: 'הצג מצב מכסת API: Gemini, Groq, כללי.', parameters: { type: 'object', properties: {}, required: [] } },
   // Social
@@ -262,8 +264,8 @@ const EXTENDED_KEYWORDS = [
   'news', 'חדשות', 'english', 'אנגלית', 'מילה', 'streak',
   'pomodoro', 'פומודורו', 'טיימר',
   'sites', 'אתרים', 'אתר',
-  'calendar', 'יומן', 'אירוע', 'פגישה', 'פגישות',
-  'email', 'מייל', 'אימייל', 'gmail', 'inbox',
+  'calendar', 'יומן', 'אירוע', 'פגישה', 'פגישות', 'עדכן פגישה',
+  'email', 'מייל', 'אימייל', 'gmail', 'inbox', 'תסכם מייל', 'שלח מייל', 'תשלח',
   'social', 'פוסט', 'instagram', 'facebook', 'tiktok',
   'notes', 'הערות', 'הערה', 'חפש',
   'health summary', 'סיכום בריאות',
@@ -475,7 +477,8 @@ async function executeTool(name, args, ctx) {
       case 'create_calendar_event':  return await createCalendarEvent(args.summary, args.startDateTime, args.endDateTime);
       case 'update_calendar_event':  return await updateCalendarEvent(args.eventId, { summary: args.summary, startDateTime: args.startDateTime, endDateTime: args.endDateTime });
       case 'delete_calendar_event':  return await deleteCalendarEvent(args.eventId);
-      case 'get_unread_emails':      return await getUnreadEmails(Number(args.maxResults) || 5);
+      case 'get_unread_emails':      return await getUnreadEmails(Number(args.maxResults) || 5, args.query || '');
+      case 'get_email_body':         return await getEmailBody(args.emailId);
 
       // ── Social ─────────────────────────────────────────────────────────────
       case 'save_social_draft':   return saveDraft(args);

@@ -68,34 +68,6 @@ async function createCalendarEvent(summary, startDateTime, endDateTime) {
   return `✅ אירוע נוצר: "${summary}"`;
 }
 
-// ── Gmail ─────────────────────────────────────────────────────────────────────
-async function getUnreadEmails(maxResults = 5) {
-  const auth  = getAuthClient();
-  const gmail = google.gmail({ version: 'v1', auth });
-
-  const res = await gmail.users.messages.list({
-    userId: 'me',
-    q: 'is:unread is:inbox',
-    maxResults,
-  });
-
-  const messages = res.data.messages || [];
-  if (messages.length === 0) return 'אין מיילים שלא נקראו.';
-
-  const details = await Promise.all(
-    messages.map((m) =>
-      gmail.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] })
-    )
-  );
-
-  return details.map((d) => {
-    const headers = d.data.payload.headers;
-    const from    = headers.find((h) => h.name === 'From')?.value    || 'לא ידוע';
-    const subject = headers.find((h) => h.name === 'Subject')?.value || 'ללא נושא';
-    return `📧 מ: ${from.replace(/<.*>/, '').trim()}\n   נושא: ${subject}`;
-  }).join('\n\n');
-}
-
 async function findEventsByQuery(query, days = 30) {
   const auth     = getAuthClient();
   const calendar = google.calendar({ version: 'v3', auth });
@@ -122,7 +94,6 @@ async function findEventsByQuery(query, days = 30) {
 
   const events = (res.data.items || []).filter((e) => {
     const summary = (e.summary || '').toLowerCase();
-    // Match untitled events
     if (isSearchingNoTitle && !e.summary) return true;
     return queryWords.some((w) => summary.includes(w));
   });
@@ -166,4 +137,90 @@ async function deleteCalendarEvent(eventId) {
   return '✅ האירוע נמחק.';
 }
 
-module.exports = { getCalendarEvents, createCalendarEvent, getUnreadEmails, findEventsByQuery, updateCalendarEvent, deleteCalendarEvent };
+// ── Gmail ─────────────────────────────────────────────────────────────────────
+
+// Default query excludes promotions, social, and spam
+const DEFAULT_GMAIL_FILTER = 'is:unread is:inbox -category:promotions -category:social -category:spam';
+
+async function getUnreadEmails(maxResults = 5, query = '') {
+  const auth  = getAuthClient();
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const q = query ? `is:unread is:inbox ${query}` : DEFAULT_GMAIL_FILTER;
+
+  const res = await gmail.users.messages.list({ userId: 'me', q, maxResults });
+
+  const messages = res.data.messages || [];
+  if (messages.length === 0) return 'אין מיילים שלא נקראו.';
+
+  const details = await Promise.all(
+    messages.map((m) =>
+      gmail.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] })
+    )
+  );
+
+  return details.map((d) => {
+    const headers = d.data.payload.headers;
+    const from    = headers.find((h) => h.name === 'From')?.value    || 'לא ידוע';
+    const subject = headers.find((h) => h.name === 'Subject')?.value || 'ללא נושא';
+    const date    = headers.find((h) => h.name === 'Date')?.value    || '';
+    const id      = d.data.id;
+    return `📧 [${id}] מ: ${from.replace(/<.*>/, '').trim()}\n   נושא: ${subject}\n   תאריך: ${date}`;
+  }).join('\n\n');
+}
+
+// Extract plain text from email parts recursively
+function extractTextFromParts(parts = []) {
+  for (const part of parts) {
+    if (part.mimeType === 'text/plain' && part.body?.data) {
+      return Buffer.from(part.body.data, 'base64').toString('utf8');
+    }
+    if (part.parts) {
+      const found = extractTextFromParts(part.parts);
+      if (found) return found;
+    }
+  }
+  // Fallback: try text/html
+  for (const part of parts) {
+    if (part.mimeType === 'text/html' && part.body?.data) {
+      return Buffer.from(part.body.data, 'base64').toString('utf8').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  }
+  return null;
+}
+
+async function getEmailBody(emailId) {
+  const auth  = getAuthClient();
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.messages.get({ userId: 'me', id: emailId, format: 'full' });
+  const msg = res.data;
+
+  const headers = msg.payload.headers || [];
+  const from    = headers.find((h) => h.name === 'From')?.value    || 'לא ידוע';
+  const subject = headers.find((h) => h.name === 'Subject')?.value || 'ללא נושא';
+  const date    = headers.find((h) => h.name === 'Date')?.value    || '';
+
+  let body = null;
+  if (msg.payload.body?.data) {
+    body = Buffer.from(msg.payload.body.data, 'base64').toString('utf8');
+  } else if (msg.payload.parts) {
+    body = extractTextFromParts(msg.payload.parts);
+  }
+
+  if (!body) return `📧 מ: ${from}\nנושא: ${subject}\nתאריך: ${date}\n\n(לא ניתן לחלץ תוכן)`;
+
+  // Truncate to 3000 chars to avoid LLM overload
+  const truncated = body.length > 3000 ? body.slice(0, 3000) + '\n...[קוצר]' : body;
+  return `📧 מ: ${from}\nנושא: ${subject}\nתאריך: ${date}\n\n${truncated}`;
+}
+
+module.exports = {
+  getCalendarEvents,
+  createCalendarEvent,
+  findEventsByQuery,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  getUnreadEmails,
+  getEmailBody,
+};
