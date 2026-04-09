@@ -3,13 +3,7 @@
 const { google } = require('googleapis');
 const fs   = require('fs');
 const path = require('path');
-let pdfParse = null;
-try {
-  const _pp = require('pdf-parse');
-  pdfParse = typeof _pp === 'function' ? _pp : (_pp.default || null);
-} catch { pdfParse = null; }
-if (pdfParse) console.log('[Google] pdf-parse loaded, type:', typeof pdfParse);
-else console.warn('[Google] pdf-parse not available');
+const pdfParse = require('pdf-parse');
 
 const CREDENTIALS_PATH = path.join(__dirname, '..', 'google_credentials.json');
 const TOKEN_PATH       = path.join(__dirname, '..', 'google_token.json');
@@ -251,15 +245,14 @@ async function getEmailBody(emailId) {
   return `📧 מ: ${from}\nנושא: ${subject}\nתאריך: ${date}\n\n${truncated}`;
 }
 
-// Strict query: must have attachment + invoice subject, OR come from known vendor domain
+// Strict: attachment + invoice subject, OR known billing domain (no newsletters)
 const INVOICE_QUERY =
-  'newer_than:30d ' +
-  '(' +
-    '(has:attachment subject:(invoice OR receipt OR חשבונית OR קבלה OR "order confirmation" OR פקטורה)) ' +
-    'OR from:anthropic.com OR from:wolt.com OR from:render.com ' +
-    'OR from:paybox.co.il OR from:pepper.co.il OR from:max.co.il ' +
-    'OR from:meshulam.com OR from:icount.co.il ' +
-    'OR from:amazon.com OR from:google.com OR from:apple.com OR from:microsoft.com' +
+  'newer_than:30d (' +
+  '(has:attachment (subject:invoice OR subject:receipt ' +
+  'OR subject:חשבונית OR subject:קבלה)) ' +
+  'OR from:anthropic.com OR from:wolt.com ' +
+  'OR from:render.com OR from:paybox.co.il ' +
+  'OR from:max.co.il OR from:icount.co.il' +
   ')';
 
 // Extract amount from email body text using common invoice patterns
@@ -374,6 +367,9 @@ async function scanEmailsForInvoices(maxResults = 20) {
     const date    = headers.find((h) => h.name === 'Date')?.value    || '';
     const vendor  = from.replace(/<[^>]+>/, '').trim() || from.split('@')[0];
     const body    = bodyMap[d.data.id] || null;
+    if (/wolt/i.test(vendor) || /wolt/i.test(from)) {
+      console.log('[Invoice] Wolt body preview:', (body || '(empty)').slice(0, 300));
+    }
     const searchText = `${subject} ${body || ''}`;
     const amount   = extractAmountFromText(searchText);
     const currency = amount ? extractCurrencyFromText(searchText) : 'ILS';
