@@ -265,6 +265,25 @@ function hadEntryYesterday() {
   return entries.some((e) => e.date === yesterday);
 }
 
+// ── Raw weekly stats (for proactive scheduler — no formatting) ────────────────
+function getWeekRawStats(days = 7) {
+  const entries = load();
+  const cutoff  = dateBeforeIL(days - 1);
+  const recent  = entries.filter((e) => e.date >= cutoff);
+  if (!recent.length) return null;
+
+  const pains  = recent.map((e) => e.painLevel).filter((v) => v != null);
+  const moods  = recent.map((e) => e.mood).filter((v) => v != null);
+  const sleeps = recent.map((e) => e.sleep).filter((v) => v != null);
+
+  return {
+    count:    recent.length,
+    avgPain:  pains.length  ? parseFloat(avg(pains))  : null,
+    avgMood:  moods.length  ? parseFloat(avg(moods))  : null,
+    avgSleep: sleeps.length ? parseFloat(avg(sleeps)) : null,
+  };
+}
+
 module.exports = {
   startCheckin,
   isInCheckin,
@@ -273,6 +292,7 @@ module.exports = {
   logDirect,
   getTodayHealth,
   getWeekSummary,
+  getWeekRawStats,
   formatTodayStatus,
   formatRecentLog,
   checkHighPainAlert,

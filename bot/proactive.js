@@ -3,7 +3,7 @@
 const cron = require('node-cron');
 const { getShabbatTimes, setShabbatWindow } = require('./shabbat');
 const { getOpenTasks }  = require('./tasks');
-const { getTodayHealth } = require('./health');
+const { getTodayHealth, getWeekRawStats } = require('./health');
 
 // Pikud HaOref alert keywords — these always bypass Shabbat mode
 const PIKUD_KEYWORDS = ['פיקוד העורף', 'אזעקה', 'ירי', 'רקטות', 'alert'];
@@ -85,7 +85,63 @@ function startProactiveScheduler(bot, chatId) {
     } catch (e) { console.error('[Proactive] health error:', e.message); }
   }, { timezone: 'Asia/Jerusalem' });
 
-  console.log('[Proactive] Scheduler started — 3 jobs + Shabbat mode active');
+  // ── SUNDAY 08:30 IL — Weekly planning ──────────────────────────────────────
+  // Cron runs at 05:30 UTC = 08:30 IL
+  cron.schedule('30 5 * * 0', async () => {
+    try {
+      // Date label (DD/MM/YYYY in IL timezone)
+      const ilDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+      const [yr, mo, dy] = ilDate.split('-');
+      const dateStr = `${dy}/${mo}/${yr}`;
+
+      // Tasks
+      const openTasks = getOpenTasks() || [];
+      const taskCount = openTasks.length;
+
+      // Health raw stats (no LLM)
+      const stats = getWeekRawStats(7);
+
+      // Rule-based insight (no LLM)
+      let insight = 'המשך כך! שמור על שגרת הטיפול השבועית.';
+      if (stats) {
+        if (stats.avgPain != null && stats.avgPain >= 7) {
+          insight = 'שים לב לרמת הכאב הגבוהה — נסה להקפיד על מנוחה מספקת.';
+        } else if (stats.avgSleep != null && stats.avgSleep < 6) {
+          insight = 'שינה לא מספקת — נסה ללכת לישון קצת יותר מוקדם השבוע.';
+        } else if (stats.avgMood != null && stats.avgMood < 5) {
+          insight = 'מצב הרוח לא גבוה — אולי כדאי לתכנן פעילות מהנה השבוע.';
+        } else if (stats.avgPain != null && stats.avgMood != null && stats.avgPain <= 4 && stats.avgMood >= 7) {
+          insight = 'שבוע נהדר! הכאב בשליטה ומצב הרוח גבוה — כדאי לנצל את האנרגיה.';
+        }
+      }
+
+      // Build message
+      const lines = [`📅 תוכנית שבוע — ${dateStr}`, ''];
+
+      if (taskCount === 0) {
+        lines.push('✅ כל המשימות הושלמו!');
+      } else {
+        lines.push(`📋 משימות פתוחות: ${taskCount}`);
+        openTasks.slice(0, 3).forEach((t) => lines.push(`• ${t.text}`));
+      }
+
+      if (stats) {
+        lines.push('', '💊 בריאות שבוע שעבר:');
+        if (stats.avgPain  != null) lines.push(`- כאב ממוצע: ${stats.avgPain.toFixed(1)}/10`);
+        if (stats.avgSleep != null) lines.push(`- שינה ממוצעת: ${stats.avgSleep.toFixed(1)} שעות`);
+        if (stats.avgMood  != null) lines.push(`- מצב רוח: ${stats.avgMood.toFixed(1)}/10`);
+      }
+
+      lines.push('', `💡 ${insight}`, '', 'שבוע טוב שילה! 💪');
+
+      await bot.sendMessage(chatId, lines.join('\n'));
+    } catch (e) {
+      console.error('[Proactive] weekly error:', e.message);
+      try { await bot.sendMessage(chatId, '📅 בוקר טוב שילה! שבוע טוב! 💪'); } catch {}
+    }
+  }, { timezone: 'Asia/Jerusalem' });
+
+  console.log('[Proactive] Scheduler started — 4 jobs + Shabbat mode active');
 }
 
 module.exports = { startProactiveScheduler, isPikudAlert };

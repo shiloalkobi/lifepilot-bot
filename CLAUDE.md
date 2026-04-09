@@ -133,6 +133,7 @@ user: שילה אלקובי
 - 08:00 IL daily: morning task count
 - 21:00 IL daily: health reminder if not logged
 - 16:30 IL Friday: full Shabbat eve briefing (Hebcal API)
+- 08:30 IL Sunday: weekly plan — open tasks + 7-day health stats (no LLM)
 - Requires: `TELEGRAM_CHAT_ID` env var (falls back to `ALERT_CHAT_ID`)
 
 ## Proactive (Phase 3 — future)
