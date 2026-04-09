@@ -3,8 +3,13 @@
 const { google } = require('googleapis');
 const fs   = require('fs');
 const path = require('path');
-let pdfParse;
-try { pdfParse = require('pdf-parse'); } catch { pdfParse = null; }
+let pdfParse = null;
+try {
+  const _pp = require('pdf-parse');
+  pdfParse = typeof _pp === 'function' ? _pp : (_pp.default || null);
+} catch { pdfParse = null; }
+if (pdfParse) console.log('[Google] pdf-parse loaded, type:', typeof pdfParse);
+else console.warn('[Google] pdf-parse not available');
 
 const CREDENTIALS_PATH = path.join(__dirname, '..', 'google_credentials.json');
 const TOKEN_PATH       = path.join(__dirname, '..', 'google_token.json');
@@ -246,27 +251,38 @@ async function getEmailBody(emailId) {
   return `📧 מ: ${from}\nנושא: ${subject}\nתאריך: ${date}\n\n${truncated}`;
 }
 
+// Strict query: must have attachment + invoice subject, OR come from known vendor domain
 const INVOICE_QUERY =
   'newer_than:30d ' +
-  '(subject:(invoice OR receipt OR חשבונית OR קבלה OR payment OR "order confirmation" OR פקטורה OR הזמנה OR תשלום OR "order #") ' +
-  'OR from:wolt.com OR from:paybox.co.il OR from:pepper.co.il OR from:max.co.il ' +
-  'OR from:meshulam.com OR from:icount.co.il OR from:monday.com)';
+  '(' +
+    '(has:attachment subject:(invoice OR receipt OR חשבונית OR קבלה OR "order confirmation" OR פקטורה)) ' +
+    'OR from:anthropic.com OR from:wolt.com OR from:render.com ' +
+    'OR from:paybox.co.il OR from:pepper.co.il OR from:max.co.il ' +
+    'OR from:meshulam.com OR from:icount.co.il ' +
+    'OR from:amazon.com OR from:google.com OR from:apple.com OR from:microsoft.com' +
+  ')';
 
 // Extract amount from email body text using common invoice patterns
 function extractAmountFromText(text) {
   if (!text) return null;
   const patterns = [
-    /total[:\s]+[$₪€]?\s*([\d,]+\.?\d{0,2})/i,
-    /amount[:\s]+[$₪€]?\s*([\d,]+\.?\d{0,2})/i,
-    /סה"כ לתשלום[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
-    /סה"כ[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
-    /סכום[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
-    /לתשלום[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
-    /([\d,]+\.?\d{0,2})\s*ש"ח/,
-    /([\d,]+\.?\d{0,2})\s*שקל/,
-    /([\d,]+\.?\d{0,2})\s*(ILS|USD|EUR|₪|\$|€)/,
-    /\$([\d,]+\.?\d{0,2})/,
-    /₪\s*([\d,]+\.?\d{0,2})/,
+    // Most specific first — full phrases
+    /סה[""״]כ לתשלום[\s\u00a0:]+([0-9,]+\.?[0-9]{0,2})/,
+    /סה[""״]כ[\s\u00a0:]+([0-9,]+\.?[0-9]{0,2})/,
+    /לתשלום[\s\u00a0:]+([0-9,]+\.?[0-9]{0,2})/,
+    /סכום[\s\u00a0:]+([0-9,]+\.?[0-9]{0,2})/,
+    /total[\s:]*[₪$€]?\s*([0-9,]+\.?[0-9]{0,2})/i,
+    /amount[\s:]*[₪$€]?\s*([0-9,]+\.?[0-9]{0,2})/i,
+    // Currency suffix
+    /([0-9,]+\.?[0-9]{0,2})\s*ש[""״]ח/,
+    /([0-9,]+\.?[0-9]{0,2})\s*שקל/,
+    /([0-9,]+\.?[0-9]{0,2})\s*(?:ILS|USD|EUR)/,
+    // Currency prefix
+    /₪\s*([0-9,]+\.?[0-9]{0,2})/,
+    /\$([0-9,]+\.?[0-9]{0,2})/,
+    /€([0-9,]+\.?[0-9]{0,2})/,
+    // Number followed by currency symbol (Wolt: "45.90 ₪")
+    /([0-9,]+\.?[0-9]{0,2})\s*[₪]/,
   ];
   for (const pat of patterns) {
     const m = text.match(pat);
