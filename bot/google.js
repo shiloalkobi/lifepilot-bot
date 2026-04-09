@@ -247,6 +247,36 @@ async function getEmailBody(emailId) {
 const INVOICE_QUERY =
   'subject:(invoice OR receipt OR חשבונית OR קבלה OR payment OR "order confirmation" OR פקטורה) newer_than:30d';
 
+// Extract amount from email body text using common invoice patterns
+function extractAmountFromText(text) {
+  if (!text) return null;
+  const patterns = [
+    /total[:\s]+[$₪€]?\s*([\d,]+\.?\d{0,2})/i,
+    /amount[:\s]+[$₪€]?\s*([\d,]+\.?\d{0,2})/i,
+    /סה"כ[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
+    /לתשלום[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
+    /([\d,]+\.?\d{0,2})\s*(ILS|USD|EUR|₪|\$|€)/,
+    /\$([\d,]+\.?\d{0,2})/,
+    /₪([\d,]+\.?\d{0,2})/,
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (m) {
+      const raw = (m[1] || m[2] || '').replace(/,/g, '');
+      const num = parseFloat(raw);
+      if (!isNaN(num) && num > 0 && num < 100000) return num;
+    }
+  }
+  return null;
+}
+
+function extractCurrencyFromText(text) {
+  if (!text) return 'ILS';
+  if (/USD|\$/.test(text)) return 'USD';
+  if (/EUR|€/.test(text)) return 'EUR';
+  return 'ILS';
+}
+
 async function scanEmailsForInvoices(maxResults = 20) {
   const auth  = getAuthClient();
   const gmail = google.gmail({ version: 'v1', auth });
@@ -262,14 +292,36 @@ async function scanEmailsForInvoices(maxResults = 20) {
     )
   );
 
+  // Fetch body for up to 10 emails to extract amounts (cap to avoid quota drain)
+  const bodyFetches = details.slice(0, 10).map(async (d) => {
+    try {
+      const full = await gmail.users.messages.get({ userId: 'me', id: d.data.id, format: 'full' });
+      let body = null;
+      if (full.data.payload?.body?.data) {
+        body = Buffer.from(full.data.payload.body.data, 'base64').toString('utf8');
+      } else if (full.data.payload?.parts) {
+        body = extractTextFromParts(full.data.payload.parts);
+      }
+      return { id: d.data.id, body };
+    } catch {
+      return { id: d.data.id, body: null };
+    }
+  });
+  const bodies = await Promise.all(bodyFetches);
+  const bodyMap = {};
+  bodies.forEach(b => { bodyMap[b.id] = b.body; });
+
   return details.map((d) => {
     const headers = d.data.payload.headers;
     const from    = headers.find((h) => h.name === 'From')?.value    || '';
     const subject = headers.find((h) => h.name === 'Subject')?.value || '';
     const date    = headers.find((h) => h.name === 'Date')?.value    || '';
-    // Extract vendor name from "Display Name <email>" format
     const vendor  = from.replace(/<[^>]+>/, '').trim() || from.split('@')[0];
-    return { emailId: d.data.id, vendor, subject, date, from };
+    const body    = bodyMap[d.data.id] || null;
+    const searchText = `${subject} ${body || ''}`;
+    const amount   = extractAmountFromText(searchText);
+    const currency = amount ? extractCurrencyFromText(searchText) : 'ILS';
+    return { emailId: d.data.id, vendor, subject, date, from, amount, currency };
   });
 }
 

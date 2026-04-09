@@ -83,35 +83,46 @@ function getExpenseSummary(month) {
 
   if (!items.length) return `📊 אין הוצאות רשומות לחודש ${m}`;
 
-  // Group by currency
+  // Group by currency (only items with amounts)
   const totals = {};
   const byCat  = {};
+  let unknownCount = 0;
   for (const e of items) {
     const cur = e.currency || 'ILS';
-    if (e.amount) {
+    if (e.amount != null && e.amount > 0) {
       totals[cur] = (totals[cur] || 0) + e.amount;
       const cat = e.category || 'other';
       if (!byCat[cat]) byCat[cat] = {};
       byCat[cat][cur] = (byCat[cat][cur] || 0) + e.amount;
+    } else {
+      unknownCount++;
     }
   }
 
-  const totalLines = Object.entries(totals)
-    .map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`)
-    .join(' / ') || '—';
+  const hasAmounts = Object.keys(totals).length > 0;
+  const totalLines = hasAmounts
+    ? Object.entries(totals).map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`).join(' / ')
+    : 'סכום לא ידוע';
 
   const catEmoji = { tech: '💻', food: '🍔', health: '💊', office: '📦', other: '📌' };
-  const catLines = Object.entries(byCat).map(([cat, curMap]) => {
+  let catLines = Object.entries(byCat).map(([cat, curMap]) => {
     const vals = Object.entries(curMap).map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`).join(' / ');
     return `${catEmoji[cat] || '📌'} ${cat}: ${vals}`;
   }).join('\n');
+
+  // List items without amounts separately
+  const noAmountItems = items.filter(e => !e.amount || e.amount <= 0);
+  if (noAmountItems.length) {
+    const noAmtList = noAmountItems.slice(0, 8).map(e => `• ${e.vendor || '?'} (סכום לא ידוע)`).join('\n');
+    catLines = catLines ? `${catLines}\n\n📋 ללא סכום:\n${noAmtList}` : `📋 ללא סכום:\n${noAmtList}`;
+  }
 
   const srcCount = { email: 0, photo: 0, manual: 0 };
   items.forEach(e => { if (srcCount[e.source] !== undefined) srcCount[e.source]++; });
 
   const monthName = new Date(m + '-01').toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
 
-  return `📊 הוצאות ${monthName}:\nסה"כ: ${totalLines}\n\n${catLines}\n\n` +
+  return `📊 הוצאות ${monthName} (${items.length} פריטים):\nסה"כ: ${totalLines}\n\n${catLines}\n\n` +
     `📧 ממייל: ${srcCount.email} | 🖼️ מתמונה: ${srcCount.photo} | ✏️ ידני: ${srcCount.manual}`;
 }
 

@@ -509,6 +509,8 @@ async function executeTool(name, args, ctx) {
 
       case 'export_expenses_csv': {
         const csvPath = exportToCSV(args.month || null);
+        const { existsSync } = require('fs');
+        console.log('[CSV] file path:', csvPath, 'exists:', existsSync(csvPath));
         return `__FILE__:${csvPath}`;
       }
 
@@ -520,12 +522,19 @@ async function executeTool(name, args, ctx) {
           const month = inv.date ? (() => {
             try { const d = new Date(inv.date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; } catch { return null; }
           })() : null;
-          saveInvoice({ vendor: inv.vendor, source: 'email', emailId: inv.emailId,
-            description: inv.subject, month, date: inv.date ? new Date(inv.date).toISOString().split('T')[0] : null });
+          saveInvoice({
+            vendor: inv.vendor, source: 'email', emailId: inv.emailId,
+            description: inv.subject, month,
+            date: inv.date ? new Date(inv.date).toISOString().split('T')[0] : null,
+            amount: inv.amount || null,
+            currency: inv.currency || 'ILS',
+          });
           saved++;
         }
         return `✅ נסרקו ${invoices.length} מיילים, נשמרו ${saved} חשבוניות.\n` +
-          invoices.slice(0, 5).map(i => `• ${i.vendor} — ${i.subject}`).join('\n');
+          invoices.slice(0, 5).map(i =>
+            `• ${i.vendor}${i.amount ? ` — ${i.amount} ${i.currency}` : ''} — ${i.subject}`
+          ).join('\n');
       }
 
       case 'add_manual_expense': {
@@ -695,6 +704,15 @@ async function handleMessage(bot, chatId, text) {
     );
 
     chatMessages.push(...toolResults);
+
+    // ── If a tool returned a file path, send it directly without another LLM call ──
+    const fileResult = toolResults.find(r => r.content?.startsWith('__FILE__:'));
+    if (fileResult) {
+      const filePath = fileResult.content.slice('__FILE__:'.length).trim();
+      console.log('[Agent] FILE result detected, returning path:', filePath);
+      addMessage(chatId, 'model', fileResult.content);
+      return fileResult.content;
+    }
 
     if (!canCall()) {
       const reply = '⚠️ הגבלת API — לא הצלחתי לסיים את הפעולה.';
