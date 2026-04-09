@@ -145,6 +145,17 @@ function exportToCSV(month) {
     `"${(e.description || '').replace(/"/g, '""').slice(0, 100)}"`,
   ].join(','));
 
+  const ilsTotal = items
+    .filter(e => (e.currency || 'ILS') === 'ILS' && e.amount)
+    .reduce((sum, e) => sum + e.amount, 0);
+  const usdTotal = items
+    .filter(e => e.currency === 'USD' && e.amount)
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  rows.push('');
+  if (ilsTotal > 0) rows.push(`סה"כ ILS,${ilsTotal.toFixed(2)}`);
+  if (usdTotal > 0) rows.push(`סה"כ USD,${usdTotal.toFixed(2)}`);
+
   const csv      = [header, ...rows].join('\n');
   const filePath = path.join(os.tmpdir(), `expenses-${m}.csv`);
   fs.writeFileSync(filePath, csv, 'utf8');
