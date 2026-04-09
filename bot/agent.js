@@ -515,7 +515,7 @@ async function executeTool(name, args, ctx) {
       }
 
       case 'scan_invoice_emails': {
-        const invoices = await scanEmailsForInvoices(20);
+        const invoices = await scanEmailsForInvoices(10);
         if (!invoices.length) return 'לא נמצאו חשבוניות/קבלות ב-30 ימים האחרונים.';
         let saved = 0;
         for (const inv of invoices) {

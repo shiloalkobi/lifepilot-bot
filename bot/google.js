@@ -251,13 +251,22 @@ const INVOICE_QUERY =
   '(has:attachment (subject:invoice OR subject:receipt ' +
   'OR subject:חשבונית OR subject:קבלה)) ' +
   'OR from:anthropic.com OR from:wolt.com ' +
-  'OR from:render.com OR from:paybox.co.il ' +
+  'OR from:paybox.co.il ' +
   'OR from:max.co.il OR from:icount.co.il' +
   ')';
 
 // Extract amount from email body text using common invoice patterns
 function extractAmountFromText(text) {
   if (!text) return null;
+  // Clean HTML entities and Unicode directional marks before matching
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\u200E/g, '')  // LTR mark
+    .replace(/\u200F/g, '')  // RTL mark
+    .replace(/\u202A/g, '')  // LTR embedding
+    .replace(/\u202C/g, '')  // pop directional
+    .trim();
   const patterns = [
     // Most specific first — full phrases
     /סה[""״]כ לתשלום[\s\u00a0:]+([0-9,]+\.?[0-9]{0,2})/,
@@ -276,6 +285,8 @@ function extractAmountFromText(text) {
     /€([0-9,]+\.?[0-9]{0,2})/,
     // Number followed by currency symbol (Wolt: "45.90 ₪")
     /([0-9,]+\.?[0-9]{0,2})\s*[₪]/,
+    // ILS prefix with optional spaces/NBSP (Wolt: "ILS 63.00")
+    /(?:ILS|ש[""״]ח)[\s\u00a0]*([\d,]+\.?\d{0,2})/,
   ];
   for (const pat of patterns) {
     const m = text.match(pat);
