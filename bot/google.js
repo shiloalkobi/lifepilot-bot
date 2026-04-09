@@ -8,15 +8,15 @@ const CREDENTIALS_PATH = path.join(__dirname, '..', 'google_credentials.json');
 const TOKEN_PATH       = path.join(__dirname, '..', 'google_token.json');
 
 function getAuthClient() {
-  const credentials = process.env.GOOGLE_CREDENTIALS_JSON
-    ? JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
+  const credentials = process.env.GOOGLE_CREDENTIALS
+    ? JSON.parse(process.env.GOOGLE_CREDENTIALS)
     : JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'));
 
   const { client_secret, client_id, redirect_uris } = credentials.installed;
   const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
 
-  const token = process.env.GOOGLE_TOKEN_JSON
-    ? JSON.parse(process.env.GOOGLE_TOKEN_JSON)
+  const token = process.env.GOOGLE_TOKEN
+    ? JSON.parse(process.env.GOOGLE_TOKEN)
     : JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
 
   oAuth2Client.setCredentials(token);
