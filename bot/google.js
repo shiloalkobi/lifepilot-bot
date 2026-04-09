@@ -1,8 +1,10 @@
 'use strict';
 
 const { google } = require('googleapis');
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
+let pdfParse;
+try { pdfParse = require('pdf-parse'); } catch { pdfParse = null; }
 
 const CREDENTIALS_PATH = path.join(__dirname, '..', 'google_credentials.json');
 const TOKEN_PATH       = path.join(__dirname, '..', 'google_token.json');
@@ -245,7 +247,10 @@ async function getEmailBody(emailId) {
 }
 
 const INVOICE_QUERY =
-  'subject:(invoice OR receipt OR חשבונית OR קבלה OR payment OR "order confirmation" OR פקטורה) newer_than:30d';
+  'newer_than:30d ' +
+  '(subject:(invoice OR receipt OR חשבונית OR קבלה OR payment OR "order confirmation" OR פקטורה OR הזמנה OR תשלום OR "order #") ' +
+  'OR from:wolt.com OR from:paybox.co.il OR from:pepper.co.il OR from:max.co.il ' +
+  'OR from:meshulam.com OR from:icount.co.il OR from:monday.com)';
 
 // Extract amount from email body text using common invoice patterns
 function extractAmountFromText(text) {
@@ -253,11 +258,15 @@ function extractAmountFromText(text) {
   const patterns = [
     /total[:\s]+[$₪€]?\s*([\d,]+\.?\d{0,2})/i,
     /amount[:\s]+[$₪€]?\s*([\d,]+\.?\d{0,2})/i,
+    /סה"כ לתשלום[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
     /סה"כ[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
+    /סכום[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
     /לתשלום[:\s\u00a0]+([\d,]+\.?\d{0,2})/,
+    /([\d,]+\.?\d{0,2})\s*ש"ח/,
+    /([\d,]+\.?\d{0,2})\s*שקל/,
     /([\d,]+\.?\d{0,2})\s*(ILS|USD|EUR|₪|\$|€)/,
     /\$([\d,]+\.?\d{0,2})/,
-    /₪([\d,]+\.?\d{0,2})/,
+    /₪\s*([\d,]+\.?\d{0,2})/,
   ];
   for (const pat of patterns) {
     const m = text.match(pat);
@@ -293,23 +302,54 @@ async function scanEmailsForInvoices(maxResults = 20) {
   );
 
   // Fetch body for up to 10 emails to extract amounts (cap to avoid quota drain)
+  // Fetch full body for up to 10 emails; find PDF attachment IDs alongside
   const bodyFetches = details.slice(0, 10).map(async (d) => {
     try {
       const full = await gmail.users.messages.get({ userId: 'me', id: d.data.id, format: 'full' });
       let body = null;
+      let pdfAttachmentId = null;
+
       if (full.data.payload?.body?.data) {
         body = Buffer.from(full.data.payload.body.data, 'base64').toString('utf8');
       } else if (full.data.payload?.parts) {
         body = extractTextFromParts(full.data.payload.parts);
+        // Find first PDF attachment
+        const findPdf = (parts) => {
+          for (const p of parts || []) {
+            if (p.mimeType === 'application/pdf' && p.body?.attachmentId) return p.body.attachmentId;
+            const found = findPdf(p.parts);
+            if (found) return found;
+          }
+          return null;
+        };
+        pdfAttachmentId = findPdf(full.data.payload.parts);
       }
-      return { id: d.data.id, body };
+      return { id: d.data.id, body, pdfAttachmentId };
     } catch {
-      return { id: d.data.id, body: null };
+      return { id: d.data.id, body: null, pdfAttachmentId: null };
     }
   });
   const bodies = await Promise.all(bodyFetches);
+
+  // For emails where body had no amount but has PDF — try PDF extraction
   const bodyMap = {};
-  bodies.forEach(b => { bodyMap[b.id] = b.body; });
+  for (const b of bodies) {
+    let text = b.body;
+    const bodyAmount = extractAmountFromText(`${text || ''}`);
+    if (!bodyAmount && b.pdfAttachmentId && pdfParse) {
+      try {
+        const att = await gmail.users.messages.attachments.get(
+          { userId: 'me', messageId: b.id, id: b.pdfAttachmentId }
+        );
+        const pdfBuffer = Buffer.from(att.data.data, 'base64');
+        const parsed    = await pdfParse(pdfBuffer);
+        text = (text || '') + '\n' + (parsed.text || '');
+      } catch (err) {
+        console.warn('[Invoice] PDF parse failed:', err.message);
+      }
+    }
+    bodyMap[b.id] = text;
+  }
 
   return details.map((d) => {
     const headers = d.data.payload.headers;

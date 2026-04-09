@@ -1,4 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
+const fs          = require('fs');
+const pathModule  = require('path');
 const { handleMessage } = require('./agent');
 const { resetHistory } = require('./history');
 const { buildMorningMessage } = require('./scheduler');
@@ -732,7 +734,8 @@ function startBot(token, webhookUrl = null) {
       console.log('[Telegram] Sending reply:', reply?.substring(0, 100));
       if (reply && reply.startsWith('__FILE__:')) {
         const filePath = reply.slice('__FILE__:'.length).trim();
-        bot.sendDocument(chatId, filePath)
+        console.log('[Telegram] Sending document:', filePath, 'exists:', fs.existsSync(filePath));
+        bot.sendDocument(chatId, fs.createReadStream(filePath), {}, { filename: pathModule.basename(filePath) })
           .catch(sendErr => console.error('[Telegram] sendDocument error:', sendErr.message));
       } else {
         bot.sendMessage(chatId, reply)
