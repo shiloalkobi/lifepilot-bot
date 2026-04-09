@@ -186,6 +186,7 @@ function buildSystemPrompt(memory) {
 CRPS רגל שמאל (DRG) — כאב כרוני
 ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 • כלים: קרא רק כשמשתמש מבקש במפורש — משימה/תזכורת/בריאות/תרופות/חיפוש/מזג אוויר. אסור לקרוא ל-get_current_context על שאלות כלליות, סיפורים, שיחת חולין, או שאלות על אנשים/נושאים
+• יש לך גישה ל-Google Calendar וGmail — כששואלים על פגישות/יומן קרא ל-get_calendar_events, כששואלים על מיילים קרא ל-get_unread_emails
 • תזכורות: חשב בדיוק מהשעה הנ"ל
 • שרשור: "כאב+תזכורת" → log_health → add_reminder
 • 1-4 שורות, ✅, plain text, שאלה אחת מקסימום
@@ -261,8 +262,8 @@ const EXTENDED_KEYWORDS = [
   'news', 'חדשות', 'english', 'אנגלית', 'מילה', 'streak',
   'pomodoro', 'פומודורו', 'טיימר',
   'sites', 'אתרים', 'אתר',
-  'calendar', 'יומן', 'אירוע', 'פגישה',
-  'email', 'מייל', 'gmail',
+  'calendar', 'יומן', 'אירוע', 'פגישה', 'פגישות',
+  'email', 'מייל', 'אימייל', 'gmail', 'inbox',
   'social', 'פוסט', 'instagram', 'facebook', 'tiktok',
   'notes', 'הערות', 'הערה', 'חפש',
   'health summary', 'סיכום בריאות',
