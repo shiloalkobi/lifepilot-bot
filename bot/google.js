@@ -251,7 +251,7 @@ const INVOICE_QUERY =
   '(has:attachment (subject:invoice OR subject:receipt ' +
   'OR subject:חשבונית OR subject:קבלה)) ' +
   'OR from:anthropic.com OR from:wolt.com ' +
-  'OR from:paybox.co.il ' +
+  'OR from:email.apple.com OR from:paybox.co.il ' +
   'OR from:max.co.il OR from:icount.co.il' +
   ')';
 
@@ -297,6 +297,18 @@ function extractAmountFromText(text) {
     }
   }
   return null;
+}
+
+// Filter out non-invoice emails (course completions, newsletters, etc.)
+function isLikelyInvoice(subject) {
+  const s = (subject || '').toLowerCase();
+  const REJECT = [
+    'completion', 'certificate', 'welcome',
+    'newsletter', 'unsubscribe', 'free trial',
+    'verify', 'confirm your email', 'getting started',
+    'tips', 'webinar', 'invitation',
+  ];
+  return !REJECT.some(r => s.includes(r));
 }
 
 function extractCurrencyFromText(text) {
@@ -377,6 +389,10 @@ async function scanEmailsForInvoices(maxResults = 20) {
     const subject = headers.find((h) => h.name === 'Subject')?.value || '';
     const date    = headers.find((h) => h.name === 'Date')?.value    || '';
     const vendor  = from.replace(/<[^>]+>/, '').trim() || from.split('@')[0];
+    if (!isLikelyInvoice(subject)) {
+      console.log('[Invoice] Skipping non-invoice:', subject.slice(0, 60));
+      return null;
+    }
     const body    = bodyMap[d.data.id] || null;
     if (/wolt/i.test(vendor) || /wolt/i.test(from)) {
       console.log('[Invoice] Wolt body preview:', (body || '(empty)').slice(0, 300));
@@ -385,7 +401,7 @@ async function scanEmailsForInvoices(maxResults = 20) {
     const amount   = extractAmountFromText(searchText);
     const currency = amount ? extractCurrencyFromText(searchText) : 'ILS';
     return { emailId: d.data.id, vendor, subject, date, from, amount, currency };
-  });
+  }).filter(Boolean);
 }
 
 module.exports = {

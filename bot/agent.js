@@ -517,8 +517,11 @@ async function executeTool(name, args, ctx) {
       case 'scan_invoice_emails': {
         const invoices = await scanEmailsForInvoices(10);
         if (!invoices.length) return 'לא נמצאו חשבוניות/קבלות ב-30 ימים האחרונים.';
+        const existing = getExpenses();
+        const existingIds = new Set(existing.map(e => e.emailId).filter(Boolean));
         let saved = 0;
         for (const inv of invoices) {
+          if (existingIds.has(inv.emailId)) continue; // already saved
           const month = inv.date ? (() => {
             try { const d = new Date(inv.date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; } catch { return null; }
           })() : null;
