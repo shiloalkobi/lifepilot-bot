@@ -244,6 +244,35 @@ async function getEmailBody(emailId) {
   return `📧 מ: ${from}\nנושא: ${subject}\nתאריך: ${date}\n\n${truncated}`;
 }
 
+const INVOICE_QUERY =
+  'subject:(invoice OR receipt OR חשבונית OR קבלה OR payment OR "order confirmation" OR פקטורה) newer_than:30d';
+
+async function scanEmailsForInvoices(maxResults = 20) {
+  const auth  = getAuthClient();
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.messages.list({ userId: 'me', q: INVOICE_QUERY, maxResults });
+  const messages = res.data.messages || [];
+  if (messages.length === 0) return [];
+
+  const details = await Promise.all(
+    messages.map((m) =>
+      gmail.users.messages.get({ userId: 'me', id: m.id, format: 'metadata',
+        metadataHeaders: ['From', 'Subject', 'Date'] })
+    )
+  );
+
+  return details.map((d) => {
+    const headers = d.data.payload.headers;
+    const from    = headers.find((h) => h.name === 'From')?.value    || '';
+    const subject = headers.find((h) => h.name === 'Subject')?.value || '';
+    const date    = headers.find((h) => h.name === 'Date')?.value    || '';
+    // Extract vendor name from "Display Name <email>" format
+    const vendor  = from.replace(/<[^>]+>/, '').trim() || from.split('@')[0];
+    return { emailId: d.data.id, vendor, subject, date, from };
+  });
+}
+
 module.exports = {
   getCalendarEvents,
   createCalendarEvent,
@@ -253,4 +282,5 @@ module.exports = {
   getUnreadEmails,
   searchEmails,
   getEmailBody,
+  scanEmailsForInvoices,
 };

@@ -31,10 +31,10 @@ const { load: loadSites, runChecks }                    = require('./sites');
 const {
   getCalendarEvents, createCalendarEvent, getUnreadEmails,
   findEventsByQuery, updateCalendarEvent, deleteCalendarEvent,
-  searchEmails, getEmailBody,
+  searchEmails, getEmailBody, scanEmailsForInvoices,
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
-const { getExpenses } = require('./expenses');
+const { getExpenses, saveInvoice, getExpenseSummary, exportToCSV } = require('./expenses');
 
 console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
 console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
@@ -248,7 +248,11 @@ const TOOL_DECLARATIONS = [
   { name: 'list_social_drafts',  description: 'הצג כל טיוטות הפוסטים.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'delete_social_draft', description: 'מחק טיוטת פוסט לפי ID.', parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   // Expenses
-  { name: 'get_expenses', description: 'הצג קבלות/הוצאות שנסרקו מתמונות.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'get_expenses',          description: 'הצג קבלות/הוצאות שנסרקו מתמונות.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'get_monthly_expenses',  description: 'הצג סיכום הוצאות חודשי עם כל החשבוניות.', parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM, ברירת מחדל: חודש נוכחי' } }, required: [] } },
+  { name: 'export_expenses_csv',   description: 'ייצא הוצאות לקובץ CSV ושלח בטלגרם.', parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM, ברירת מחדל: חודש נוכחי' } }, required: [] } },
+  { name: 'scan_invoice_emails',   description: 'סרוק Gmail לחשבוניות חדשות (30 ימים אחרונים) ושמור אוטומטית.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'add_manual_expense',    description: 'הוסף הוצאה ידנית: הוצאתי X על Y.', parameters: { type: 'object', properties: { vendor: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string', description: 'ILS/USD/EUR' }, category: { type: 'string', description: 'tech/food/health/office/other' }, description: { type: 'string' } }, required: ['vendor', 'amount'] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -276,8 +280,9 @@ const EXTENDED_KEYWORDS = [
   'חיפוש', 'search', 'מחיר', 'כמה עולה', 'מה זה', 'תחפש', 'תבדוק', 'מה המחיר',
   // OCR triggers
   'סרוק', 'ocr', 'חלץ טקסט', 'קבלה', 'מרשם', 'כרטיס ביקור',
-  // Invoice/receipt email search
+  // Invoice/receipt email search + expense tracking
   'חשבונית', 'חשבוניות', 'קבלות', 'invoice',
+  'הוצאות', 'סיכום חודשי', 'כמה הוצאתי', 'ייצא', 'export', 'csv', 'הוצאתי',
 ];
 
 function selectTools(userText) {
@@ -494,8 +499,45 @@ async function executeTool(name, args, ctx) {
         const exps = getExpenses();
         if (!exps.length) return 'אין קבלות שמורות עדיין';
         return exps.slice(0, 20).map(e =>
-          `#${e.id}: ${e.store || '?'} | ${e.amount || '?'} | ${e.date || '?'}`
+          `#${e.id}: ${e.vendor || e.store || '?'} | ${e.amount || '?'} ${e.currency || 'ILS'} | ${e.date || '?'}`
         ).join('\n');
+      }
+
+      case 'get_monthly_expenses': {
+        return getExpenseSummary(args.month || null);
+      }
+
+      case 'export_expenses_csv': {
+        const csvPath = exportToCSV(args.month || null);
+        return `__FILE__:${csvPath}`;
+      }
+
+      case 'scan_invoice_emails': {
+        const invoices = await scanEmailsForInvoices(20);
+        if (!invoices.length) return 'לא נמצאו חשבוניות/קבלות ב-30 ימים האחרונים.';
+        let saved = 0;
+        for (const inv of invoices) {
+          const month = inv.date ? (() => {
+            try { const d = new Date(inv.date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; } catch { return null; }
+          })() : null;
+          saveInvoice({ vendor: inv.vendor, source: 'email', emailId: inv.emailId,
+            description: inv.subject, month, date: inv.date ? new Date(inv.date).toISOString().split('T')[0] : null });
+          saved++;
+        }
+        return `✅ נסרקו ${invoices.length} מיילים, נשמרו ${saved} חשבוניות.\n` +
+          invoices.slice(0, 5).map(i => `• ${i.vendor} — ${i.subject}`).join('\n');
+      }
+
+      case 'add_manual_expense': {
+        const entry = saveInvoice({
+          vendor:      args.vendor,
+          amount:      args.amount,
+          currency:    args.currency || 'ILS',
+          category:    args.category || 'other',
+          description: args.description || null,
+          source:      'manual',
+        });
+        return `✅ הוצאה נשמרה #${entry.id}: ${entry.vendor} — ${entry.amount} ${entry.currency}`;
       }
 
       // ── Rate Stats ─────────────────────────────────────────────────────────
