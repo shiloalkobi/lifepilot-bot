@@ -711,6 +711,19 @@ function startBot(token, webhookUrl = null) {
       return;
     }
 
+    // ── Morning briefing test trigger ───────────────────────────────────────
+    if (msg.text === 'בדיקת בריפינג') {
+      bot.sendChatAction(chatId, 'typing');
+      try {
+        const message = await buildMorningMessage();
+        bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+      } catch (err) {
+        console.error('[בדיקת בריפינג]', err.message);
+        bot.sendMessage(chatId, '⚠️ שגיאה בטעינת הבריפינג. נסה /boker');
+      }
+      return;
+    }
+
     // ── AI Agent ─────────────────────────────────────────────────────────────
     bot.sendChatAction(chatId, 'typing');
 

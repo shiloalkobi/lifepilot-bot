@@ -63,17 +63,6 @@ function startProactiveScheduler(bot, chatId) {
     }
   }, { timezone: 'Asia/Jerusalem' });
 
-  // ── DAILY 08:00 IL — Morning check-in ──────────────────────────────────────
-  cron.schedule('0 8 * * *', async () => {
-    try {
-      const openTasks = getOpenTasks() || [];
-      const count = openTasks.length;
-      await bot.sendMessage(chatId,
-        `בוקר טוב שילה ☀️ יש לך ${count} משימות פתוחות היום. רוצה לעבור עליהן?`
-      );
-    } catch (e) { console.error('[Proactive] morning error:', e.message); }
-  }, { timezone: 'Asia/Jerusalem' });
-
   // ── DAILY 21:00 IL — Health reminder if not logged ─────────────────────────
   cron.schedule('0 21 * * *', async () => {
     try {
@@ -141,7 +130,7 @@ function startProactiveScheduler(bot, chatId) {
     }
   }, { timezone: 'Asia/Jerusalem' });
 
-  console.log('[Proactive] Scheduler started — 4 jobs + Shabbat mode active');
+  console.log('[Proactive] Scheduler started — 3 jobs (Shabbat eve, health reminder, weekly plan) + Shabbat mode active');
 }
 
 module.exports = { startProactiveScheduler, isPikudAlert };

@@ -130,11 +130,12 @@ user: שילה אלקובי
 - Files: `bot/shabbat.js`, `bot/proactive.js`
 
 ## Proactive Scheduler
-- 08:00 IL daily: morning task count
+- 07:00 IL daily: Smart Morning Briefing (scheduler.js) — מזג אוויר, משימות top-3, תרופות, בריאות אתמול, AI חדשות, ציטוט יומי (0 LLM)
 - 21:00 IL daily: health reminder if not logged
 - 16:30 IL Friday: full Shabbat eve briefing (Hebcal API)
 - 08:30 IL Sunday: weekly plan — open tasks + 7-day health stats (no LLM)
 - Requires: `TELEGRAM_CHAT_ID` env var (falls back to `ALERT_CHAT_ID`)
+- Test: שלח "בדיקת בריפינג" לטריגר מיידי של הבריפינג הבוקרי. גם /boker עובד.
 
 ## Proactive (Phase 3 — future)
 10 triggers: no health log 2+ days, pain≥7 3+ days, 8+ tasks stale, English streak broken, meds overdue 4h+, Friday momentum check.

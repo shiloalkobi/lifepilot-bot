@@ -265,6 +265,13 @@ function hadEntryYesterday() {
   return entries.some((e) => e.date === yesterday);
 }
 
+// ── Yesterday health entry (for morning briefing detail) ─────────────────────
+function getYesterdayHealth() {
+  const yesterday = dateBeforeIL(1);
+  const entries   = load();
+  return entries.find((e) => e.date === yesterday) || null;
+}
+
 // ── Raw weekly stats (for proactive scheduler — no formatting) ────────────────
 function getWeekRawStats(days = 7) {
   const entries = load();
@@ -297,4 +304,5 @@ module.exports = {
   formatRecentLog,
   checkHighPainAlert,
   hadEntryYesterday,
+  getYesterdayHealth,
 };

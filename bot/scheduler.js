@@ -5,11 +5,13 @@ const https   = require('https');
 const fs      = require('fs');
 const path    = require('path');
 const { getMorningMedSummary } = require('./medications');
-const { hadEntryYesterday } = require('./health');
+const { hadEntryYesterday, getYesterdayHealth } = require('./health');
+const { getOpenTasks } = require('./tasks');
 const { getDailyWord, formatWord } = require('./english'); // getDailyWord is async
 const { buildSummaryMessage }      = require('./daily-summary');
 const { buildWeeklySummaryMessage } = require('./weekly-summary');
 const { sendNews }                 = require('./news');
+const { fetchAINews } = require('../skills/ai-news');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
 
@@ -91,26 +93,71 @@ function getDailyTip() {
 
 // ── Build the morning message ─────────────────────────────────────────────────
 async function buildMorningMessage() {
-  const [weather, quote] = await Promise.all([fetchWeather(), getDailyQuote()]);
+  const [weather, aiStories, quote] = await Promise.all([
+    fetchWeather(),
+    fetchAINews().catch(() => []),
+    Promise.resolve(getDailyQuote()),
+  ]);
+
   const dateStr = getHebrewDateLine();
   const tip     = getDailyTip();
 
-  const quoteBlock = quote.lang === 'he'
-    ? `❝ ${quote.text} ❞\n— ${quote.author}`
-    : `❝ ${quote.text} ❞\n— ${quote.author}`;
+  const lines = [
+    `☀️ <b>בוקר טוב שילה!</b> — ${dateStr}`,
+    '',
+    `🌤️ <b>מזג אוויר ראשון לציון:</b>`,
+    weather,
+    '',
+  ];
 
-  const medSummary      = getMorningMedSummary();
-  const missedYesterday = !hadEntryYesterday();
+  // Tasks section
+  const openTasks = getOpenTasks();
+  const taskCount = openTasks.length;
+  if (taskCount === 0) {
+    lines.push('📋 <b>משימות היום:</b> ✅ אין משימות פתוחות');
+  } else {
+    lines.push(`📋 <b>משימות היום:</b> ${taskCount} פתוחות`);
+    openTasks.slice(0, 3).forEach((t) => lines.push(`• ${t.text}`));
+  }
+  lines.push('');
 
-  return (
-    `🌅 <b>בוקר טוב, שילה!</b>\n` +
-    `📅 ${dateStr}\n\n` +
-    `🏙️ <b>ראשון לציון:</b> ${weather}\n\n` +
-    (medSummary ? `${medSummary}\n\n` : '') +
-    (missedYesterday ? `📝 <b>תזכורת:</b> לא מילאת דיווח בריאות אתמול. /health\n\n` : '') +
-    `✨ <b>ציטוט היום:</b>\n${quoteBlock}\n\n` +
-    `${tip}`
-  );
+  // Medications section
+  const medSummary = getMorningMedSummary();
+  if (medSummary) {
+    lines.push(medSummary);
+    lines.push('');
+  }
+
+  // Yesterday health section
+  const yHealth = getYesterdayHealth();
+  if (yHealth) {
+    lines.push('💊 <b>בריאות אתמול:</b>');
+    lines.push(
+      `🩺 כאב: ${yHealth.painLevel}/10 | 😊 מצב רוח: ${yHealth.mood}/10 | 💤 שינה: ${yHealth.sleep}ש'` +
+      (yHealth.symptoms ? `\n📝 ${yHealth.symptoms}` : '')
+    );
+    lines.push('');
+  } else if (!hadEntryYesterday()) {
+    lines.push('📝 <b>תזכורת:</b> לא מילאת דיווח בריאות אתמול. /health');
+    lines.push('');
+  }
+
+  // AI news — 1 headline
+  if (aiStories.length > 0) {
+    lines.push('📰 <b>AI חדשות:</b>');
+    lines.push(`• ${aiStories[0].title}`);
+    lines.push('');
+  }
+
+  // Quote + tip
+  const quoteBlock = `❝ ${quote.text} ❞\n— ${quote.author}`;
+  lines.push(`✨ <b>ציטוט היום:</b>\n${quoteBlock}`);
+  lines.push('');
+  lines.push(tip);
+  lines.push('');
+  lines.push('יום פרודוקטיבי! 💪');
+
+  return lines.join('\n');
 }
 
 // ── Start scheduler ───────────────────────────────────────────────────────────
