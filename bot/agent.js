@@ -187,7 +187,7 @@ function buildSystemPrompt(memory) {
 CRPS רגל שמאל (DRG) — כאב כרוני
 ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 • כלים: קרא רק כשמשתמש מבקש במפורש — משימה/תזכורת/בריאות/תרופות/חיפוש/מזג אוויר. אסור לקרוא ל-get_current_context על שאלות כלליות, סיפורים, שיחת חולין, או שאלות על אנשים/נושאים
-• יש לך גישה ל-Google Calendar וGmail — כששואלים על פגישות/יומן קרא ל-get_calendar_events, כששואלים על מיילים קרא ל-get_unread_emails
+• יש לך גישה ל-Google Calendar וGmail — כששואלים על פגישות/יומן קרא ל-get_calendar_events, כששואלים "יש מיילים חדשים?" קרא ל-get_unread_emails, לחיפוש מיילים ספציפיים (חשבוניות, קבלות, מ-X, לפי נושא) — תמיד השתמש ב-search_emails ולא ב-get_unread_emails
 • תזכורות: חשב בדיוק מהשעה הנ"ל
 • שרשור: "כאב+תזכורת" → log_health → add_reminder
 • 1-4 שורות, ✅, plain text, שאלה אחת מקסימום
@@ -238,9 +238,9 @@ const TOOL_DECLARATIONS = [
   { name: 'create_calendar_event', description: 'יוצר אירוע חדש ב-Google Calendar.', parameters: { type: 'object', properties: { summary: { type: 'string' }, startDateTime: { type: 'string', description: 'ISO 8601' }, endDateTime: { type: 'string', description: 'ISO 8601' } }, required: ['summary', 'startDateTime', 'endDateTime'] } },
   { name: 'update_calendar_event', description: 'מעדכן אירוע קיים; דרוש eventId מ-find_calendar_events.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' }, startDateTime: { type: 'string' }, endDateTime: { type: 'string' } }, required: ['eventId'] } },
   { name: 'delete_calendar_event', description: 'מוחק אירוע מ-Google Calendar לפי eventId.', parameters: { type: 'object', properties: { eventId: { type: 'string' }, summary: { type: 'string' } }, required: ['eventId'] } },
-  { name: 'get_unread_emails',     description: 'מביא מיילים שלא נקראו מ-Gmail. ללא קידומים/ספאם.', parameters: { type: 'object', properties: { maxResults: { type: 'number', description: 'ברירת מחדל: 5' }, query: { type: 'string', description: 'Gmail query למשל: has:attachment, from:X, subject:Y' } }, required: [] } },
+  { name: 'get_unread_emails',     description: 'הצג מיילים חדשים שלא נקראו בלבד — לשאלות כמו "יש לי מיילים חדשים?", "מה יש לי במייל?". אל תשתמש לחיפוש לפי נושא/שולח/תוכן.', parameters: { type: 'object', properties: { maxResults: { type: 'number', description: 'ברירת מחדל: 5' }, query: { type: 'string', description: 'Gmail query למשל: has:attachment, from:X, subject:Y' } }, required: [] } },
   { name: 'get_email_body',        description: 'קרא תוכן מלא של מייל לפי ID — לסיכום או עיון.', parameters: { type: 'object', properties: { emailId: { type: 'string', description: 'ID מ-get_unread_emails' } }, required: ['emailId'] } },
-  { name: 'search_emails',         description: 'חפש מיילים נקראים ולא נקראים לפי קריטריונים.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Gmail search: from:X, subject:Y, has:attachment, newer_than:7d' }, maxResults: { type: 'number' } }, required: ['query'] } },
+  { name: 'search_emails',         description: 'חפש מיילים לפי קריטריונים — גם נקראים וגם לא נקראים. השתמש בכלי זה כשמחפשים: חשבוניות, קבלות, מיילים מאדם ספציפי, מיילים עם קבצים, מיילים לפי תאריך. דוגמאות: from:X, subject:חשבונית, has:attachment, newer_than:7d.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Gmail search: from:X, subject:Y, has:attachment, newer_than:7d' }, maxResults: { type: 'number' } }, required: ['query'] } },
   // Rate Limit
   { name: 'get_rate_stats', description: 'הצג מצב מכסת API: Gemini, Groq, כללי.', parameters: { type: 'object', properties: {}, required: [] } },
   // Social
@@ -276,6 +276,8 @@ const EXTENDED_KEYWORDS = [
   'חיפוש', 'search', 'מחיר', 'כמה עולה', 'מה זה', 'תחפש', 'תבדוק', 'מה המחיר',
   // OCR triggers
   'סרוק', 'ocr', 'חלץ טקסט', 'קבלה', 'מרשם', 'כרטיס ביקור',
+  // Invoice/receipt email search
+  'חשבונית', 'חשבוניות', 'קבלות', 'invoice',
 ];
 
 function selectTools(userText) {
