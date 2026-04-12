@@ -37,6 +37,9 @@ const {
 } = require('./google');
 const { saveDraft, listDrafts, deleteDraft } = require('./social');
 const { getExpenses, saveInvoice, getExpenseSummary, exportToCSV } = require('./expenses');
+const { fetchStockPrice, formatPrice, addToWatchlist, removeFromWatchlist, formatWatchlist } = require('./stocks');
+const { buildPainChartUrl, buildExpenseChartUrl, buildHabitChartUrl } = require('./charts');
+const { generateQuote } = require('./quote-generator');
 
 console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
 console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
@@ -255,6 +258,17 @@ const TOOL_DECLARATIONS = [
   { name: 'get_email_body',        description: 'קרא תוכן מלא של מייל לפי ID — לסיכום או עיון.', parameters: { type: 'object', properties: { emailId: { type: 'string', description: 'ID מ-get_unread_emails' } }, required: ['emailId'] } },
   { name: 'search_emails',         description: 'חפש מיילים לפי קריטריונים — גם נקראים וגם לא נקראים. השתמש בכלי זה כשמחפשים: חשבוניות, קבלות, מיילים מאדם ספציפי, מיילים עם קבצים, מיילים לפי תאריך. דוגמאות: from:X, subject:חשבונית, has:attachment, newer_than:7d.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Gmail search: from:X, subject:Y, has:attachment, newer_than:7d' }, maxResults: { type: 'number' } }, required: ['query'] } },
   { name: 'send_email',            description: 'שלח מייל מהחשבון שלך. ציין נמען, נושא וגוף.', parameters: { type: 'object', properties: { to: { type: 'string', description: 'כתובת אימייל' }, subject: { type: 'string', description: 'נושא המייל' }, body: { type: 'string', description: 'תוכן המייל' } }, required: ['to', 'subject', 'body'] } },
+  // PDF Quote Generator
+  { name: 'generate_quote', description: 'צור הצעת מחיר PDF ושלח ללקוח.', parameters: { type: 'object', properties: { client_name: { type: 'string' }, project_description: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { description: { type: 'string' }, price: { type: 'number' } }, required: ['description', 'price'] } }, currency: { type: 'string', enum: ['ILS', 'USD'], description: 'ברירת מחדל: ILS' }, notes: { type: 'string' } }, required: ['client_name', 'items'] } },
+  // Charts (#34)
+  { name: 'get_pain_chart',    description: 'שלח גרף כאב ומצב רוח כתמונה.', parameters: { type: 'object', properties: { days: { type: 'number', description: '7 או 30, ברירת מחדל: 7' } }, required: [] } },
+  { name: 'get_expense_chart', description: 'שלח גרף הוצאות חודשי כתמונה.', parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM' } }, required: [] } },
+  { name: 'get_habit_chart',   description: 'שלח גרף רצף הרגלים כתמונה.', parameters: { type: 'object', properties: {}, required: [] } },
+  // Stocks
+  { name: 'get_stock_price', description: 'קבל מחיר מניה בזמן אמת + שינוי%.', parameters: { type: 'object', properties: { symbol: { type: 'string', description: 'סמל מניה: NVDA, AAPL, BTC-USD...' } }, required: ['symbol'] } },
+  { name: 'watch_stock',     description: 'הוסף מניה לווצ\'ליסט עם התראת מחיר.', parameters: { type: 'object', properties: { symbol: { type: 'string' }, threshold: { type: 'number', description: 'מחיר להתראה' }, direction: { type: 'string', enum: ['above', 'below'], description: 'above=מעל, below=מתחת' } }, required: ['symbol', 'threshold'] } },
+  { name: 'get_watchlist',   description: 'הצג ווצ\'ליסט מניות עם מחירים חיים.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'remove_stock',    description: 'הסר מניה מהווצ\'ליסט.', parameters: { type: 'object', properties: { symbol: { type: 'string' } }, required: ['symbol'] } },
   // Smart Memory (#23)
   { name: 'remember_fact',  description: 'שמור עובדה אישית בזיכרון לטווח ארוך.', parameters: { type: 'object', properties: { fact: { type: 'string' } }, required: ['fact'] } },
   { name: 'forget_fact',    description: 'מחק עובדה מהזיכרון לפי מספר.', parameters: { type: 'object', properties: { index: { type: 'number', description: '0-based' } }, required: ['index'] } },
@@ -289,11 +303,15 @@ const CORE_TOOL_NAMES = new Set([
   'remember_fact', 'get_memory',
   'get_habits', 'log_habit', 'add_habit',
   'get_news',
+  'get_stock_price', 'get_watchlist',
 ]);
 
 const EXTENDED_KEYWORDS = [
   'news', 'חדשות', 'שוק', 'מניות', 'סטארטאפ', 'ישראל טק', 'ai news', 'saas', 'market',
   'crps', 'כאב', 'מחקר', 'קריפטו', 'crypto', 'bitcoin', 'ביטקוין', 'web3',
+  'מניה', 'מניות', 'stock', 'stocks', 'nvda', 'aapl', 'tsla', 'מחיר', 'ווצ\'ליסט', 'watchlist',
+  'גרף', 'chart', 'גרפים', 'pain chart', 'expense chart',
+  'הצעת מחיר', 'quote', 'pdf', 'לקוח', 'חשבון', 'invoice',
   'english', 'אנגלית', 'מילה', 'streak',
   'pomodoro', 'פומודורו', 'טיימר',
   'sites', 'אתרים', 'אתר',
@@ -584,6 +602,56 @@ async function executeTool(name, args, ctx) {
           source:      'manual',
         });
         return `✅ הוצאה נשמרה #${entry.id}: ${entry.vendor} — ${entry.amount} ${entry.currency}`;
+      }
+
+      // ── PDF Quote Generator ───────────────────────────────────────────────
+      case 'generate_quote': {
+        const pdfPath = await generateQuote({
+          clientName:         args.client_name,
+          projectDescription: args.project_description || '',
+          items:              args.items || [],
+          currency:           args.currency || 'ILS',
+          notes:              args.notes || '',
+        });
+        return `__FILE__:${pdfPath}`;
+      }
+
+      // ── Charts (#34) ──────────────────────────────────────────────────────
+      case 'get_pain_chart': {
+        const url = buildPainChartUrl(Number(args.days) || 7);
+        if (!url) return 'אין מספיק נתוני בריאות לגרף. תיעד לפחות 2 ימים.';
+        await bot.sendPhoto(chatId, url, { caption: `📊 גרף כאב — ${Number(args.days) || 7} ימים` });
+        return '__CHART_SENT__';
+      }
+      case 'get_expense_chart': {
+        const url = buildExpenseChartUrl(args.month || null);
+        if (!url) return 'אין הוצאות לתקופה זו.';
+        await bot.sendPhoto(chatId, url, { caption: `📊 גרף הוצאות` });
+        return '__CHART_SENT__';
+      }
+      case 'get_habit_chart': {
+        const url = buildHabitChartUrl();
+        if (!url) return 'אין הרגלים להציג. הוסף הרגל תחילה.';
+        await bot.sendPhoto(chatId, url, { caption: '📊 רצף הרגלים' });
+        return '__CHART_SENT__';
+      }
+
+      // ── Stocks ────────────────────────────────────────────────────────────
+      case 'get_stock_price': {
+        const s = await fetchStockPrice(args.symbol);
+        return formatPrice(s);
+      }
+      case 'watch_stock': {
+        const w = addToWatchlist(chatId, args.symbol, args.threshold, args.direction || 'above');
+        const dir = (args.direction || 'above') === 'above' ? 'מעל' : 'מתחת ל';
+        return `✅ עוקב אחרי ${w.symbol} — התראה כש${dir} $${w.threshold}`;
+      }
+      case 'get_watchlist': {
+        return await formatWatchlist(chatId);
+      }
+      case 'remove_stock': {
+        const ok = removeFromWatchlist(chatId, args.symbol);
+        return ok ? `✅ ${args.symbol.toUpperCase()} הוסר מהווצ'ליסט` : `${args.symbol.toUpperCase()} לא נמצא בווצ'ליסט`;
       }
 
       // ── Health Patterns (#24) ──────────────────────────────────────────────

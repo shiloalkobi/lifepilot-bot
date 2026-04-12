@@ -4,6 +4,7 @@ const cron = require('node-cron');
 const { getShabbatTimes, setShabbatWindow } = require('./shabbat');
 const { getOpenTasks }  = require('./tasks');
 const { getTodayHealth, getWeekRawStats } = require('./health');
+const { checkAlerts, initDefaultWatchlist } = require('./stocks');
 
 // Pikud HaOref alert keywords — these always bypass Shabbat mode
 const PIKUD_KEYWORDS = ['פיקוד העורף', 'אזעקה', 'ירי', 'רקטות', 'alert'];
@@ -130,7 +131,21 @@ function startProactiveScheduler(bot, chatId) {
     }
   }, { timezone: 'Asia/Jerusalem' });
 
-  console.log('[Proactive] Scheduler started — 3 jobs (Shabbat eve, health reminder, weekly plan) + Shabbat mode active');
+  // ── Stock alerts every 30 min (US market hours: 16:30–23:00 IL = Sun–Thu) ──
+  initDefaultWatchlist(chatId);
+  cron.schedule('*/30 * * * *', async () => {
+    try {
+      const now  = new Date();
+      const hour = parseInt(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem', hour: 'numeric', hour12: false }), 10);
+      const day  = now.getDay(); // 0=Sun
+      // US market hours in IL: ~16:30–23:00, Sun–Thu
+      if (day === 5 || day === 6) return; // Fri/Sat — market closed
+      if (hour < 16 || hour >= 23) return;
+      await checkAlerts(bot, chatId);
+    } catch (e) { console.warn('[Proactive] stocks error:', e.message); }
+  }, { timezone: 'Asia/Jerusalem' });
+
+  console.log('[Proactive] Scheduler started — 3 jobs (Shabbat eve, health reminder, weekly plan) + stock alerts every 30min + Shabbat mode active');
 }
 
 module.exports = { startProactiveScheduler, isPikudAlert };

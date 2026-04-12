@@ -737,6 +737,8 @@ function startBot(token, webhookUrl = null) {
         console.log('[Telegram] Sending document:', filePath, 'exists:', fs.existsSync(filePath));
         bot.sendDocument(chatId, fs.createReadStream(filePath), {}, { filename: pathModule.basename(filePath) })
           .catch(sendErr => console.error('[Telegram] sendDocument error:', sendErr.message));
+      } else if (reply === '__CHART_SENT__') {
+        // Chart was already sent as a photo inside executeTool — nothing more to send
       } else {
         bot.sendMessage(chatId, reply)
           .catch(sendErr => console.error('[Telegram] sendMessage error:', sendErr.message));
