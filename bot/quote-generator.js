@@ -2,8 +2,8 @@
 
 /**
  * quote-generator.js — professional PDF quotes using pdfmake.
- * pdfmake has native RTL support → no Hebrew spacing issues.
- * No Chromium required — works on Render free tier.
+ * pdfmake: use alignment:'right' per element, NO rtl:true (causes char reordering).
+ * Mixed Hebrew+number strings must be in separate cells to avoid bidi joining.
  */
 
 const PdfPrinter = require('pdfmake/src/printer');
@@ -53,6 +53,23 @@ function fmtNum(n) {
   return n.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+// ── Text helpers ──────────────────────────────────────────────────────────────
+
+// pdfmake bidi processing reverses word order for Hebrew strings.
+// Pre-reversing the words causes pdfmake's reversal to produce correct output.
+// Using NBSP (\u00A0) prevents pdfmake from dropping the space on word boundaries.
+const NBSP = '\u00A0';
+function heb(str) {
+  return str.split(' ').reverse().join(NBSP);
+}
+
+// For user-supplied Hebrew text (clientName, descriptions), use the same reversal.
+// wordSpacing: 1 is added to cells containing these to preserve inter-word spacing.
+function hebCell(str) {
+  if (!str) return '';
+  return String(str).split(' ').reverse().join(NBSP);
+}
+
 // ── Colors ────────────────────────────────────────────────────────────────────
 
 const BLUE   = '#1a56db';
@@ -98,42 +115,77 @@ async function generateQuote(opts) {
   const vat      = subtotal * vatRate;
   const total    = subtotal + vat;
 
-  // ── Client info rows (LTR columns, RTL text inside) ──────────────────────
-  // Without rtl:true, columns are left→right. We put labels on right, values on left
-  // so the visual reads naturally for Hebrew: [value] [label]
+  // ── Client info rows ──────────────────────────────────────────────────────
+  // Columns order (LTR layout, RTL read): date-label | date-value | client-label | client-value
   const clientRows = [
     [
-      { text: dateStr,    alignment: 'right', bold: true, color: DARK },
-      { text: 'תאריך:',  alignment: 'right', color: DGRAY },
-      { text: clientName, alignment: 'right', bold: true, color: DARK },
-      { text: 'לקוח:',   alignment: 'right', color: DGRAY },
+      { text: dateStr,             alignment: 'right', bold: true,  color: DARK,  wordSpacing: 1 },
+      { text: heb('תאריך:'),      alignment: 'right',              color: DGRAY },
+      { text: hebCell(clientName), alignment: 'right', bold: true,  color: DARK,  wordSpacing: 1 },
+      { text: heb('לקוח:'),       alignment: 'right',              color: DGRAY },
     ],
   ];
   if (projectDescription) {
     clientRows.push([
-      { text: projectDescription, alignment: 'right', bold: true, color: DARK, colSpan: 3 },
+      { text: hebCell(projectDescription), alignment: 'right', bold: true, color: DARK, colSpan: 3, wordSpacing: 1 },
       {},
       {},
-      { text: 'פרויקט:', alignment: 'right', color: DGRAY },
+      { text: heb('פרויקט:'), alignment: 'right', color: DGRAY },
     ]);
   }
 
   // ── Items table body ──────────────────────────────────────────────────────
   const tableBody = [
-    // Header row
     [
-      { text: 'תיאור',  alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
-      { text: 'מחיר',   alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
+      { text: heb('תיאור'), alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
+      { text: heb('מחיר'),  alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
     ],
   ];
   items.forEach((it, i) => {
     const amt = parseFloat(it.price) || 0;
     const bg  = i % 2 === 0 ? WHITE : LGRAY;
     tableBody.push([
-      { text: it.description || '', alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5] },
-      { text: `${sym}${fmtNum(amt)}`,  alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5] },
+      { text: hebCell(it.description || ''), alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5], wordSpacing: 1 },
+      { text: `${sym}${fmtNum(amt)}`,        alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5] },
     ]);
   });
+
+  // ── Totals rows — label and amount in SEPARATE cells to prevent bidi joining ──
+  const totalsBody = [
+    [
+      { text: '', border: [false,false,false,false] },
+      { text: heb('סכום לפני מע"מ:'), alignment: 'right', border: [false,false,false,false], margin: [0, 2, 4, 2] },
+      { text: `${sym}${fmtNum(subtotal)}`, alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
+    ],
+    [
+      { text: '', border: [false,false,false,false] },
+      { text: heb('מע"מ 18%:'), alignment: 'right', border: [false,false,false,false], margin: [0, 2, 4, 2] },
+      { text: `${sym}${fmtNum(vat)}`, alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
+    ],
+    [
+      { text: '', border: [false,false,false,false] },
+      {
+        text:      heb('סה"כ לתשלום:'),
+        alignment: 'right',
+        bold:      true,
+        fontSize:  13,
+        color:     WHITE,
+        fillColor: GREEN,
+        border:    [false,false,false,false],
+        margin:    [8, 8, 4, 8],
+      },
+      {
+        text:      `${sym}${fmtNum(total)}`,
+        alignment: 'right',
+        bold:      true,
+        fontSize:  13,
+        color:     WHITE,
+        fillColor: GREEN,
+        border:    [false,false,false,false],
+        margin:    [4, 8, 8, 8],
+      },
+    ],
+  ];
 
   // ── Document definition ───────────────────────────────────────────────────
   const docDef = {
@@ -143,8 +195,7 @@ async function generateQuote(opts) {
       font:      'Heebo',
       fontSize:  11,
       color:     DARK,
-      // No rtl:true — it causes character reordering/joining bugs in pdfmake.
-      // Use alignment:'right' per element instead.
+      // No rtl:true — combined with heb() pre-reversal this produces correct output
     },
 
     content: [
@@ -156,16 +207,16 @@ async function generateQuote(opts) {
             {
               stack: [
                 { text: 'Digital Web', fontSize: 22, bold: true, color: WHITE },
-                { text: 'פיתוח אתרים ופתרונות דיגיטליים', fontSize: 10, color: '#c7d7f8', margin: [0, 4, 0, 0] },
+                { text: heb('פיתוח אתרים ופתרונות דיגיטליים'), fontSize: 10, color: '#c7d7f8', margin: [0, 4, 0, 0] },
               ],
               alignment: 'left',
               margin: [12, 14, 12, 14],
             },
             {
               stack: [
-                { text: `מספר הצעה: ${qNum}`, alignment: 'right', color: WHITE, fontSize: 10 },
-                { text: `תאריך: ${dateStr}`,   alignment: 'right', color: WHITE, fontSize: 10, margin: [0, 4, 0, 0] },
-                { text: 'הצעת מחיר',           alignment: 'right', color: WHITE, bold: true, fontSize: 13, margin: [0, 6, 0, 0] },
+                { text: `${heb('מספר הצעה:')} ${qNum}`, alignment: 'right', color: WHITE, fontSize: 10 },
+                { text: `${heb('תאריך:')} ${dateStr}`,   alignment: 'right', color: WHITE, fontSize: 10, margin: [0, 4, 0, 0] },
+                { text: heb('הצעת מחיר'),                alignment: 'right', color: WHITE, bold: true, fontSize: 13, margin: [0, 6, 0, 0] },
               ],
               alignment: 'right',
               margin: [12, 10, 12, 10],
@@ -173,13 +224,13 @@ async function generateQuote(opts) {
           ]],
         },
         layout: {
-          fillColor: () => BLUE,
-          hLineWidth: () => 0,
-          vLineWidth: () => 0,
-          paddingLeft: () => 0,
+          fillColor:    () => BLUE,
+          hLineWidth:   () => 0,
+          vLineWidth:   () => 0,
+          paddingLeft:  () => 0,
           paddingRight: () => 0,
-          paddingTop: () => 0,
-          paddingBottom: () => 0,
+          paddingTop:   () => 0,
+          paddingBottom:() => 0,
         },
         margin: [0, 0, 0, 16],
       },
@@ -191,11 +242,11 @@ async function generateQuote(opts) {
           body: clientRows,
         },
         layout: {
-          fillColor:   () => LGRAY,
-          hLineColor:  () => BORDER,
-          vLineColor:  () => BORDER,
-          hLineWidth:  (i, node) => (i === 0 || i === node.table.body.length) ? 1 : 0,
-          vLineWidth:  (i, node) => (i === 0 || i === node.table.widths.length) ? 1 : 0,
+          fillColor:     () => LGRAY,
+          hLineColor:    () => BORDER,
+          vLineColor:    () => BORDER,
+          hLineWidth:    (i, node) => (i === 0 || i === node.table.body.length) ? 1 : 0,
+          vLineWidth:    (i, node) => (i === 0 || i === node.table.widths.length) ? 1 : 0,
           paddingLeft:   () => 10,
           paddingRight:  () => 10,
           paddingTop:    () => 8,
@@ -212,11 +263,11 @@ async function generateQuote(opts) {
           body: tableBody,
         },
         layout: {
-          fillColor: (rowIndex) => rowIndex === 0 ? BLUE : null,
-          hLineColor: () => BORDER,
-          vLineColor: () => BORDER,
-          hLineWidth:  () => 0.5,
-          vLineWidth:  () => 0.5,
+          fillColor:     (rowIndex) => rowIndex === 0 ? BLUE : null,
+          hLineColor:    () => BORDER,
+          vLineColor:    () => BORDER,
+          hLineWidth:    () => 0.5,
+          vLineWidth:    () => 0.5,
           paddingLeft:   () => 0,
           paddingRight:  () => 0,
           paddingTop:    () => 0,
@@ -228,30 +279,8 @@ async function generateQuote(opts) {
       // ── TOTALS ────────────────────────────────────────────────────────────
       {
         table: {
-          widths: ['*', 'auto'],
-          body: [
-            [
-              { text: '',                                                  border: [false,false,false,false] },
-              { text: `סכום לפני מע"מ: ${sym}${fmtNum(subtotal)}`,        alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
-            ],
-            [
-              { text: '',                                                  border: [false,false,false,false] },
-              { text: `מע"מ 18%: ${sym}${fmtNum(vat)}`,                  alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
-            ],
-            [
-              { text: '', border: [false,false,false,false] },
-              {
-                text:        `סה"כ לתשלום: ${sym}${fmtNum(total)}`,
-                alignment:   'center',
-                bold:        true,
-                fontSize:    13,
-                color:       WHITE,
-                fillColor:   GREEN,
-                border:      [false,false,false,false],
-                margin:      [16, 8, 16, 8],
-              },
-            ],
-          ],
+          widths: ['*', 'auto', 'auto'],
+          body: totalsBody,
         },
         layout: 'noBorders',
         margin: [0, 0, 0, notes ? 16 : 0],
@@ -265,23 +294,24 @@ async function generateQuote(opts) {
         },
         {
           columns: [
-            { text: notes,      alignment: 'right', color: DARK, width: '*' },
-            { text: 'הערות:',  alignment: 'right', color: DGRAY, width: 50 },
+            { text: hebCell(notes), alignment: 'right', color: DARK, width: '*', wordSpacing: 1 },
+            { text: heb('הערות:'), alignment: 'right', color: DGRAY, width: 50 },
           ],
         },
       ] : []),
     ],
 
     // ── FOOTER ──────────────────────────────────────────────────────────────
-    footer: (currentPage, pageCount) => ({
+    // LTR order for mixed Hebrew/English text: Hebrew names first (displayed on right), English in middle
+    footer: () => ({
       stack: [
         { canvas: [{ type: 'line', x1: 40, y1: 0, x2: 555, y2: 0, lineWidth: 0.5, lineColor: BORDER }] },
         {
-          text: 'תוקף ההצעה: 30 ימים מתאריך הנפקה  |  Digital Web  |  שילה אלקובי',
+          text: `${heb('שילה אלקובי')}  |  Digital Web  |  ${heb('תוקף ההצעה: 30 ימים מתאריך הנפקה')}`,
           alignment: 'center',
-          color: DGRAY,
-          fontSize: 9,
-          margin: [40, 6, 40, 0],
+          color:     DGRAY,
+          fontSize:  9,
+          margin:    [40, 6, 40, 0],
         },
       ],
     }),
