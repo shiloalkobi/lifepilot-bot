@@ -196,7 +196,8 @@ ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 • שיחת חולין: ענה בחום ללא כלים — שאל בחזרה, היה חבר
 • כשהודעה מתחילה ב-[תמונה שנשלחה] — עיבדת תמונה בהצלחה דרך Vision AI, תאר מה ראית
 • כשמשתמש אומר "תזכור ש..." — קרא ל-remember_fact עם העובדה
-• הרגלים: כשמשתמש אומר "עשיתי X" / "סיימתי X" — אם X תואם הרגל רשום, סמן אוטומטית`;
+• הרגלים: כשמשתמש אומר "עשיתי X" / "סיימתי X" — אם X תואם הרגל רשום, סמן אוטומטית
+• חדשות: כשמבקשים "חדשות" ללא קטגוריה → קרא get_news עם category='all' מיד, אל תשאל. "חדשות AI" → category='ai', "חדשות שוק" → category='market', "חדשות קריפטו" → category='crypto', "חדשות ישראל" → category='israel'`;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -281,6 +282,7 @@ const CORE_TOOL_NAMES = new Set([
   'get_expenses',
   'remember_fact', 'get_memory',
   'get_habits', 'log_habit', 'add_habit',
+  'get_news',
 ]);
 
 const EXTENDED_KEYWORDS = [

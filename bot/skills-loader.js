@@ -33,6 +33,7 @@ function loadSkills() {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('_')) continue; // disabled skills
 
     const skillDir  = path.join(SKILLS_DIR, entry.name);
     const indexPath = path.join(skillDir, 'index.js');
