@@ -184,15 +184,55 @@ function dedup(items) {
 
 // ── Category 1 — 🤖 AI & Dev Tools ──────────────────────────────────────────
 
+// Strict AI keywords — Simon Willison posts must match at least one
+const SIMON_AI_KW = [
+  'claude', 'anthropic', 'gemini', 'gpt', 'openai', 'llm', ' ai ',
+  'mistral', 'llama', 'copilot', 'cursor', 'chatgpt', 'agent',
+  'mcp', 'groq', 'gemma', 'stable diffusion', 'midjourney', 'whisper',
+  'vibe coding', 'claude code', 'language model', 'generative',
+];
+
 async function fetchAIDev(max = 3) {
   const raw = [];
 
-  // HN Algolia — last 24h
+  // SOURCE 1 — Anthropic official blog
+  try {
+    const xml = await httpGet('https://www.anthropic.com/news/rss.xml');
+    for (const r of parseRSSItems(xml, 5)) {
+      raw.push(item(r, 'Anthropic', 'ai'));
+    }
+  } catch (e) { console.warn('[News] Anthropic blog:', e.message); }
+
+  // SOURCE 2 — Anthropic changelog (docs)
+  try {
+    const xml = await httpGet('https://docs.anthropic.com/changelog/rss.xml');
+    for (const r of parseRSSItems(xml, 3)) {
+      raw.push(item(r, 'Anthropic Docs', 'ai'));
+    }
+  } catch (e) { console.warn('[News] Anthropic changelog:', e.message); }
+
+  // SOURCE 3 — Simon Willison (strict AI filter)
+  try {
+    const xml = await httpGet('https://simonwillison.net/atom/everything/');
+    for (const r of parseRSSItems(xml, 15)) {
+      const text = (r.title + ' ' + (r.description || '')).toLowerCase();
+      if (SIMON_AI_KW.some(k => text.includes(k))) {
+        raw.push(item(r, 'Simon Willison', 'ai'));
+      }
+    }
+  } catch (e) { console.warn('[News] Simon Willison:', e.message); }
+
+  // SOURCE 4 — HN Algolia (tightened query, points > 20, last 24h)
   try {
     const since = Math.floor((Date.now() - 86400000) / 1000);
-    const q     = encodeURIComponent('Claude OR Gemini OR GPT OR "AI agent" OR LLM OR Cursor OR Copilot OR Anthropic OR Mistral OR Groq OR MCP');
-    const url   = `https://hn.algolia.com/api/v1/search?query=${q}&tags=story&numericFilters=created_at_i>${since}&hitsPerPage=20`;
-    const data  = JSON.parse(await httpGet(url));
+    const q     = encodeURIComponent(
+      'Claude OR "Claude Code" OR "Claude 4" OR "Claude 3" OR ' +
+      '"Cursor IDE" OR "GitHub Copilot" OR ChatGPT OR "GPT-5" OR "GPT-4" OR ' +
+      '"Gemini 2" OR "Gemini Pro" OR "vibe coding" OR "MCP protocol" OR ' +
+      '"AI agent" OR "LLM benchmark" OR Anthropic OR "language model"'
+    );
+    const url = `https://hn.algolia.com/api/v1/search?query=${q}&tags=story&numericFilters=created_at_i>${since},points>20&hitsPerPage=15`;
+    const data = JSON.parse(await httpGet(url));
     for (const h of (data.hits || [])) {
       if (matches(h.title, AI_KW)) {
         raw.push({
@@ -206,13 +246,25 @@ async function fetchAIDev(max = 3) {
     }
   } catch (e) { console.warn('[News] HN AI:', e.message); }
 
-  // Simon Willison atom
+  // SOURCE 5 — The Verge AI section
   try {
-    const xml = await httpGet('https://simonwillison.net/atom/everything/');
+    const xml = await httpGet('https://www.theverge.com/ai-artificial-intelligence/rss/index.xml');
     for (const r of parseRSSItems(xml, 8)) {
-      raw.push(item(r, 'Simon Willison', 'ai'));
+      if (matches(r.title + ' ' + (r.description || ''), AI_KW)) {
+        raw.push(item(r, 'The Verge', 'ai'));
+      }
     }
-  } catch (e) { console.warn('[News] SimonWillison:', e.message); }
+  } catch (e) { console.warn('[News] The Verge AI:', e.message); }
+
+  // SOURCE 6 — VentureBeat AI
+  try {
+    const xml = await httpGet('https://feeds.feedburner.com/venturebeat/SZYF');
+    for (const r of parseRSSItems(xml, 8)) {
+      if (matches(r.title + ' ' + (r.description || ''), AI_KW)) {
+        raw.push(item(r, 'VentureBeat', 'ai'));
+      }
+    }
+  } catch (e) { console.warn('[News] VentureBeat:', e.message); }
 
   return dedup(raw).slice(0, max);
 }
