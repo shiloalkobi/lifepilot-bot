@@ -28,6 +28,7 @@ const { addNote, searchNotes, load: loadNotes }         = require('./notes');
 const { getDailyWordSync, formatWord, formatStreak }    = require('./english');
 const { startPomo, stopPomo, getTodayPomoStats }        = require('./pomodoro');
 const { sendNews }                                      = require('./news');
+const { buildNewsMessage }                              = require('../skills/news');
 const { load: loadSites, runChecks }                    = require('./sites');
 const {
   getCalendarEvents, createCalendarEvent, getUnreadEmails,
@@ -230,8 +231,8 @@ const TOOL_DECLARATIONS = [
   { name: 'start_pomodoro',    description: 'התחל סשן פומודורו (ברירת מחדל 25 דקות).', parameters: { type: 'object', properties: { minutes: { type: 'number' } }, required: [] } },
   { name: 'stop_pomodoro',     description: 'עצור את סשן הפומודורו הנוכחי.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'get_pomodoro_stats', description: 'קבל סטטיסטיקת פומודורו של היום.', parameters: { type: 'object', properties: {}, required: [] } },
-  // News
-  { name: 'get_tech_news', description: 'שלח חדשות טכנולוגיה מ-Hacker News.', parameters: { type: 'object', properties: { full: { type: 'boolean', description: 'true=10 כתבות, false=5 עם AI' } }, required: [] } },
+  // News (production 4-category system)
+  { name: 'get_news', description: 'הבא חדשות לפי קטגוריה: ai/saas/market/israel/all.', parameters: { type: 'object', properties: { category: { type: 'string', enum: ['ai','saas','market','israel','all'], description: 'ברירת מחדל: all' } }, required: [] } },
   // Sites
   { name: 'get_site_status', description: 'הצג סטטוס up/down של האתרים.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'check_sites_now', description: 'בצע בדיקת up/down מיידית לאתרים.', parameters: { type: 'object', properties: {}, required: [] } },
@@ -283,7 +284,8 @@ const CORE_TOOL_NAMES = new Set([
 ]);
 
 const EXTENDED_KEYWORDS = [
-  'news', 'חדשות', 'english', 'אנגלית', 'מילה', 'streak',
+  'news', 'חדשות', 'שוק', 'מניות', 'סטארטאפ', 'ישראל טק', 'ai news', 'saas', 'market',
+  'english', 'אנגלית', 'מילה', 'streak',
   'pomodoro', 'פומודורו', 'טיימר',
   'sites', 'אתרים', 'אתר',
   'calendar', 'יומן', 'אירוע', 'פגישה', 'פגישות', 'עדכן פגישה',
@@ -475,10 +477,12 @@ async function executeTool(name, args, ctx) {
         return `היום: ${stats.sessions} סשנים, ${stats.totalMinutes} דקות סה"כ`;
       }
 
-      // ── News ───────────────────────────────────────────────────────────────
-      case 'get_tech_news': {
-        sendNews(bot, chatId, !!args.full);
-        return 'חדשות נשלחות...';
+      // ── News (4-category production system) ───────────────────────────────
+      case 'get_news': {
+        const category = args.category || 'all';
+        const msg = await buildNewsMessage(category);
+        await bot.sendMessage(chatId, msg, { parse_mode: 'HTML', disable_web_page_preview: true });
+        return `חדשות נשלחו (${category})`;
       }
 
       // ── Sites ──────────────────────────────────────────────────────────────

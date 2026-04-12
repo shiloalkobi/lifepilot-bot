@@ -12,7 +12,7 @@ const { buildSummaryMessage }      = require('./daily-summary');
 const { buildWeeklySummaryMessage } = require('./weekly-summary');
 const { sendNews }                 = require('./news');
 const { getCalendarEvents }        = require('./google');
-const { fetchAINews } = require('../skills/ai-news');
+const { fetchAINews, buildNewsMessage } = require('../skills/news');
 const { getTodayHabitSummary }     = require('./habits');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
@@ -164,10 +164,13 @@ async function buildMorningMessage() {
     lines.push('');
   }
 
-  // AI news — 1 headline
+  // AI news — up to 2 headlines in morning briefing
   if (aiStories.length > 0) {
-    lines.push('📰 <b>AI חדשות:</b>');
-    lines.push(`• ${aiStories[0].title}`);
+    lines.push('🤖 <b>AI חדשות:</b>');
+    aiStories.slice(0, 2).forEach(s => {
+      const src = s.source ? ` [${s.source}]` : '';
+      lines.push(`• <a href="${s.url}">${s.title}</a>${src}`);
+    });
     lines.push('');
   }
 
@@ -228,8 +231,15 @@ function startScheduler(bot, chatId) {
   cron.schedule('0 11 * * 5', sendWeeklySummary, { timezone: 'UTC' });
 
   async function sendDailyNews() {
-    await sendNews(bot, chatId, false);
-    console.log('[Scheduler] Daily news sent');
+    try {
+      const msg = await buildNewsMessage('all');
+      await bot.sendMessage(chatId, msg, { parse_mode: 'HTML', disable_web_page_preview: true });
+      console.log('[Scheduler] Daily news sent (4-category)');
+    } catch (err) {
+      console.error('[Scheduler] Daily news error:', err.message);
+      // Fallback to legacy
+      await sendNews(bot, chatId, false);
+    }
   }
 
   async function sendDailySummary() {
