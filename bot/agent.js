@@ -10,7 +10,8 @@ const {
   formatStats,
 } = require('./rate-limiter');
 const { getHistory, addMessage }       = require('./history');
-const { loadMemory, formatMemoryBlock } = require('./agent-memory');
+const { loadMemory, formatMemoryBlock, addLearnedFact, removeLearnedFact, listLearnedFacts } = require('./agent-memory');
+const { addHabit, deleteHabit, logHabit, getHabits, formatHabits } = require('./habits');
 const { initRegistry, getAllToolDeclarations, executeAnyTool } = require('./skills-registry');
 
 // ── Retry helper ─────────────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── Module imports ────────────────────────────────────────────────────────────
 const { addTask, markDone, deleteTask, getOpenTasks, getCompletedToday } = require('./tasks');
-const { logDirect, getTodayHealth, getWeekSummary }                      = require('./health');
+const { logDirect, getTodayHealth, getWeekSummary, analyzeHealthPatterns } = require('./health');
 const { getTodayMedStatus, markTaken }                                   = require('./medications');
 const {
   addReminderDirect, listPending, deleteReminder, formatTimeIL,
@@ -192,7 +193,9 @@ ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 • שרשור: "כאב+תזכורת" → log_health → add_reminder
 • 1-4 שורות, ✅, plain text, שאלה אחת מקסימום
 • שיחת חולין: ענה בחום ללא כלים — שאל בחזרה, היה חבר
-• כשהודעה מתחילה ב-[תמונה שנשלחה] — עיבדת תמונה בהצלחה דרך Vision AI, תאר מה ראית`;
+• כשהודעה מתחילה ב-[תמונה שנשלחה] — עיבדת תמונה בהצלחה דרך Vision AI, תאר מה ראית
+• כשמשתמש אומר "תזכור ש..." — קרא ל-remember_fact עם העובדה
+• הרגלים: כשמשתמש אומר "עשיתי X" / "סיימתי X" — אם X תואם הרגל רשום, סמן אוטומטית`;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -203,6 +206,8 @@ const TOOL_DECLARATIONS = [
   { name: 'get_tasks',      description: 'קבל רשימת המשימות הפתוחות.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'complete_task',  description: 'סמן משימה כבוצעת לפי מספר.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
   { name: 'delete_task',    description: 'מחק משימה לצמיתות.', parameters: { type: 'object', properties: { task_index: { type: 'number', description: '1-based' } }, required: ['task_index'] } },
+  // Health Patterns (#24)
+  { name: 'analyze_health_patterns', description: 'נתח דפוסי בריאות: כאב לפי יום, קורלציה שינה-כאב, מגמות.', parameters: { type: 'object', properties: { days: { type: 'number', description: 'ברירת מחדל: 30' } }, required: [] } },
   // Health
   { name: 'log_health',         description: 'רשום כאב/שינה/מצב רוח ישירות ללא שאלון.', parameters: { type: 'object', properties: { pain: { type: 'number', description: 'pain 1-10 (חובה)' }, mood: { type: 'number', description: 'mood 1-10' }, sleep: { type: 'number', description: 'שעות שינה' }, symptoms: { type: 'string' }, notes: { type: 'string' } }, required: ['pain'] } },
   { name: 'get_health_today',   description: 'קבל דיווח הבריאות של היום.', parameters: { type: 'object', properties: {}, required: [] } },
@@ -242,6 +247,15 @@ const TOOL_DECLARATIONS = [
   { name: 'get_email_body',        description: 'קרא תוכן מלא של מייל לפי ID — לסיכום או עיון.', parameters: { type: 'object', properties: { emailId: { type: 'string', description: 'ID מ-get_unread_emails' } }, required: ['emailId'] } },
   { name: 'search_emails',         description: 'חפש מיילים לפי קריטריונים — גם נקראים וגם לא נקראים. השתמש בכלי זה כשמחפשים: חשבוניות, קבלות, מיילים מאדם ספציפי, מיילים עם קבצים, מיילים לפי תאריך. דוגמאות: from:X, subject:חשבונית, has:attachment, newer_than:7d.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Gmail search: from:X, subject:Y, has:attachment, newer_than:7d' }, maxResults: { type: 'number' } }, required: ['query'] } },
   { name: 'send_email',            description: 'שלח מייל מהחשבון שלך. ציין נמען, נושא וגוף.', parameters: { type: 'object', properties: { to: { type: 'string', description: 'כתובת אימייל' }, subject: { type: 'string', description: 'נושא המייל' }, body: { type: 'string', description: 'תוכן המייל' } }, required: ['to', 'subject', 'body'] } },
+  // Smart Memory (#23)
+  { name: 'remember_fact',  description: 'שמור עובדה אישית בזיכרון לטווח ארוך.', parameters: { type: 'object', properties: { fact: { type: 'string' } }, required: ['fact'] } },
+  { name: 'forget_fact',    description: 'מחק עובדה מהזיכרון לפי מספר.', parameters: { type: 'object', properties: { index: { type: 'number', description: '0-based' } }, required: ['index'] } },
+  { name: 'get_memory',     description: 'הצג את כל העובדות השמורות בזיכרון.', parameters: { type: 'object', properties: {}, required: [] } },
+  // Habit Tracker (#35)
+  { name: 'add_habit',    description: 'הוסף הרגל חדש למעקב יומי/שבועי.', parameters: { type: 'object', properties: { name: { type: 'string' }, icon: { type: 'string', description: 'אמוג\'י כרצון' }, frequency: { type: 'string', enum: ['daily', 'weekly'] } }, required: ['name'] } },
+  { name: 'log_habit',    description: 'סמן הרגל כבוצע היום.', parameters: { type: 'object', properties: { id: { type: 'number' }, done: { type: 'boolean', description: 'ברירת מחדל: true' } }, required: ['id'] } },
+  { name: 'get_habits',   description: 'הצג כל ההרגלים עם streak וסטטוס היום.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'delete_habit', description: 'מחק הרגל לפי ID.', parameters: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] } },
   // Rate Limit
   { name: 'get_rate_stats', description: 'הצג מצב מכסת API: Gemini, Groq, כללי.', parameters: { type: 'object', properties: {}, required: [] } },
   // Social
@@ -264,6 +278,8 @@ const CORE_TOOL_NAMES = new Set([
   'get_current_context',
   'get_rate_stats',
   'get_expenses',
+  'remember_fact', 'get_memory',
+  'get_habits', 'log_habit', 'add_habit',
 ]);
 
 const EXTENDED_KEYWORDS = [
@@ -275,6 +291,9 @@ const EXTENDED_KEYWORDS = [
   'social', 'פוסט', 'instagram', 'facebook', 'tiktok',
   'notes', 'הערות', 'הערה', 'חפש',
   'health summary', 'סיכום בריאות',
+  'דפוסים', 'patterns', 'ניתוח בריאות', 'ניתוח', 'קורלציה',
+  'זכור', 'תזכור', 'remember', 'שכח', 'זיכרון', 'עובדות',
+  'הרגל', 'הרגלים', 'habit', 'habits', 'streak', 'רצף',
   'medications', 'תרופות', 'med',
   'pomodoro stats',
   // Web search triggers
@@ -552,6 +571,47 @@ async function executeTool(name, args, ctx) {
           source:      'manual',
         });
         return `✅ הוצאה נשמרה #${entry.id}: ${entry.vendor} — ${entry.amount} ${entry.currency}`;
+      }
+
+      // ── Health Patterns (#24) ──────────────────────────────────────────────
+      case 'analyze_health_patterns': {
+        const days = Number(args.days) || 30;
+        return analyzeHealthPatterns(days);
+      }
+
+      // ── Smart Memory (#23) ─────────────────────────────────────────────────
+      case 'remember_fact': {
+        const facts = addLearnedFact(chatId, args.fact);
+        return `✅ נשמר בזיכרון: "${args.fact}" (סה"כ ${facts.length} עובדות)`;
+      }
+      case 'forget_fact': {
+        const ok = removeLearnedFact(chatId, Number(args.index));
+        return ok ? `✅ עובדה #${args.index} נמחקה מהזיכרון` : `שגיאה: אינדקס ${args.index} לא קיים`;
+      }
+      case 'get_memory': {
+        const facts = listLearnedFacts(chatId);
+        if (!facts.length) return 'אין עובדות שמורות בזיכרון עדיין.';
+        return '🧠 <b>זיכרון אישי:</b>\n' + facts.map((f, i) => `${i}. ${f.fact}`).join('\n');
+      }
+
+      // ── Habit Tracker (#35) ────────────────────────────────────────────────
+      case 'add_habit': {
+        const habit = addHabit(args.name, args.icon, args.frequency);
+        return `✅ הרגל נוסף: ${habit.icon} "${habit.name}" (ID: ${habit.id}, ${habit.frequency})`;
+      }
+      case 'log_habit': {
+        const result = logHabit(Number(args.id), args.done !== false);
+        if (!result) return `שגיאה: הרגל ${args.id} לא נמצא`;
+        const { habit, streak } = result;
+        return `${args.done !== false ? '✅' : '❌'} ${habit.icon} "${habit.name}" — ${streak > 0 ? `🔥 רצף ${streak} ימים` : 'נרשם'}`;
+      }
+      case 'get_habits': {
+        return formatHabits();
+      }
+      case 'delete_habit': {
+        const removed = deleteHabit(Number(args.id));
+        if (!removed) return `שגיאה: הרגל ${args.id} לא נמצא`;
+        return `🗑️ הרגל "${removed.name}" נמחק`;
       }
 
       // ── Rate Stats ─────────────────────────────────────────────────────────

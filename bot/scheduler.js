@@ -13,6 +13,7 @@ const { buildWeeklySummaryMessage } = require('./weekly-summary');
 const { sendNews }                 = require('./news');
 const { getCalendarEvents }        = require('./google');
 const { fetchAINews } = require('../skills/ai-news');
+const { getTodayHabitSummary }     = require('./habits');
 
 const QUOTES_PATH = path.join(__dirname, '..', 'data', 'quotes.json');
 
@@ -143,6 +144,18 @@ async function buildMorningMessage() {
     lines.push('📝 <b>תזכורת:</b> לא מילאת דיווח בריאות אתמול. /health');
     lines.push('');
   }
+
+  // Habits section
+  try {
+    const habitSummary = getTodayHabitSummary();
+    if (habitSummary && habitSummary.total > 0) {
+      lines.push(`🏃 <b>הרגלים:</b> ${habitSummary.done}/${habitSummary.total} בוצעו`);
+      if (habitSummary.pending.length > 0) {
+        habitSummary.pending.slice(0, 3).forEach(h => lines.push(`• ${h.icon} ${h.name}`));
+      }
+      lines.push('');
+    }
+  } catch {}
 
   // Today's calendar events
   if (calendarToday && calendarToday !== 'אין אירועים בתקופה זו.') {

@@ -1,0 +1,25 @@
+{
+  "dates": [
+    "2026-03-24"
+  ],
+  "wordsLearned": [],
+  "quizScores": [],
+  "lastPracticed": "2026-03-24",
+  "dailyWords": {},
+  "dailyWordData": {
+    "2026-03-24": {
+      "word": "Task",
+      "translation": "משימה",
+      "partOfSpeech": "noun",
+      "example": "My first task today is to fix the login bug.",
+      "difficulty": "beginner",
+      "pronunciation": "/tɑːsk/ (tahsk)",
+      "commonMistake": "Many Hebrew speakers might use 'עבודה' (avoda - work) when referring to a specific item that needs to be done, while 'משימה' (task) is more precise for a discrete piece of work.",
+      "relatedWords": [
+        "Project",
+        "Ticket",
+        "Deadline"
+      ]
+    }
+  }
+}

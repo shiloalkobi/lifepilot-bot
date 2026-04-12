@@ -272,6 +272,94 @@ function getYesterdayHealth() {
   return entries.find((e) => e.date === yesterday) || null;
 }
 
+// ── Health pattern analysis (#24) ────────────────────────────────────────────
+function analyzeHealthPatterns(days = 30) {
+  const entries = load();
+  const cutoff  = dateBeforeIL(days - 1);
+  const recent  = entries.filter((e) => e.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date));
+
+  if (recent.length < 3) {
+    return `📊 צריך לפחות 3 דיווחים לניתוח דפוסים. יש ${recent.length} דיווחים בתקופה זו.`;
+  }
+
+  const lines = [`📊 <b>ניתוח דפוסי בריאות — ${days} ימים</b> (${recent.length} דיווחים)\n`];
+
+  // ── Day-of-week pain averages ───────────────────────────────────────────────
+  const dayNames = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const byDay = Array.from({ length: 7 }, () => []);
+  for (const e of recent) {
+    const dow = new Date(e.date + 'T12:00:00').getDay(); // 0=Sun
+    if (e.painLevel != null) byDay[dow].push(e.painLevel);
+  }
+  const dayAvgs = byDay.map((arr, i) => ({
+    name: dayNames[i],
+    avg: arr.length ? arr.reduce((s,v) => s+v, 0) / arr.length : null,
+    count: arr.length,
+  })).filter(d => d.avg != null);
+
+  if (dayAvgs.length >= 2) {
+    const sorted = [...dayAvgs].sort((a, b) => b.avg - a.avg);
+    const worst = sorted[0];
+    const best  = sorted[sorted.length - 1];
+    lines.push('📅 <b>כאב לפי יום בשבוע:</b>');
+    lines.push(`• יום הכי קשה: <b>${worst.name}</b> (ממוצע ${worst.avg.toFixed(1)}/10)`);
+    lines.push(`• יום הכי קל:  <b>${best.name}</b> (ממוצע ${best.avg.toFixed(1)}/10)`);
+    lines.push('');
+  }
+
+  // ── Sleep → next-day pain correlation ─────────────────────────────────────
+  const lowSleepPain  = []; // pain on day after sleep < 6h
+  const goodSleepPain = []; // pain on day after sleep ≥ 6h
+  for (let i = 0; i < recent.length - 1; i++) {
+    const sleepEntry = recent[i];
+    const nextEntry  = recent[i + 1];
+    if (sleepEntry.sleep != null && nextEntry.painLevel != null) {
+      if (sleepEntry.sleep < 6) lowSleepPain.push(nextEntry.painLevel);
+      else goodSleepPain.push(nextEntry.painLevel);
+    }
+  }
+  if (lowSleepPain.length >= 2 && goodSleepPain.length >= 2) {
+    const avgLow  = lowSleepPain.reduce((s, v) => s + v, 0) / lowSleepPain.length;
+    const avgGood = goodSleepPain.reduce((s, v) => s + v, 0) / goodSleepPain.length;
+    const diff = avgLow - avgGood;
+    lines.push('💤 <b>השפעת שינה על כאב למחרת:</b>');
+    if (diff >= 0.5) {
+      lines.push(`• אחרי שינה קצרה (<6ש'): כאב ממוצע <b>${avgLow.toFixed(1)}/10</b>`);
+      lines.push(`• אחרי שינה טובה (≥6ש'): כאב ממוצע <b>${avgGood.toFixed(1)}/10</b>`);
+      lines.push(`• ⚠️ שינה קצרה מעלה כאב ב-<b>${diff.toFixed(1)} נקודות</b> בממוצע`);
+    } else {
+      lines.push(`• לא נמצא קשר משמעותי בין שינה לכאב למחרת (הפרש ${Math.abs(diff).toFixed(1)})`);
+    }
+    lines.push('');
+  }
+
+  // ── High-pain streaks ──────────────────────────────────────────────────────
+  let maxStreak = 0, currentStreak = 0;
+  for (const e of recent) {
+    if (e.painLevel >= 7) { currentStreak++; maxStreak = Math.max(maxStreak, currentStreak); }
+    else currentStreak = 0;
+  }
+  if (maxStreak > 0) {
+    lines.push(`🔴 <b>רצף כאב גבוה (≥7):</b> מקסימום ${maxStreak} ימים רצופים`);
+    lines.push('');
+  }
+
+  // ── Overall trend ──────────────────────────────────────────────────────────
+  const pains = recent.map(e => e.painLevel).filter(Boolean);
+  if (pains.length >= 4) {
+    const half = Math.floor(pains.length / 2);
+    const firstHalf = pains.slice(0, half).reduce((s, v) => s + v, 0) / half;
+    const lastHalf  = pains.slice(half).reduce((s, v) => s + v, 0) / (pains.length - half);
+    const diff = lastHalf - firstHalf;
+    lines.push('📈 <b>מגמה כללית:</b>');
+    if (diff > 0.5)       lines.push(`• הכאב עלה ב-${diff.toFixed(1)} נקודות בממוצע לעומת תחילת התקופה ↗️`);
+    else if (diff < -0.5) lines.push(`• הכאב ירד ב-${Math.abs(diff).toFixed(1)} נקודות בממוצע ✅↘️`);
+    else                  lines.push('• הכאב יציב לאורך התקופה ➡️');
+  }
+
+  return lines.join('\n');
+}
+
 // ── Raw weekly stats (for proactive scheduler — no formatting) ────────────────
 function getWeekRawStats(days = 7) {
   const entries = load();
@@ -305,4 +393,5 @@ module.exports = {
   checkHighPainAlert,
   hadEntryYesterday,
   getYesterdayHealth,
+  analyzeHealthPatterns,
 };

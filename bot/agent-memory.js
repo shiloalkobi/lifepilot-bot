@@ -43,6 +43,34 @@ function saveMemory(chatId, memory) {
   fs.writeFileSync(MEMORY_FILE, JSON.stringify(all, null, 2), 'utf8');
 }
 
+function addLearnedFact(chatId, fact) {
+  const memory = loadMemory(chatId);
+  if (!Array.isArray(memory.learnedFacts)) memory.learnedFacts = [];
+  // Avoid near-duplicates
+  const duplicate = memory.learnedFacts.some(f =>
+    f.fact.toLowerCase().includes(fact.toLowerCase().slice(0, 20))
+  );
+  if (!duplicate) {
+    memory.learnedFacts.push({ fact, confidence: 1.0, addedAt: new Date().toISOString() });
+    saveMemory(chatId, memory);
+  }
+  return memory.learnedFacts;
+}
+
+function removeLearnedFact(chatId, index) {
+  const memory = loadMemory(chatId);
+  if (!Array.isArray(memory.learnedFacts)) return false;
+  if (index < 0 || index >= memory.learnedFacts.length) return false;
+  memory.learnedFacts.splice(index, 1);
+  saveMemory(chatId, memory);
+  return true;
+}
+
+function listLearnedFacts(chatId) {
+  const memory = loadMemory(chatId);
+  return memory.learnedFacts || [];
+}
+
 function formatMemoryBlock(memory) {
   const lines = [];
   if (memory.patterns?.averagePainLevel)   lines.push(`ממוצע כאב 7 ימים: ${memory.patterns.averagePainLevel}/10`);
@@ -53,4 +81,4 @@ function formatMemoryBlock(memory) {
   return (lines.length ? lines.join('\n') : '') + (facts ? '\n' + facts : '');
 }
 
-module.exports = { loadMemory, saveMemory, formatMemoryBlock };
+module.exports = { loadMemory, saveMemory, formatMemoryBlock, addLearnedFact, removeLearnedFact, listLearnedFacts };

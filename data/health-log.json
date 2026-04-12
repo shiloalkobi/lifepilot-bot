@@ -1,0 +1,20 @@
+[
+  {
+    "date": "2026-03-25",
+    "painLevel": 6,
+    "mood": null,
+    "sleep": null,
+    "symptoms": "",
+    "notes": "",
+    "createdAt": "2026-03-25T08:37:12.275Z"
+  },
+  {
+    "date": "2026-03-26",
+    "painLevel": 8,
+    "mood": null,
+    "sleep": null,
+    "symptoms": "כאב ראש חזק",
+    "notes": "",
+    "createdAt": "2026-03-26T08:03:57.586Z"
+  }
+]

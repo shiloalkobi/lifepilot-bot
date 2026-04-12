@@ -1,0 +1,33 @@
+🧪 QA Report — LifePilot
+📅 26.3.2026, 10:25:22
+
+✅ Test 1: Greeting -- friendly, no tool needed
+❌ Test 2: Get tasks -- must call get_tasks
+   ↳ Expected "get_tasks", got: none
+❌ Test 3: Add task -- add_task with text containing br
+   ↳ add_task not called. Got: none
+❌ Test 4: Log health pain=6 mood=7 -- args must be num
+   ↳ log_health not called. Got: none
+❌ Test 5: Get health today -- get_health_today
+   ↳ Expected "get_health_today", got: none
+❌ Test 6: Reminder in 2 min -- remind_at within 1-4 mi
+   ↳ add_reminder not called. Got: none
+❌ Test 7: Get reminders -- get_reminders
+   ↳ Expected "get_reminders", got: none
+❌ Test 8: Save note -- save_note
+   ↳ Expected "save_note", got: none
+❌ Test 9: Tech news -- get_tech_news
+   ↳ Expected "get_tech_news", got: none
+❌ Test 10: Start pomodoro -- start_pomodoro
+   ↳ Expected "start_pomodoro", got: none
+❌ Test 11: Show current Israel time (HH:MM in response)
+   ↳ No HH:MM pattern in: "⏳ הגבלת קריאות API — נסה שוב בעוד כמה דקות."
+✅ Test 12: Describe self -- response exists, no crash
+❌ Test 13: Chain: log_health + add_reminder
+   ↳ Missing: log_health+add_reminder | got: none
+❌ Test 14: Complete task 1 -- complete_task with numeri
+   ↳ complete_task not called. Got: none
+❌ Test 15: Summary -- get_current_context or tasks/heal
+   ↳ Expected context/summary tool, got: none
+
+📊 2/15 עברו | 13 נכשלו
