@@ -75,7 +75,7 @@ function buildHtml(opts, fontBase64) {
 
   const itemRows = items.map((it, i) => {
     const amt = parseFloat(it.price) || 0;
-    const bg  = i % 2 === 0 ? '#ffffff' : '#f3f4f6';
+    const bg  = i % 2 === 0 ? '#ffffff' : '#f8faff';
     return `
       <tr style="background:${bg}">
         <td class="desc">${esc(it.description)}</td>
@@ -112,85 +112,104 @@ function buildHtml(opts, fontBase64) {
 
   /* ── Header ── */
   .header {
-    background: #1a56db;
+    background: linear-gradient(135deg, #1a56db, #1e40af);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     color: white;
-    padding: 20px 32px;
+    padding: 24px 36px;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
   }
-  .company-name { font-size: 26px; font-weight: bold; margin-bottom: 4px; }
-  .company-sub  { font-size: 11px; color: #c7d7f8; }
-  .quote-meta   { text-align: left; font-size: 11px; line-height: 1.8; }
-  .quote-title  { font-size: 16px; font-weight: bold; margin-top: 6px; }
+  .company-name { font-size: 30px; font-weight: bold; margin-bottom: 5px; letter-spacing: -0.5px; }
+  .company-sub  { font-size: 11px; color: #bfdbfe; }
+  .header-divider {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.25);
+    margin: 0 36px;
+  }
+  .quote-meta   { text-align: left; font-size: 11px; line-height: 2; color: #dbeafe; }
+  .quote-title  { font-size: 17px; font-weight: bold; margin-top: 8px; color: white; }
 
   /* ── Client box ── */
   .client-box {
-    background: #f3f4f6;
-    border: 1px solid #d1d5db;
-    margin: 18px 32px;
-    padding: 12px 16px;
-    border-radius: 4px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-right: 4px solid #1a56db;
+    margin: 20px 36px;
+    padding: 14px 18px;
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   }
-  .client-row { margin-bottom: 4px; }
-  .label { color: #6b7280; margin-left: 6px; }
+  .client-row { margin-bottom: 5px; color: #111827; }
+  .label { font-weight: 600; color: #374151; margin-left: 8px; }
 
   /* ── Items table ── */
-  .table-wrap { margin: 0 32px; }
-  table { width: 100%; border-collapse: collapse; }
-  thead tr { background: #1a56db; color: white; }
-  thead th { padding: 10px 12px; text-align: right; font-size: 12px; }
-  tbody td { padding: 9px 12px; border-bottom: 1px solid #e5e7eb; }
-  .desc  { text-align: right; }
-  .price { text-align: right; width: 120px; }
+  .table-wrap { margin: 0 36px; }
+  table { width: 100%; border-collapse: collapse; border-radius: 6px; overflow: hidden; }
+  thead tr { background: linear-gradient(135deg, #1a56db, #1e40af); color: white; }
+  thead th { padding: 11px 14px; text-align: right; font-size: 12px; font-weight: 600; }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid #e5e7eb; color: #111827; }
+  .desc  { text-align: right; width: 70%; }
+  .price { text-align: right; width: 30%; font-weight: 700; }
   tbody tr:last-child td { border-bottom: none; }
 
   /* ── Totals ── */
   .totals {
-    margin: 16px 32px 0;
+    margin: 20px 36px 0;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
   }
+  .total-sub-wrap {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px 18px;
+    margin-bottom: 10px;
+    min-width: 240px;
+  }
   .total-row {
     display: flex;
-    justify-content: flex-start;
-    gap: 12px;
-    margin-bottom: 6px;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 5px;
     font-size: 13px;
   }
-  .total-row .tl { color: #6b7280; }
-  .total-row .tv { font-weight: bold; min-width: 90px; text-align: right; }
+  .total-row:last-child { margin-bottom: 0; }
+  .total-row .tl { font-weight: 600; color: #374151; }
+  .total-row .tv { font-weight: 700; color: #111827; }
   .total-grand {
-    background: #059669;
+    background: linear-gradient(135deg, #059669, #047857);
+    box-shadow: 0 4px 8px rgba(5,150,105,0.3);
     color: white;
-    padding: 10px 20px;
-    border-radius: 4px;
-    margin-top: 6px;
-    font-size: 15px;
+    padding: 14px 24px;
+    border-radius: 8px;
+    font-size: 18px;
     font-weight: bold;
     display: flex;
-    gap: 12px;
+    gap: 16px;
+    align-items: center;
   }
 
   /* ── Notes ── */
   .notes {
-    margin: 16px 32px;
+    margin: 18px 36px;
     font-size: 12px;
     color: #374151;
-    border-top: 1px solid #e5e7eb;
-    padding-top: 10px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-right: 4px solid #f59e0b;
+    border-radius: 6px;
+    padding: 10px 14px;
   }
 
   /* ── Footer ── */
   .footer {
-    margin-top: 24px;
-    border-top: 1px solid #d1d5db;
-    background: #f3f4f6;
-    padding: 10px 32px;
+    background: linear-gradient(135deg, #1a56db, #1e40af);
+    color: white;
+    padding: 11px 36px;
     text-align: center;
     font-size: 10px;
-    color: #6b7280;
     position: fixed;
     bottom: 0;
     left: 0; right: 0;
@@ -210,6 +229,7 @@ function buildHtml(opts, fontBase64) {
     <div class="quote-title">הצעת מחיר</div>
   </div>
 </div>
+<hr class="header-divider">
 
 <div class="client-box">
   <div class="client-row"><span class="label">לקוח:</span> <span>${esc(clientName)}</span></div>
@@ -232,13 +252,15 @@ function buildHtml(opts, fontBase64) {
 </div>
 
 <div class="totals">
-  <div class="total-row">
-    <span class="tl">סכום לפני מע"מ:</span>
-    <span class="tv">${sym}${fmtNum(subtotal)}</span>
-  </div>
-  <div class="total-row">
-    <span class="tl">מע"מ 18%:</span>
-    <span class="tv">${sym}${fmtNum(vat)}</span>
+  <div class="total-sub-wrap">
+    <div class="total-row">
+      <span class="tl">סכום לפני מע"מ:</span>
+      <span class="tv">${sym}${fmtNum(subtotal)}</span>
+    </div>
+    <div class="total-row">
+      <span class="tl">מע"מ 18%:</span>
+      <span class="tv">${sym}${fmtNum(vat)}</span>
+    </div>
   </div>
   <div class="total-grand">
     <span>סה"כ לתשלום:</span>
