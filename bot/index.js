@@ -57,25 +57,7 @@ startReminderScheduler(bot);
   }
 }
 
-// ── AI News cron — 08:30 Israel time daily ────────────────────────────────────
-{
-  const AI_NEWS_CHAT = '758752313';
-  const { fetchAINews, formatAINews } = require('../skills/ai-news');
-
-  cron.schedule('30 8 * * *', async () => {
-    try {
-      console.log('[Cron] Sending AI news...');
-      const stories = await fetchAINews();
-      const msg     = formatAINews(stories);
-      await bot.sendMessage(AI_NEWS_CHAT, msg, { parse_mode: 'HTML', disable_web_page_preview: true });
-      console.log('[Cron] AI news sent');
-    } catch (err) {
-      console.error('[Cron] AI news error:', err.message);
-    }
-  }, { timezone: 'Asia/Jerusalem' });
-
-  console.log('✅ [Cron] AI news scheduled at 08:30 IL daily');
-}
+// ── AI News cron removed — covered by scheduler.js 12:00 full news send ──────
 
 // ── WordPress / Site Monitor ──────────────────────────────────────────────────
 startSiteMonitor(bot, mainChatId || alertChatId);

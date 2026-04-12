@@ -14,23 +14,8 @@ const { filterAndMark } = require('./seen');
 const name        = 'news';
 const description = 'Personal 6-category newspaper: AI, SaaS, Markets, Israeli Tech, CRPS, Crypto.';
 
-const tools = [
-  {
-    name:        'get_news',
-    description: 'הבא חדשות: ai/saas/market/israel/crps/crypto/all.',
-    parameters: {
-      type:       'object',
-      properties: {
-        category: {
-          type: 'string',
-          enum: ['ai', 'saas', 'market', 'israel', 'crps', 'crypto', 'all'],
-          description: 'ברירת מחדל: all',
-        },
-      },
-      required: [],
-    },
-  },
-];
+// get_news is registered as a built-in in agent.js — no tool declared here
+const tools = [];
 
 // ── Metadata per category ─────────────────────────────────────────────────────
 
@@ -142,26 +127,9 @@ async function fetchAINews() {
   } catch { return []; }
 }
 
-// ── Skill execute ─────────────────────────────────────────────────────────────
-
-async function execute(toolName, args, ctx) {
-  if (toolName !== 'get_news') return `Unknown tool "${toolName}" in skill "${name}"`;
-  const category = args?.category || 'all';
-  try {
-    console.log(`[Skills] news: building category="${category}"...`);
-    const msg = await buildNewsMessage(category);
-    if (ctx?.bot && ctx?.chatId) {
-      await ctx.bot.sendMessage(ctx.chatId, msg, {
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      });
-      return `✅ חדשות נשלחו (${category})`;
-    }
-    return msg;
-  } catch (err) {
-    console.error('[Skills] news error:', err.message);
-    return '⚠️ לא הצלחתי להביא חדשות כרגע.';
-  }
+// Stub execute — tools array is empty so this is never called by the agent
+async function execute(toolName) {
+  return `Unknown tool "${toolName}" in skill "${name}"`;
 }
 
 module.exports = { name, description, tools, execute, buildNewsMessage, fetchAINews };
