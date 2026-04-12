@@ -1,33 +1,29 @@
 'use strict';
 
 /**
- * news skill — production-grade 4-category news system.
+ * news skill — 6-category personalized news system for Shilo.
+ * Feels like a personal newspaper. Hebrew summary per article.
  *
- * Categories:
- *   ai      — AI & Dev Tools     (HN Algolia + Simon Willison)
- *   saas    — SaaS & Startups    (TechCrunch + HN)
- *   market  — Markets & Finance  (Yahoo Finance + Investing.com)
- *   israel  — Israeli Tech       (Globes + Calcalist)
- *
- * Anti-duplication: data/news-seen.json tracks URLs for 7 days.
+ * Categories: ai | saas | market | israel | crps | crypto | all
+ * Anti-duplication: data/news-seen.json (7-day window)
  */
 
-const { fetchAIDev, fetchSaaS, fetchMarkets, fetchIsraelTech, domain } = require('./fetchers');
+const { fetchAIDev, fetchSaaS, fetchMarkets, fetchIsraelTech, fetchCRPS, fetchCrypto } = require('./fetchers');
 const { filterAndMark } = require('./seen');
 
 const name        = 'news';
-const description = 'Production 4-category news: AI, SaaS, Markets, Israeli Tech. Anti-duplicate.';
+const description = 'Personal 6-category newspaper: AI, SaaS, Markets, Israeli Tech, CRPS, Crypto.';
 
 const tools = [
   {
     name:        'get_news',
-    description: 'הבא חדשות: ai / saas / market / israel / all.',
+    description: 'הבא חדשות: ai/saas/market/israel/crps/crypto/all.',
     parameters: {
       type:       'object',
       properties: {
         category: {
           type: 'string',
-          enum: ['ai', 'saas', 'market', 'israel', 'all'],
+          enum: ['ai', 'saas', 'market', 'israel', 'crps', 'crypto', 'all'],
           description: 'ברירת מחדל: all',
         },
       },
@@ -36,11 +32,21 @@ const tools = [
   },
 ];
 
-// ── Hebrew date header ────────────────────────────────────────────────────────
+// ── Metadata per category ─────────────────────────────────────────────────────
+
+const META = {
+  ai:     { emoji: '🤖', title: 'AI & כלי פיתוח',      fetcher: fetchAIDev,     max: 3 },
+  saas:   { emoji: '🚀', title: 'SaaS & עסקים',         fetcher: fetchSaaS,      max: 2 },
+  market: { emoji: '📈', title: 'שוק ההון',              fetcher: fetchMarkets,   max: 3 },
+  israel: { emoji: '🇮🇱', title: 'סטארטאפים ישראלים',  fetcher: fetchIsraelTech, max: 2 },
+  crps:   { emoji: '💊', title: 'CRPS & כאב כרוני',     fetcher: fetchCRPS,      max: 1 },
+  crypto: { emoji: '🌐', title: 'Web3 & קריפטו',        fetcher: fetchCrypto,    max: 2 },
+};
+
+// ── Date header ───────────────────────────────────────────────────────────────
 
 function dateHeader() {
-  const d = new Date();
-  return d.toLocaleDateString('he-IL', {
+  return new Date().toLocaleDateString('he-IL', {
     timeZone: 'Asia/Jerusalem',
     weekday:  'long',
     day:      'numeric',
@@ -48,64 +54,63 @@ function dateHeader() {
   });
 }
 
-// ── Format a category block ───────────────────────────────────────────────────
+// ── Format a single category block ───────────────────────────────────────────
 
-function formatBlock(emoji, title, items) {
+function formatBlock(catKey, items) {
   if (!items || !items.length) return null;
+  const { emoji, title } = META[catKey];
   const lines = [`${emoji} <b>${title}:</b>`];
-  for (const item of items) {
-    const src = item.source ? ` <i>[${item.source}]</i>` : '';
-    lines.push(`• <a href="${item.url}">${item.title}</a>${src}`);
+  for (const art of items) {
+    const summaryPart = art.summary ? ` — ${art.summary}` : '';
+    const srcPart     = art.source  ? ` [${art.source}]`  : '';
+    lines.push(`• <a href="${art.url}">${art.title}</a>${summaryPart}${srcPart}`);
   }
   return lines.join('\n');
 }
 
-// ── Fetch one category (with dedup) ──────────────────────────────────────────
+// ── Fetch one category, apply dedup ──────────────────────────────────────────
 
-async function fetchCategory(cat) {
+async function fetchCategory(catKey) {
+  const { fetcher, max } = META[catKey];
   let raw = [];
-  if (cat === 'ai')     raw = await fetchAIDev(5).catch(() => []);
-  if (cat === 'saas')   raw = await fetchSaaS(4).catch(() => []);
-  if (cat === 'market') raw = await fetchMarkets(5).catch(() => []);
-  if (cat === 'israel') raw = await fetchIsraelTech(4).catch(() => []);
-  return filterAndMark(raw); // removes already-seen, marks new ones
+  try { raw = await fetcher(max + 2); } catch (e) { console.warn(`[News] ${catKey}:`, e.message); }
+  return filterAndMark(raw).slice(0, max);
 }
 
-// ── Build a formatted news message ───────────────────────────────────────────
+// ── Build full news message ───────────────────────────────────────────────────
 
 async function buildNewsMessage(category = 'all') {
   const cats = category === 'all'
-    ? ['ai', 'saas', 'market', 'israel']
+    ? ['ai', 'saas', 'market', 'israel', 'crps', 'crypto']
     : [category];
 
-  const header = `📰 <b>חדשות — ${dateHeader()}</b>\n`;
+  const header = `📰 <b>חדשות אישיות — ${dateHeader()}</b>`;
   const blocks  = [];
 
-  const META = {
-    ai:     { emoji: '🤖', title: 'AI & פיתוח' },
-    saas:   { emoji: '🚀', title: 'SaaS & סטארטאפים' },
-    market: { emoji: '📈', title: 'שוק ההון' },
-    israel: { emoji: '🇮🇱', title: 'ישראל טק' },
-  };
+  await Promise.allSettled(
+    cats.map(async (cat) => {
+      const items = await fetchCategory(cat);
+      const block = formatBlock(cat, items);
+      if (block) blocks.push({ order: cats.indexOf(cat), text: block });
+    })
+  );
 
-  for (const cat of cats) {
-    const items = await fetchCategory(cat);
-    const block = formatBlock(META[cat].emoji, META[cat].title, items);
-    if (block) blocks.push(block);
-  }
+  // Preserve category order
+  blocks.sort((a, b) => a.order - b.order);
 
   if (!blocks.length) {
-    return header + '\n🔄 אין חדשות חדשות כרגע — כל הכתבות כבר נראו היום.';
+    return header + '\n\n🔄 אין חדשות חדשות כרגע — כל הכתבות כבר נצפו היום.';
   }
 
-  return header + '\n' + blocks.join('\n\n');
+  return header + '\n\n' + blocks.map(b => b.text).join('\n\n');
 }
 
-// ── fetchAINews (backward-compat for scheduler.js) ────────────────────────────
+// ── fetchAINews — backward-compat for scheduler.js ───────────────────────────
 
 async function fetchAINews() {
   try {
-    const raw = await fetchAIDev(5);
+    const { fetchAIDev: f } = require('./fetchers');
+    const raw = await f(5);
     return filterAndMark(raw);
   } catch { return []; }
 }
@@ -116,9 +121,8 @@ async function execute(toolName, args, ctx) {
   if (toolName !== 'get_news') return `Unknown tool "${toolName}" in skill "${name}"`;
   const category = args?.category || 'all';
   try {
-    console.log(`[Skills] news: fetching category="${category}"...`);
+    console.log(`[Skills] news: building category="${category}"...`);
     const msg = await buildNewsMessage(category);
-    // Send via bot if ctx available, else return text
     if (ctx?.bot && ctx?.chatId) {
       await ctx.bot.sendMessage(ctx.chatId, msg, {
         parse_mode: 'HTML',

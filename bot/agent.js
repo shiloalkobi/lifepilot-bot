@@ -232,7 +232,7 @@ const TOOL_DECLARATIONS = [
   { name: 'stop_pomodoro',     description: 'עצור את סשן הפומודורו הנוכחי.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'get_pomodoro_stats', description: 'קבל סטטיסטיקת פומודורו של היום.', parameters: { type: 'object', properties: {}, required: [] } },
   // News (production 4-category system)
-  { name: 'get_news', description: 'הבא חדשות לפי קטגוריה: ai/saas/market/israel/all.', parameters: { type: 'object', properties: { category: { type: 'string', enum: ['ai','saas','market','israel','all'], description: 'ברירת מחדל: all' } }, required: [] } },
+  { name: 'get_news', description: 'חדשות אישיות: ai/saas/market/israel/crps/crypto/all.', parameters: { type: 'object', properties: { category: { type: 'string', enum: ['ai','saas','market','israel','crps','crypto','all'], description: 'ברירת מחדל: all' } }, required: [] } },
   // Sites
   { name: 'get_site_status', description: 'הצג סטטוס up/down של האתרים.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'check_sites_now', description: 'בצע בדיקת up/down מיידית לאתרים.', parameters: { type: 'object', properties: {}, required: [] } },
@@ -285,6 +285,7 @@ const CORE_TOOL_NAMES = new Set([
 
 const EXTENDED_KEYWORDS = [
   'news', 'חדשות', 'שוק', 'מניות', 'סטארטאפ', 'ישראל טק', 'ai news', 'saas', 'market',
+  'crps', 'כאב', 'מחקר', 'קריפטו', 'crypto', 'bitcoin', 'ביטקוין', 'web3',
   'english', 'אנגלית', 'מילה', 'streak',
   'pomodoro', 'פומודורו', 'טיימר',
   'sites', 'אתרים', 'אתר',
