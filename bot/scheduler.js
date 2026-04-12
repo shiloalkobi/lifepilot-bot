@@ -232,7 +232,7 @@ function startScheduler(bot, chatId) {
 
   async function sendDailyNews() {
     try {
-      const msg = await buildNewsMessage('all');
+      const msg = await buildNewsMessage('all', { ignoreDedup: false });
       await bot.sendMessage(chatId, msg, { parse_mode: 'HTML', disable_web_page_preview: true });
       console.log('[Scheduler] Daily news sent (4-category)');
     } catch (err) {

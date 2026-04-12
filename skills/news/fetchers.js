@@ -257,6 +257,17 @@ async function fetchSaaS(max = 2) {
 const TICKERS = ['AAPL', 'NVDA', 'MSFT', 'GOOGL', 'META', 'TSLA', 'AMZN'];
 const MOVE_RE = /([+-]?\d+\.?\d*)\s*%/;
 
+const MARKET_NOISE_KW = [
+  'hot dog', 'costco', 'walmart', 'retail', 'store', 'shop',
+  'consumer', 'coupon', 'deal', 'sale', 'discount', 'grocery',
+  'food', 'restaurant', 'menu', 'price hike', 'membership fee',
+];
+
+function isMarketNoise(title) {
+  const lower = title.toLowerCase();
+  return MARKET_NOISE_KW.some(k => lower.includes(k));
+}
+
 function isSignificantMove(title, threshold = 1.5) {
   const m = title.match(MOVE_RE);
   if (!m) return true; // no percentage mentioned — include anyway (earnings, reports)
@@ -271,7 +282,7 @@ async function fetchMarkets(max = 3) {
       const url = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${sym}&region=US&lang=en-US`;
       const xml = await httpGet(url);
       for (const r of parseRSSItems(xml, 3)) {
-        if (isSignificantMove(r.title)) {
+        if (isSignificantMove(r.title) && !isMarketNoise(r.title)) {
           raw.push(item({ ...r, description: r.description || r.title }, `Yahoo Finance`, 'market'));
         }
       }
@@ -284,7 +295,7 @@ async function fetchMarkets(max = 3) {
       const url = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${sym}&region=US&lang=en-US`;
       const xml = await httpGet(url);
       for (const r of parseRSSItems(xml, 2)) {
-        if (isSignificantMove(r.title, 3)) {
+        if (isSignificantMove(r.title, 3) && !isMarketNoise(r.title)) {
           raw.push(item({ ...r, description: r.description || r.title }, 'Yahoo Finance', 'market'));
         }
       }

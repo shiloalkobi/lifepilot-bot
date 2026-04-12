@@ -483,7 +483,7 @@ async function executeTool(name, args, ctx) {
       // ── News (4-category production system) ───────────────────────────────
       case 'get_news': {
         const category = args.category || 'all';
-        const msg = await buildNewsMessage(category);
+        const msg = await buildNewsMessage(category, { ignoreDedup: true });
         await bot.sendMessage(chatId, msg, { parse_mode: 'HTML', disable_web_page_preview: true });
         return `חדשות נשלחו (${category})`;
       }

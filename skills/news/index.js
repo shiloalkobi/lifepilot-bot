@@ -68,18 +68,22 @@ function formatBlock(catKey, items) {
   return lines.join('\n');
 }
 
-// ── Fetch one category, apply dedup ──────────────────────────────────────────
+// ── Fetch one category ────────────────────────────────────────────────────────
 
-async function fetchCategory(catKey) {
+async function fetchCategory(catKey, ignoreDedup = false) {
   const { fetcher, max } = META[catKey];
   let raw = [];
   try { raw = await fetcher(max + 2); } catch (e) { console.warn(`[News] ${catKey}:`, e.message); }
-  return filterAndMark(raw).slice(0, max);
+  return filterAndMark(raw, ignoreDedup).slice(0, max);
 }
 
 // ── Build full news message ───────────────────────────────────────────────────
+//
+// opts.ignoreDedup = false (default, scheduler) → dedup applied, marks seen
+// opts.ignoreDedup = true  (manual/agent)       → always fresh, no dedup filter
 
-async function buildNewsMessage(category = 'all') {
+async function buildNewsMessage(category = 'all', opts = {}) {
+  const ignoreDedup = opts.ignoreDedup !== false; // default TRUE for safety — scheduler must pass false explicitly
   const cats = category === 'all'
     ? ['ai', 'saas', 'market', 'israel', 'crps', 'crypto']
     : [category];
@@ -89,7 +93,7 @@ async function buildNewsMessage(category = 'all') {
 
   await Promise.allSettled(
     cats.map(async (cat) => {
-      const items = await fetchCategory(cat);
+      const items = await fetchCategory(cat, ignoreDedup);
       const block = formatBlock(cat, items);
       if (block) blocks.push({ order: cats.indexOf(cat), text: block });
     })
@@ -98,20 +102,21 @@ async function buildNewsMessage(category = 'all') {
   // Preserve category order
   blocks.sort((a, b) => a.order - b.order);
 
+  // Only show "no news" if ALL categories are empty
   if (!blocks.length) {
-    return header + '\n\n🔄 אין חדשות חדשות כרגע — כל הכתבות כבר נצפו היום.';
+    return header + '\n\n🔄 אין חדשות זמינות כרגע. נסה שוב מאוחר יותר.';
   }
 
   return header + '\n\n' + blocks.map(b => b.text).join('\n\n');
 }
 
-// ── fetchAINews — backward-compat for scheduler.js ───────────────────────────
+// ── fetchAINews — backward-compat for scheduler.js (uses dedup) ──────────────
 
 async function fetchAINews() {
   try {
     const { fetchAIDev: f } = require('./fetchers');
     const raw = await f(5);
-    return filterAndMark(raw);
+    return filterAndMark(raw, false); // scheduler: apply dedup
   } catch { return []; }
 }
 

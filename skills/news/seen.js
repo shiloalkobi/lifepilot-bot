@@ -52,8 +52,13 @@ function markSeen(urls) {
   save(data);
 }
 
-/** Filter an array of {url, ...} items to only unseen ones, then mark them seen */
-function filterAndMark(items) {
+/**
+ * Filter to unseen items and mark them seen.
+ * Pass ignoreDedup=true to skip filtering (manual/on-demand requests).
+ * Marking still happens so the morning briefing dedup works correctly.
+ */
+function filterAndMark(items, ignoreDedup = false) {
+  if (ignoreDedup) return items.filter(i => i.url); // return all, skip dedup check
   const fresh = items.filter(item => item.url && !hasSeen(item.url));
   if (fresh.length) markSeen(fresh.map(i => i.url));
   return fresh;
