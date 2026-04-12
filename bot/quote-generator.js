@@ -98,13 +98,15 @@ async function generateQuote(opts) {
   const vat      = subtotal * vatRate;
   const total    = subtotal + vat;
 
-  // ── Client info rows ──────────────────────────────────────────────────────
+  // ── Client info rows (LTR columns, RTL text inside) ──────────────────────
+  // Without rtl:true, columns are left→right. We put labels on right, values on left
+  // so the visual reads naturally for Hebrew: [value] [label]
   const clientRows = [
     [
-      { text: clientName,  alignment: 'right', bold: true, color: DARK },
-      { text: 'לקוח:',     alignment: 'right', color: DGRAY, width: 60 },
-      { text: dateStr,     alignment: 'right', bold: true, color: DARK },
-      { text: 'תאריך:',    alignment: 'right', color: DGRAY, width: 60 },
+      { text: dateStr,    alignment: 'right', bold: true, color: DARK },
+      { text: 'תאריך:',  alignment: 'right', color: DGRAY },
+      { text: clientName, alignment: 'right', bold: true, color: DARK },
+      { text: 'לקוח:',   alignment: 'right', color: DGRAY },
     ],
   ];
   if (projectDescription) {
@@ -112,7 +114,7 @@ async function generateQuote(opts) {
       { text: projectDescription, alignment: 'right', bold: true, color: DARK, colSpan: 3 },
       {},
       {},
-      { text: 'פרויקט:', alignment: 'right', color: DGRAY, width: 60 },
+      { text: 'פרויקט:', alignment: 'right', color: DGRAY },
     ]);
   }
 
@@ -138,10 +140,11 @@ async function generateQuote(opts) {
     pageSize:    'A4',
     pageMargins: [40, 40, 40, 60],
     defaultStyle: {
-      font:    'Heebo',
-      fontSize: 11,
-      color:   DARK,
-      rtl:     true,
+      font:      'Heebo',
+      fontSize:  11,
+      color:     DARK,
+      // No rtl:true — it causes character reordering/joining bugs in pdfmake.
+      // Use alignment:'right' per element instead.
     },
 
     content: [
@@ -262,8 +265,8 @@ async function generateQuote(opts) {
         },
         {
           columns: [
-            { text: notes, alignment: 'right', color: DARK, rtl: true, width: '*' },
-            { text: 'הערות:', color: DGRAY, width: 50 },
+            { text: notes,      alignment: 'right', color: DARK, width: '*' },
+            { text: 'הערות:',  alignment: 'right', color: DGRAY, width: 50 },
           ],
         },
       ] : []),
