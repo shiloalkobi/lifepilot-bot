@@ -1,64 +1,41 @@
 'use strict';
 
 /**
- * quote-generator.js — generates professional PDF quotes for Digital Web clients.
- * Uses PDFKit. Hebrew font (Heebo) is downloaded on first use and cached in data/fonts/.
+ * quote-generator.js — professional PDF quotes using pdfmake.
+ * pdfmake has native RTL support → no Hebrew spacing issues.
+ * No Chromium required — works on Render free tier.
  */
 
-const PDFDocument = require('pdfkit');
-const fs          = require('fs');
-const path        = require('path');
-const https       = require('https');
-const os          = require('os');
+const PdfPrinter = require('pdfmake/src/printer');
+const fs         = require('fs');
+const path       = require('path');
+const https      = require('https');
+const os         = require('os');
 
-const FONTS_DIR   = path.join(__dirname, '..', 'data', 'fonts');
-const FONT_PATH   = path.join(FONTS_DIR, 'Heebo-Regular.ttf');
-const FONT_BOLD   = path.join(FONTS_DIR, 'Heebo-Bold.ttf');
-const FONT_URL      = 'https://fonts.gstatic.com/s/heebo/v21/NGSpv5_NC0k9P_v6ZUCbLRAHxK1EiSycckOnz02SXQ.ttf';
-// Bold variant — same CDN pattern (weight 700)
-const FONT_BOLD_URL = 'https://fonts.gstatic.com/s/heebo/v21/NGS6v5_NC0k9P_v6ZUCbLRAHxK1ELyfckOnz02SXQ.ttf';
-
-// ── Colors ────────────────────────────────────────────────────────────────────
-const C = {
-  primary:   '#1a56db',
-  secondary: '#f3f4f6',
-  text:      '#111827',
-  accent:    '#059669',
-  white:     '#ffffff',
-  gray:      '#6b7280',
-  lightGray: '#e5e7eb',
-  border:    '#d1d5db',
-};
+const FONTS_DIR  = path.join(__dirname, '..', 'data', 'fonts');
+const FONT_PATH  = path.join(FONTS_DIR, 'Heebo-Regular.ttf');
+const FONT_URL   = 'https://fonts.gstatic.com/s/heebo/v21/NGSpv5_NC0k9P_v6ZUCbLRAHxK1EiSycckOnz02SXQ.ttf';
 
 // ── Font download ─────────────────────────────────────────────────────────────
 
-function downloadFile(url, dest) {
+function downloadFont() {
   return new Promise((resolve, reject) => {
-    if (fs.existsSync(dest)) { resolve(dest); return; }
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    const file = fs.createWriteStream(dest);
-    const get = (u) => https.get(u, { headers: { 'User-Agent': 'LifePilot-Bot/1.0' } }, (res) => {
+    if (fs.existsSync(FONT_PATH)) { resolve(FONT_PATH); return; }
+    fs.mkdirSync(FONTS_DIR, { recursive: true });
+    console.log('[Quote] Downloading Heebo font...');
+    const file = fs.createWriteStream(FONT_PATH);
+    const get = (url) => https.get(url, { headers: { 'User-Agent': 'LifePilot-Bot/1.0' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         return get(res.headers.location);
       }
       res.pipe(file);
-      file.on('finish', () => { file.close(); resolve(dest); });
-    }).on('error', (e) => { fs.unlink(dest, () => {}); reject(e); });
-    get(url);
+      file.on('finish', () => { file.close(); resolve(FONT_PATH); });
+    }).on('error', (e) => { fs.unlink(FONT_PATH, () => {}); reject(e); });
+    get(FONT_URL);
   });
 }
 
-async function downloadFonts() {
-  await downloadFile(FONT_URL, FONT_PATH);
-  // Bold: try CDN, but validate it's a real TTF (>10KB), else use regular
-  try {
-    await downloadFile(FONT_BOLD_URL, FONT_BOLD);
-    const stat = fs.statSync(FONT_BOLD);
-    if (stat.size < 10000) { fs.unlinkSync(FONT_BOLD); } // discard invalid
-  } catch { /* use regular for bold */ }
-}
-
-// ── Date / number helpers ─────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function todayStr() {
   return new Date().toLocaleDateString('he-IL', {
@@ -72,15 +49,19 @@ function quoteNumber() {
   return `DW-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Math.floor(Math.random()*900)+100}`;
 }
 
-function fmt(n, sym) {
-  return `${sym}${n.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+function fmtNum(n) {
+  return n.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-// ── Layout constants ──────────────────────────────────────────────────────────
+// ── Colors ────────────────────────────────────────────────────────────────────
 
-const PAGE_W    = 595.28;  // A4 width in points
-const MARGIN    = 40;
-const CONTENT_W = PAGE_W - MARGIN * 2;
+const BLUE   = '#1a56db';
+const GREEN  = '#059669';
+const LGRAY  = '#f3f4f6';
+const DGRAY  = '#6b7280';
+const DARK   = '#111827';
+const BORDER = '#d1d5db';
+const WHITE  = 'white';
 
 // ── PDF generation ────────────────────────────────────────────────────────────
 
@@ -102,174 +83,219 @@ async function generateQuote(opts) {
     notes = '',
   } = opts;
 
-  await downloadFonts();
+  await downloadFont();
 
-  const boldPath = fs.existsSync(FONT_BOLD) ? FONT_BOLD : FONT_PATH;
-  const outPath  = path.join(os.tmpdir(), `quote-${Date.now()}.pdf`);
-  const qNum     = quoteNumber();
+  const fonts = {
+    Heebo: { normal: FONT_PATH, bold: FONT_PATH, italics: FONT_PATH, bolditalics: FONT_PATH },
+  };
+  const printer = new PdfPrinter(fonts);
+
   const sym      = currency === 'USD' ? '$' : '₪';
-  const vatRate  = 0.17;
+  const vatRate  = 0.18;
+  const qNum     = quoteNumber();
+  const dateStr  = todayStr();
+  const subtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0), 0);
+  const vat      = subtotal * vatRate;
+  const total    = subtotal + vat;
+
+  // ── Client info rows ──────────────────────────────────────────────────────
+  const clientRows = [
+    [
+      { text: clientName,  alignment: 'right', bold: true, color: DARK },
+      { text: 'לקוח:',     alignment: 'right', color: DGRAY, width: 60 },
+      { text: dateStr,     alignment: 'right', bold: true, color: DARK },
+      { text: 'תאריך:',    alignment: 'right', color: DGRAY, width: 60 },
+    ],
+  ];
+  if (projectDescription) {
+    clientRows.push([
+      { text: projectDescription, alignment: 'right', bold: true, color: DARK, colSpan: 3 },
+      {},
+      {},
+      { text: 'פרויקט:', alignment: 'right', color: DGRAY, width: 60 },
+    ]);
+  }
+
+  // ── Items table body ──────────────────────────────────────────────────────
+  const tableBody = [
+    // Header row
+    [
+      { text: 'תיאור',  alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
+      { text: 'מחיר',   alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
+    ],
+  ];
+  items.forEach((it, i) => {
+    const amt = parseFloat(it.price) || 0;
+    const bg  = i % 2 === 0 ? WHITE : LGRAY;
+    tableBody.push([
+      { text: it.description || '', alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5] },
+      { text: `${sym}${fmtNum(amt)}`,  alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5] },
+    ]);
+  });
+
+  // ── Document definition ───────────────────────────────────────────────────
+  const docDef = {
+    pageSize:    'A4',
+    pageMargins: [40, 40, 40, 60],
+    defaultStyle: {
+      font:    'Heebo',
+      fontSize: 11,
+      color:   DARK,
+      rtl:     true,
+    },
+
+    content: [
+      // ── HEADER ──────────────────────────────────────────────────────────
+      {
+        table: {
+          widths: ['*', '*'],
+          body: [[
+            {
+              stack: [
+                { text: 'Digital Web', fontSize: 22, bold: true, color: WHITE },
+                { text: 'פיתוח אתרים ופתרונות דיגיטליים', fontSize: 10, color: '#c7d7f8', margin: [0, 4, 0, 0] },
+              ],
+              alignment: 'left',
+              margin: [12, 14, 12, 14],
+            },
+            {
+              stack: [
+                { text: `מספר הצעה: ${qNum}`, alignment: 'right', color: WHITE, fontSize: 10 },
+                { text: `תאריך: ${dateStr}`,   alignment: 'right', color: WHITE, fontSize: 10, margin: [0, 4, 0, 0] },
+                { text: 'הצעת מחיר',           alignment: 'right', color: WHITE, bold: true, fontSize: 13, margin: [0, 6, 0, 0] },
+              ],
+              alignment: 'right',
+              margin: [12, 10, 12, 10],
+            },
+          ]],
+        },
+        layout: {
+          fillColor: () => BLUE,
+          hLineWidth: () => 0,
+          vLineWidth: () => 0,
+          paddingLeft: () => 0,
+          paddingRight: () => 0,
+          paddingTop: () => 0,
+          paddingBottom: () => 0,
+        },
+        margin: [0, 0, 0, 16],
+      },
+
+      // ── CLIENT INFO BOX ──────────────────────────────────────────────────
+      {
+        table: {
+          widths: ['*', 60, '*', 60],
+          body: clientRows,
+        },
+        layout: {
+          fillColor:   () => LGRAY,
+          hLineColor:  () => BORDER,
+          vLineColor:  () => BORDER,
+          hLineWidth:  (i, node) => (i === 0 || i === node.table.body.length) ? 1 : 0,
+          vLineWidth:  (i, node) => (i === 0 || i === node.table.widths.length) ? 1 : 0,
+          paddingLeft:   () => 10,
+          paddingRight:  () => 10,
+          paddingTop:    () => 8,
+          paddingBottom: () => 8,
+        },
+        margin: [0, 0, 0, 16],
+      },
+
+      // ── ITEMS TABLE ───────────────────────────────────────────────────────
+      {
+        table: {
+          widths: ['*', 110],
+          headerRows: 1,
+          body: tableBody,
+        },
+        layout: {
+          fillColor: (rowIndex) => rowIndex === 0 ? BLUE : null,
+          hLineColor: () => BORDER,
+          vLineColor: () => BORDER,
+          hLineWidth:  () => 0.5,
+          vLineWidth:  () => 0.5,
+          paddingLeft:   () => 0,
+          paddingRight:  () => 0,
+          paddingTop:    () => 0,
+          paddingBottom: () => 0,
+        },
+        margin: [0, 0, 0, 16],
+      },
+
+      // ── TOTALS ────────────────────────────────────────────────────────────
+      {
+        table: {
+          widths: ['*', 'auto'],
+          body: [
+            [
+              { text: '',                                                  border: [false,false,false,false] },
+              { text: `סכום לפני מע"מ: ${sym}${fmtNum(subtotal)}`,        alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
+            ],
+            [
+              { text: '',                                                  border: [false,false,false,false] },
+              { text: `מע"מ 18%: ${sym}${fmtNum(vat)}`,                  alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
+            ],
+            [
+              { text: '', border: [false,false,false,false] },
+              {
+                text:        `סה"כ לתשלום: ${sym}${fmtNum(total)}`,
+                alignment:   'center',
+                bold:        true,
+                fontSize:    13,
+                color:       WHITE,
+                fillColor:   GREEN,
+                border:      [false,false,false,false],
+                margin:      [16, 8, 16, 8],
+              },
+            ],
+          ],
+        },
+        layout: 'noBorders',
+        margin: [0, 0, 0, notes ? 16 : 0],
+      },
+
+      // ── NOTES ─────────────────────────────────────────────────────────────
+      ...(notes ? [
+        {
+          canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: BORDER }],
+          margin: [0, 0, 0, 8],
+        },
+        {
+          columns: [
+            { text: notes, alignment: 'right', color: DARK, rtl: true, width: '*' },
+            { text: 'הערות:', color: DGRAY, width: 50 },
+          ],
+        },
+      ] : []),
+    ],
+
+    // ── FOOTER ──────────────────────────────────────────────────────────────
+    footer: (currentPage, pageCount) => ({
+      stack: [
+        { canvas: [{ type: 'line', x1: 40, y1: 0, x2: 555, y2: 0, lineWidth: 0.5, lineColor: BORDER }] },
+        {
+          text: 'תוקף ההצעה: 30 ימים מתאריך הנפקה  |  Digital Web  |  שילה אלקובי',
+          alignment: 'center',
+          color: DGRAY,
+          fontSize: 9,
+          margin: [40, 6, 40, 0],
+        },
+      ],
+    }),
+
+    styles: {},
+  };
+
+  // ── Write PDF ─────────────────────────────────────────────────────────────
+  const outPath = path.join(os.tmpdir(), `quote-${Date.now()}.pdf`);
+  const pdfDoc  = printer.createPdfKitDocument(docDef);
+  const stream  = fs.createWriteStream(outPath);
+  pdfDoc.pipe(stream);
+  pdfDoc.end();
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 0, rtl: true });
-    const out  = fs.createWriteStream(outPath);
-    doc.pipe(out);
-    out.on('finish', () => resolve(outPath));
-    out.on('error', reject);
-
-    doc.registerFont('Heebo', FONT_PATH);
-    doc.registerFont('Heebo-Bold', boldPath);
-
-    // ── HEADER BAR (full-width blue) ─────────────────────────────────────────
-    const headerH = 90;
-    doc.rect(0, 0, PAGE_W, headerH).fill(C.primary);
-
-    // Company name (left side, white)
-    doc.font('Heebo-Bold').fontSize(26).fillColor(C.white);
-    doc.text('Digital Web', MARGIN, 18, { lineGap: 2 });
-
-    doc.font('Heebo').fontSize(11).fillColor('rgba(255,255,255,0.85)');
-    doc.text('פיתוח אתרים ופתרונות דיגיטליים', MARGIN, 50, { lineGap: 2 });
-
-    // Quote number + date (right side, white)
-    doc.font('Heebo').fontSize(10).fillColor(C.white);
-    doc.text(`מספר הצעה: ${qNum}`, MARGIN, 22, { width: CONTENT_W, align: 'right', lineGap: 2 });
-    doc.text(`תאריך: ${todayStr()}`, MARGIN, 40, { width: CONTENT_W, align: 'right', lineGap: 2 });
-
-    // "הצעת מחיר" badge on right
-    doc.font('Heebo-Bold').fontSize(13).fillColor(C.white);
-    doc.text('הצעת מחיר', MARGIN, 60, { width: CONTENT_W, align: 'right', lineGap: 2 });
-
-    // ── BLUE DIVIDER ─────────────────────────────────────────────────────────
-    doc.rect(0, headerH, PAGE_W, 3).fill('#1048c0');
-
-    // ── CLIENT INFO BOX ───────────────────────────────────────────────────────
-    let y = headerH + 18;
-    const boxH = projectDescription ? 72 : 50;
-    doc.rect(MARGIN, y, CONTENT_W, boxH).fill(C.secondary).stroke(C.border);
-
-    doc.font('Heebo-Bold').fontSize(11).fillColor(C.text);
-    doc.text(`לקוח: `, MARGIN + 12, y + 10, { continued: false, lineGap: 4 });
-    doc.font('Heebo').fontSize(11).fillColor(C.text);
-    // Use x,y positioning for precise control
-    doc.font('Heebo-Bold').fontSize(11).fillColor(C.text)
-       .text(`לקוח:`, MARGIN + 12, y + 10, { lineGap: 4 });
-    doc.font('Heebo').fontSize(11).fillColor(C.text)
-       .text(clientName, MARGIN + 12, y + 10, { width: CONTENT_W - 24, align: 'right', lineGap: 4 });
-
-    doc.font('Heebo-Bold').fontSize(11).fillColor(C.text)
-       .text(`תאריך:`, MARGIN + 12, y + 30, { lineGap: 4 });
-    doc.font('Heebo').fontSize(11).fillColor(C.text)
-       .text(todayStr(), MARGIN + 12, y + 30, { width: CONTENT_W - 24, align: 'right', lineGap: 4 });
-
-    if (projectDescription) {
-      doc.font('Heebo-Bold').fontSize(11).fillColor(C.text)
-         .text(`פרויקט:`, MARGIN + 12, y + 50, { lineGap: 4 });
-      doc.font('Heebo').fontSize(11).fillColor(C.text)
-         .text(projectDescription, MARGIN + 12, y + 50, { width: CONTENT_W - 24, align: 'right', lineGap: 4 });
-    }
-
-    y += boxH + 20;
-
-    // ── ITEMS TABLE ───────────────────────────────────────────────────────────
-    const COL_DESC_X  = MARGIN;
-    const COL_DESC_W  = CONTENT_W - 120;
-    const COL_PRICE_X = MARGIN + COL_DESC_W;
-    const COL_PRICE_W = 120;
-    const ROW_H       = 32;
-
-    // Table header
-    doc.rect(COL_DESC_X, y, CONTENT_W, ROW_H).fill(C.primary);
-    doc.font('Heebo-Bold').fontSize(11).fillColor(C.white);
-    doc.text('תיאור', COL_DESC_X + 10, y + 10, { width: COL_DESC_W - 10, align: 'right', lineGap: 4 });
-    doc.text('מחיר', COL_PRICE_X, y + 10, { width: COL_PRICE_W - 10, align: 'right', lineGap: 4 });
-
-    y += ROW_H;
-
-    // Item rows
-    let subtotal = 0;
-    for (let i = 0; i < items.length; i++) {
-      const it  = items[i];
-      const amt = parseFloat(it.price) || 0;
-      subtotal += amt;
-
-      const bg = i % 2 === 0 ? C.white : C.secondary;
-      doc.rect(COL_DESC_X, y, CONTENT_W, ROW_H).fill(bg);
-
-      // Bottom border per row
-      doc.moveTo(COL_DESC_X, y + ROW_H)
-         .lineTo(COL_DESC_X + CONTENT_W, y + ROW_H)
-         .strokeColor(C.lightGray).lineWidth(0.5).stroke();
-
-      // Vertical separator
-      doc.moveTo(COL_PRICE_X, y)
-         .lineTo(COL_PRICE_X, y + ROW_H)
-         .strokeColor(C.lightGray).lineWidth(0.5).stroke();
-
-      doc.font('Heebo').fontSize(10).fillColor(C.text);
-      doc.text(it.description || '', COL_DESC_X + 10, y + 10,
-               { width: COL_DESC_W - 20, align: 'right', lineGap: 4 });
-      doc.text(fmt(amt, sym), COL_PRICE_X, y + 10,
-               { width: COL_PRICE_W - 10, align: 'right', lineGap: 4 });
-
-      y += ROW_H;
-    }
-
-    // Table outer border
-    doc.rect(COL_DESC_X, y - (items.length * ROW_H) - ROW_H, CONTENT_W, (items.length + 1) * ROW_H)
-       .strokeColor(C.border).lineWidth(1).stroke();
-
-    y += 16;
-
-    // ── TOTALS ────────────────────────────────────────────────────────────────
-    const vat   = subtotal * vatRate;
-    const total = subtotal + vat;
-
-    const TOTAL_X = COL_PRICE_X - 60;
-    const TOTAL_W = COL_PRICE_W + 60;
-
-    doc.font('Heebo').fontSize(11).fillColor(C.text);
-    doc.text(`סכום לפני מע"מ:`, TOTAL_X, y, { width: TOTAL_W, align: 'right', lineGap: 4 });
-    y += 18;
-    doc.text(fmt(subtotal, sym), TOTAL_X, y - 18,
-             { width: TOTAL_W - 120, align: 'right', lineGap: 4 });
-
-    doc.text(`מע"מ 17%:`, TOTAL_X, y, { width: TOTAL_W, align: 'right', lineGap: 4 });
-    doc.text(fmt(vat, sym), TOTAL_X, y,
-             { width: TOTAL_W - 120, align: 'right', lineGap: 4 });
-    y += 22;
-
-    // Green total box
-    const totalBoxH = 36;
-    doc.rect(TOTAL_X - 10, y, TOTAL_W + 10, totalBoxH).fill(C.accent);
-    doc.font('Heebo-Bold').fontSize(13).fillColor(C.white);
-    doc.text(`סה"כ לתשלום: ${fmt(total, sym)}`, TOTAL_X - 10, y + 10,
-             { width: TOTAL_W + 10, align: 'center', lineGap: 4 });
-
-    y += totalBoxH + 20;
-
-    // ── NOTES ─────────────────────────────────────────────────────────────────
-    if (notes) {
-      doc.rect(MARGIN, y, CONTENT_W, 1).fill(C.lightGray);
-      y += 10;
-      doc.font('Heebo-Bold').fontSize(10).fillColor(C.gray);
-      doc.text('הערות:', MARGIN, y, { lineGap: 4 });
-      y += 16;
-      doc.font('Heebo').fontSize(10).fillColor(C.text);
-      doc.text(notes, MARGIN, y, { width: CONTENT_W, align: 'right', lineGap: 4 });
-      y += 30;
-    }
-
-    // ── FOOTER ────────────────────────────────────────────────────────────────
-    const footerY = 780;
-    doc.rect(0, footerY - 5, PAGE_W, 1).fill(C.lightGray);
-    doc.rect(0, footerY + 20, PAGE_W, 40).fill(C.secondary);
-
-    doc.font('Heebo').fontSize(9).fillColor(C.gray);
-    doc.text('תוקף ההצעה: 30 ימים מתאריך הנפקה  |  Digital Web  |  שילה אלקובי',
-             MARGIN, footerY + 28, { width: CONTENT_W, align: 'center', lineGap: 4 });
-
-    doc.end();
+    stream.on('finish', () => resolve(outPath));
+    stream.on('error', reject);
   });
 }
 
