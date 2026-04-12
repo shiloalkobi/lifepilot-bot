@@ -1,20 +1,20 @@
 'use strict';
 
 /**
- * quote-generator.js — professional PDF quotes using pdfmake.
- * pdfmake: use alignment:'right' per element, NO rtl:true (causes char reordering).
- * Mixed Hebrew+number strings must be in separate cells to avoid bidi joining.
+ * quote-generator.js — professional PDF quotes using Puppeteer + HTML.
+ * HTML with dir="rtl" renders Hebrew perfectly — no bidi hacks needed.
+ * Puppeteer uses its bundled Chromium; on Render set PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false.
  */
 
-const PdfPrinter = require('pdfmake/src/printer');
-const fs         = require('fs');
-const path       = require('path');
-const https      = require('https');
-const os         = require('os');
+const puppeteer = require('puppeteer');
+const fs        = require('fs');
+const path      = require('path');
+const https     = require('https');
+const os        = require('os');
 
-const FONTS_DIR  = path.join(__dirname, '..', 'data', 'fonts');
-const FONT_PATH  = path.join(FONTS_DIR, 'Heebo-Regular.ttf');
-const FONT_URL   = 'https://fonts.gstatic.com/s/heebo/v21/NGSpv5_NC0k9P_v6ZUCbLRAHxK1EiSycckOnz02SXQ.ttf';
+const FONTS_DIR = path.join(__dirname, '..', 'data', 'fonts');
+const FONT_PATH = path.join(FONTS_DIR, 'Heebo-Regular.ttf');
+const FONT_URL  = 'https://fonts.gstatic.com/s/heebo/v21/NGSpv5_NC0k9P_v6ZUCbLRAHxK1EiSycckOnz02SXQ.ttf';
 
 // ── Font download ─────────────────────────────────────────────────────────────
 
@@ -53,32 +53,208 @@ function fmtNum(n) {
   return n.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-// ── Text helpers ──────────────────────────────────────────────────────────────
-
-// pdfmake bidi processing reverses word order for Hebrew strings.
-// Pre-reversing the words causes pdfmake's reversal to produce correct output.
-// Using NBSP (\u00A0) prevents pdfmake from dropping the space on word boundaries.
-const NBSP = '\u00A0';
-function heb(str) {
-  return str.split(' ').reverse().join(NBSP);
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-// For user-supplied Hebrew text (clientName, descriptions), use the same reversal.
-// wordSpacing: 1 is added to cells containing these to preserve inter-word spacing.
-function hebCell(str) {
-  if (!str) return '';
-  return String(str).split(' ').reverse().join(NBSP);
+// ── HTML template ─────────────────────────────────────────────────────────────
+
+function buildHtml(opts, fontBase64) {
+  const { clientName, projectDescription, items, currency, notes } = opts;
+  const sym      = currency === 'USD' ? '$' : '₪';
+  const vatRate  = 0.18;
+  const qNum     = quoteNumber();
+  const dateStr  = todayStr();
+  const subtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0), 0);
+  const vat      = subtotal * vatRate;
+  const total    = subtotal + vat;
+
+  const itemRows = items.map((it, i) => {
+    const amt = parseFloat(it.price) || 0;
+    const bg  = i % 2 === 0 ? '#ffffff' : '#f3f4f6';
+    return `
+      <tr style="background:${bg}">
+        <td class="desc">${esc(it.description)}</td>
+        <td class="price">${sym}${fmtNum(amt)}</td>
+      </tr>`;
+  }).join('');
+
+  const projectRow = projectDescription
+    ? `<div class="client-row"><span class="label">פרויקט:</span> <span>${esc(projectDescription)}</span></div>`
+    : '';
+
+  const notesSection = notes
+    ? `<div class="notes"><span class="label">הערות:</span> ${esc(notes)}</div>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<style>
+  @font-face {
+    font-family: 'Heebo';
+    src: url('data:font/ttf;base64,${fontBase64}') format('truetype');
+    font-weight: normal;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Heebo', Arial, sans-serif;
+    direction: rtl;
+    color: #111827;
+    font-size: 13px;
+    background: white;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: #1a56db;
+    color: white;
+    padding: 20px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .company-name { font-size: 26px; font-weight: bold; margin-bottom: 4px; }
+  .company-sub  { font-size: 11px; color: #c7d7f8; }
+  .quote-meta   { text-align: left; font-size: 11px; line-height: 1.8; }
+  .quote-title  { font-size: 16px; font-weight: bold; margin-top: 6px; }
+
+  /* ── Client box ── */
+  .client-box {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    margin: 18px 32px;
+    padding: 12px 16px;
+    border-radius: 4px;
+  }
+  .client-row { margin-bottom: 4px; }
+  .label { color: #6b7280; margin-left: 6px; }
+
+  /* ── Items table ── */
+  .table-wrap { margin: 0 32px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead tr { background: #1a56db; color: white; }
+  thead th { padding: 10px 12px; text-align: right; font-size: 12px; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid #e5e7eb; }
+  .desc  { text-align: right; }
+  .price { text-align: right; width: 120px; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* ── Totals ── */
+  .totals {
+    margin: 16px 32px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .total-row {
+    display: flex;
+    justify-content: flex-start;
+    gap: 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .total-row .tl { color: #6b7280; }
+  .total-row .tv { font-weight: bold; min-width: 90px; text-align: right; }
+  .total-grand {
+    background: #059669;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    margin-top: 6px;
+    font-size: 15px;
+    font-weight: bold;
+    display: flex;
+    gap: 12px;
+  }
+
+  /* ── Notes ── */
+  .notes {
+    margin: 16px 32px;
+    font-size: 12px;
+    color: #374151;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 24px;
+    border-top: 1px solid #d1d5db;
+    background: #f3f4f6;
+    padding: 10px 32px;
+    text-align: center;
+    font-size: 10px;
+    color: #6b7280;
+    position: fixed;
+    bottom: 0;
+    left: 0; right: 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="company-name">Digital Web</div>
+    <div class="company-sub">פיתוח אתרים ופתרונות דיגיטליים</div>
+  </div>
+  <div class="quote-meta">
+    <div>מספר הצעה: ${esc(qNum)}</div>
+    <div>תאריך: ${esc(dateStr)}</div>
+    <div class="quote-title">הצעת מחיר</div>
+  </div>
+</div>
+
+<div class="client-box">
+  <div class="client-row"><span class="label">לקוח:</span> <span>${esc(clientName)}</span></div>
+  <div class="client-row"><span class="label">תאריך:</span> <span>${esc(dateStr)}</span></div>
+  ${projectRow}
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="desc">תיאור</th>
+        <th class="price">מחיר</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemRows}
+    </tbody>
+  </table>
+</div>
+
+<div class="totals">
+  <div class="total-row">
+    <span class="tl">סכום לפני מע"מ:</span>
+    <span class="tv">${sym}${fmtNum(subtotal)}</span>
+  </div>
+  <div class="total-row">
+    <span class="tl">מע"מ 18%:</span>
+    <span class="tv">${sym}${fmtNum(vat)}</span>
+  </div>
+  <div class="total-grand">
+    <span>סה"כ לתשלום:</span>
+    <span>${sym}${fmtNum(total)}</span>
+  </div>
+</div>
+
+${notesSection}
+
+<div class="footer">
+  תוקף ההצעה: 30 ימים מתאריך הנפקה &nbsp;|&nbsp; Digital Web &nbsp;|&nbsp; שילה אלקובי
+</div>
+
+</body>
+</html>`;
 }
-
-// ── Colors ────────────────────────────────────────────────────────────────────
-
-const BLUE   = '#1a56db';
-const GREEN  = '#059669';
-const LGRAY  = '#f3f4f6';
-const DGRAY  = '#6b7280';
-const DARK   = '#111827';
-const BORDER = '#d1d5db';
-const WHITE  = 'white';
 
 // ── PDF generation ────────────────────────────────────────────────────────────
 
@@ -93,243 +269,37 @@ const WHITE  = 'white';
  */
 async function generateQuote(opts) {
   const {
-    clientName,
+    clientName       = '',
     projectDescription = '',
-    items = [],
-    currency = 'ILS',
-    notes = '',
+    items            = [],
+    currency         = 'ILS',
+    notes            = '',
   } = opts;
 
   await downloadFont();
+  const fontBase64 = fs.readFileSync(FONT_PATH).toString('base64');
+  const html       = buildHtml({ clientName, projectDescription, items, currency, notes }, fontBase64);
 
-  const fonts = {
-    Heebo: { normal: FONT_PATH, bold: FONT_PATH, italics: FONT_PATH, bolditalics: FONT_PATH },
-  };
-  const printer = new PdfPrinter(fonts);
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
 
-  const sym      = currency === 'USD' ? '$' : '₪';
-  const vatRate  = 0.18;
-  const qNum     = quoteNumber();
-  const dateStr  = todayStr();
-  const subtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0), 0);
-  const vat      = subtotal * vatRate;
-  const total    = subtotal + vat;
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await page.pdf({
+      format:          'A4',
+      printBackground: true,
+      margin:          { top: '0', right: '0', bottom: '40px', left: '0' },
+    });
 
-  // ── Client info rows ──────────────────────────────────────────────────────
-  // Columns order (LTR layout, RTL read): date-label | date-value | client-label | client-value
-  const clientRows = [
-    [
-      { text: dateStr,             alignment: 'right', bold: true,  color: DARK,  wordSpacing: 1 },
-      { text: heb('תאריך:'),      alignment: 'right',              color: DGRAY },
-      { text: hebCell(clientName), alignment: 'right', bold: true,  color: DARK,  wordSpacing: 1 },
-      { text: heb('לקוח:'),       alignment: 'right',              color: DGRAY },
-    ],
-  ];
-  if (projectDescription) {
-    clientRows.push([
-      { text: hebCell(projectDescription), alignment: 'right', bold: true, color: DARK, colSpan: 3, wordSpacing: 1 },
-      {},
-      {},
-      { text: heb('פרויקט:'), alignment: 'right', color: DGRAY },
-    ]);
+    const outPath = path.join(os.tmpdir(), `quote-${Date.now()}.pdf`);
+    fs.writeFileSync(outPath, pdfBuffer);
+    return outPath;
+  } finally {
+    await browser.close();
   }
-
-  // ── Items table body ──────────────────────────────────────────────────────
-  const tableBody = [
-    [
-      { text: heb('תיאור'), alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
-      { text: heb('מחיר'),  alignment: 'right', color: WHITE, bold: true, margin: [8, 6, 8, 6] },
-    ],
-  ];
-  items.forEach((it, i) => {
-    const amt = parseFloat(it.price) || 0;
-    const bg  = i % 2 === 0 ? WHITE : LGRAY;
-    tableBody.push([
-      { text: hebCell(it.description || ''), alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5], wordSpacing: 1 },
-      { text: `${sym}${fmtNum(amt)}`,        alignment: 'right', color: DARK, fillColor: bg, margin: [8, 5, 8, 5] },
-    ]);
-  });
-
-  // ── Totals rows — label and amount in SEPARATE cells to prevent bidi joining ──
-  const totalsBody = [
-    [
-      { text: '', border: [false,false,false,false] },
-      { text: heb('סכום לפני מע"מ:'), alignment: 'right', border: [false,false,false,false], margin: [0, 2, 4, 2] },
-      { text: `${sym}${fmtNum(subtotal)}`, alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
-    ],
-    [
-      { text: '', border: [false,false,false,false] },
-      { text: heb('מע"מ 18%:'), alignment: 'right', border: [false,false,false,false], margin: [0, 2, 4, 2] },
-      { text: `${sym}${fmtNum(vat)}`, alignment: 'right', border: [false,false,false,false], margin: [0, 2] },
-    ],
-    [
-      { text: '', border: [false,false,false,false] },
-      {
-        text:      heb('סה"כ לתשלום:'),
-        alignment: 'right',
-        bold:      true,
-        fontSize:  13,
-        color:     WHITE,
-        fillColor: GREEN,
-        border:    [false,false,false,false],
-        margin:    [8, 8, 4, 8],
-      },
-      {
-        text:      `${sym}${fmtNum(total)}`,
-        alignment: 'right',
-        bold:      true,
-        fontSize:  13,
-        color:     WHITE,
-        fillColor: GREEN,
-        border:    [false,false,false,false],
-        margin:    [4, 8, 8, 8],
-      },
-    ],
-  ];
-
-  // ── Document definition ───────────────────────────────────────────────────
-  const docDef = {
-    pageSize:    'A4',
-    pageMargins: [40, 40, 40, 60],
-    defaultStyle: {
-      font:      'Heebo',
-      fontSize:  11,
-      color:     DARK,
-      // No rtl:true — combined with heb() pre-reversal this produces correct output
-    },
-
-    content: [
-      // ── HEADER ──────────────────────────────────────────────────────────
-      {
-        table: {
-          widths: ['*', '*'],
-          body: [[
-            {
-              stack: [
-                { text: 'Digital Web', fontSize: 22, bold: true, color: WHITE },
-                { text: heb('פיתוח אתרים ופתרונות דיגיטליים'), fontSize: 10, color: '#c7d7f8', margin: [0, 4, 0, 0] },
-              ],
-              alignment: 'left',
-              margin: [12, 14, 12, 14],
-            },
-            {
-              stack: [
-                { text: `${heb('מספר הצעה:')} ${qNum}`, alignment: 'right', color: WHITE, fontSize: 10 },
-                { text: `${heb('תאריך:')} ${dateStr}`,   alignment: 'right', color: WHITE, fontSize: 10, margin: [0, 4, 0, 0] },
-                { text: heb('הצעת מחיר'),                alignment: 'right', color: WHITE, bold: true, fontSize: 13, margin: [0, 6, 0, 0] },
-              ],
-              alignment: 'right',
-              margin: [12, 10, 12, 10],
-            },
-          ]],
-        },
-        layout: {
-          fillColor:    () => BLUE,
-          hLineWidth:   () => 0,
-          vLineWidth:   () => 0,
-          paddingLeft:  () => 0,
-          paddingRight: () => 0,
-          paddingTop:   () => 0,
-          paddingBottom:() => 0,
-        },
-        margin: [0, 0, 0, 16],
-      },
-
-      // ── CLIENT INFO BOX ──────────────────────────────────────────────────
-      {
-        table: {
-          widths: ['*', 60, '*', 60],
-          body: clientRows,
-        },
-        layout: {
-          fillColor:     () => LGRAY,
-          hLineColor:    () => BORDER,
-          vLineColor:    () => BORDER,
-          hLineWidth:    (i, node) => (i === 0 || i === node.table.body.length) ? 1 : 0,
-          vLineWidth:    (i, node) => (i === 0 || i === node.table.widths.length) ? 1 : 0,
-          paddingLeft:   () => 10,
-          paddingRight:  () => 10,
-          paddingTop:    () => 8,
-          paddingBottom: () => 8,
-        },
-        margin: [0, 0, 0, 16],
-      },
-
-      // ── ITEMS TABLE ───────────────────────────────────────────────────────
-      {
-        table: {
-          widths: ['*', 110],
-          headerRows: 1,
-          body: tableBody,
-        },
-        layout: {
-          fillColor:     (rowIndex) => rowIndex === 0 ? BLUE : null,
-          hLineColor:    () => BORDER,
-          vLineColor:    () => BORDER,
-          hLineWidth:    () => 0.5,
-          vLineWidth:    () => 0.5,
-          paddingLeft:   () => 0,
-          paddingRight:  () => 0,
-          paddingTop:    () => 0,
-          paddingBottom: () => 0,
-        },
-        margin: [0, 0, 0, 16],
-      },
-
-      // ── TOTALS ────────────────────────────────────────────────────────────
-      {
-        table: {
-          widths: ['*', 'auto', 'auto'],
-          body: totalsBody,
-        },
-        layout: 'noBorders',
-        margin: [0, 0, 0, notes ? 16 : 0],
-      },
-
-      // ── NOTES ─────────────────────────────────────────────────────────────
-      ...(notes ? [
-        {
-          canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: BORDER }],
-          margin: [0, 0, 0, 8],
-        },
-        {
-          columns: [
-            { text: hebCell(notes), alignment: 'right', color: DARK, width: '*', wordSpacing: 1 },
-            { text: heb('הערות:'), alignment: 'right', color: DGRAY, width: 50 },
-          ],
-        },
-      ] : []),
-    ],
-
-    // ── FOOTER ──────────────────────────────────────────────────────────────
-    // LTR order for mixed Hebrew/English text: Hebrew names first (displayed on right), English in middle
-    footer: () => ({
-      stack: [
-        { canvas: [{ type: 'line', x1: 40, y1: 0, x2: 555, y2: 0, lineWidth: 0.5, lineColor: BORDER }] },
-        {
-          text: `${heb('שילה אלקובי')}  |  Digital Web  |  ${heb('תוקף ההצעה: 30 ימים מתאריך הנפקה')}`,
-          alignment: 'center',
-          color:     DGRAY,
-          fontSize:  9,
-          margin:    [40, 6, 40, 0],
-        },
-      ],
-    }),
-
-    styles: {},
-  };
-
-  // ── Write PDF ─────────────────────────────────────────────────────────────
-  const outPath = path.join(os.tmpdir(), `quote-${Date.now()}.pdf`);
-  const pdfDoc  = printer.createPdfKitDocument(docDef);
-  const stream  = fs.createWriteStream(outPath);
-  pdfDoc.pipe(stream);
-  pdfDoc.end();
-
-  return new Promise((resolve, reject) => {
-    stream.on('finish', () => resolve(outPath));
-    stream.on('error', reject);
-  });
 }
 
 module.exports = { generateQuote };

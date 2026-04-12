@@ -12,6 +12,7 @@
     "dotenv": "^16.4.5",
     "googleapis": "^171.4.0",
     "groq-sdk": "^1.1.1",
+    "html-pdf-node": "^1.0.8",
     "node-cron": "^4.2.1",
     "node-telegram-bot-api": "^0.66.0",
     "openai": "^6.32.0",
