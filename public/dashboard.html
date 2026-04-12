@@ -664,6 +664,33 @@ function renderHealth() {
   if (!D) return;
   const h = D.health;
 
+  const sliderForm = (painVal, moodVal, sleepVal) => `
+    <div class="slider-row">
+      <div class="slider-header">
+        <span class="slider-label">🩺 כאב</span>
+        <span class="slider-val" id="pain-val">${painVal}</span>
+      </div>
+      <input class="slider-pain" type="range" min="1" max="10" value="${painVal}" id="pain-s"
+             oninput="document.getElementById('pain-val').textContent=this.value">
+    </div>
+    <div class="slider-row">
+      <div class="slider-header">
+        <span class="slider-label">😊 מצב רוח</span>
+        <span class="slider-val" id="mood-val">${moodVal}</span>
+      </div>
+      <input class="slider-mood" type="range" min="1" max="10" value="${moodVal}" id="mood-s"
+             oninput="document.getElementById('mood-val').textContent=this.value">
+    </div>
+    <div class="slider-row">
+      <div class="slider-header">
+        <span class="slider-label">💤 שינה (שעות)</span>
+        <span class="slider-val" id="sleep-val">${sleepVal}</span>
+      </div>
+      <input class="slider-sleep" type="range" min="0" max="12" step="0.5" value="${sleepVal}" id="sleep-s"
+             oninput="document.getElementById('sleep-val').textContent=this.value">
+    </div>
+    <button class="btn-primary green" style="width:100%;margin-top:4px" onclick="submitHealth()">💾 שמור דיווח</button>`;
+
   const todaySection = h
     ? `<div class="card">
          <div class="card-title">📋 דיווח היום</div>
@@ -682,34 +709,20 @@ function renderHealth() {
            <div class="meter-bar"><div class="meter-fill" style="width:${Math.min(h.sleep/12*100,100)}%;background:${sleepColor(h.sleep)}"></div></div>
            <span class="meter-num">${h.sleep}ש'</span>
          </div>
+         <button class="btn-primary" style="width:100%;margin-top:10px;background:#334155;color:#94a3b8"
+                 onclick="document.getElementById('health-update-form').style.display=document.getElementById('health-update-form').style.display==='none'?'block':'none'">
+           ✏️ עדכן דיווח
+         </button>
+       </div>
+       <div id="health-update-form" style="display:none">
+         <div class="card">
+           <div class="card-title">✏️ עדכון דיווח</div>
+           ${sliderForm(h.pain, h.mood, h.sleep ?? 7)}
+         </div>
        </div>`
     : `<div class="card">
          <div class="card-title">🩺 דיווח בריאות יומי</div>
-         <div class="slider-row">
-           <div class="slider-header">
-             <span class="slider-label">🩺 כאב</span>
-             <span class="slider-val" id="pain-val">5</span>
-           </div>
-           <input class="slider-pain" type="range" min="1" max="10" value="5" id="pain-s"
-                  oninput="document.getElementById('pain-val').textContent=this.value">
-         </div>
-         <div class="slider-row">
-           <div class="slider-header">
-             <span class="slider-label">😊 מצב רוח</span>
-             <span class="slider-val" id="mood-val">5</span>
-           </div>
-           <input class="slider-mood" type="range" min="1" max="10" value="5" id="mood-s"
-                  oninput="document.getElementById('mood-val').textContent=this.value">
-         </div>
-         <div class="slider-row">
-           <div class="slider-header">
-             <span class="slider-label">💤 שינה (שעות)</span>
-             <span class="slider-val" id="sleep-val">7</span>
-           </div>
-           <input class="slider-sleep" type="range" min="0" max="12" step="0.5" value="7" id="sleep-s"
-                  oninput="document.getElementById('sleep-val').textContent=this.value">
-         </div>
-         <button class="btn-primary green" style="width:100%;margin-top:4px" onclick="submitHealth()">💾 שמור דיווח</button>
+         ${sliderForm(5, 5, 7)}
        </div>`;
 
   const hasHistory = D.healthHistory.some(x => x.pain != null);
