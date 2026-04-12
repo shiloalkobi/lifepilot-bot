@@ -131,14 +131,16 @@ async function formatWatchlist(chatId) {
   for (const w of items) {
     try {
       const s    = await fetchStockPrice(w.symbol);
-      const dir  = w.direction === 'above' ? '↑' : '↓';
       const sign = s.changePct >= 0 ? '+' : '';
+      const alertStr = w.threshold != null
+        ? `${w.direction === 'above' ? '↑' : '↓'} $${w.threshold}`
+        : 'אין התראה';
       lines.push(
-        `• <b>${s.symbol}</b> — $${s.price} (${sign}${s.changePct}%)\n` +
-        `  התראה: ${dir} $${w.threshold}`
+        `• <b>${s.symbol}</b> — $${s.price} (${sign}${s.changePct}%) | ${s.name}\n` +
+        `  התראה: ${alertStr}`
       );
     } catch {
-      lines.push(`• <b>${w.symbol}</b> — מחיר לא זמין | התראה: $${w.threshold}`);
+      lines.push(`• <b>${w.symbol}</b> — מחיר לא זמין`);
     }
   }
   return lines.join('\n');
@@ -154,6 +156,7 @@ async function checkAlerts(bot, chatId) {
   const all   = loadWatchlist();
 
   for (const w of list) {
+    if (w.threshold == null) continue; // tracking-only entry, no alert needed
     try {
       const s         = await fetchStockPrice(w.symbol);
       const triggered = w.direction === 'above'
@@ -194,17 +197,27 @@ function initDefaultWatchlist(chatId) {
   const existing = getWatchlistForChat(chatId);
   if (existing.length) return; // already has entries
 
+  // Defaults: tracking only (no alert threshold) — survives Render deploys
   const defaults = [
-    { symbol: 'NVDA',  threshold: 200, direction: 'above' },
-    { symbol: 'AAPL',  threshold: 250, direction: 'above' },
-    { symbol: 'MSFT',  threshold: 500, direction: 'above' },
-    { symbol: 'GOOGL', threshold: 200, direction: 'above' },
-    { symbol: 'META',  threshold: 700, direction: 'above' },
+    { symbol: 'NVDA'    },
+    { symbol: 'AAPL'    },
+    { symbol: 'MSFT'    },
+    { symbol: 'GOOGL'   },
+    { symbol: 'META'    },
+    { symbol: 'BTC-USD' },
   ];
 
   const list = loadWatchlist();
   for (const d of defaults) {
-    list.push({ id: nextId(list), chatId, ...d, triggered: false, createdAt: new Date().toISOString() });
+    list.push({
+      id:        nextId(list),
+      chatId,
+      symbol:    d.symbol,
+      threshold: null,        // no price alert — tracking only
+      direction: 'above',
+      triggered: false,
+      createdAt: new Date().toISOString(),
+    });
   }
   saveWatchlist(list);
 }

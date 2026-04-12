@@ -41,6 +41,7 @@ const { fetchStockPrice, formatPrice, addToWatchlist, removeFromWatchlist, forma
 const { buildPainChartUrl, buildExpenseChartUrl, buildHabitChartUrl } = require('./charts');
 const { generateQuote } = require('./quote-generator');
 const { savePassword, getPassword, listPasswords, deletePassword } = require('./password-manager');
+const { generateTTS } = require('./tts');
 
 console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
 console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
@@ -185,13 +186,38 @@ function buildCurrentContext(chatId) {
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
-function buildSystemPrompt(memory) {
+function buildSystemPrompt(memory, chatId) {
   const memBlock = formatMemoryBlock(memory);
   const nowDisplay = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+
+  // Time-of-day context
+  const hour = parseInt(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jerusalem', hour: 'numeric', hour12: false }), 10);
+  const timeCtx = hour < 10
+    ? 'בוקר — תשובות קצרות וממוקדות'
+    : hour < 15
+    ? 'צהריים — תשובות רגילות'
+    : hour < 20
+    ? 'אחר הצהריים — תשובות מפורטות יותר אם נחוץ'
+    : 'ערב — תשובות ידידותיות ורגועות';
+
+  // Pain context
+  let painCtx = '';
+  try {
+    const h = getTodayHealth();
+    if (h && h.painLevel >= 7) painCtx = `⚠️ כאב גבוה היום (${h.painLevel}/10) — היה קצר, עדין ואמפתי`;
+  } catch {}
+
+  // Recent topics
+  let topicsCtx = '';
+  try {
+    const topics = (memory.context?.recentTopics || []).slice(-3);
+    if (topics.length) topicsCtx = `דיברנו לאחרונה על: ${topics.join(', ')}`;
+  } catch {}
+
   return `LifePilot — עוזר של שילה (גבר, זכר בלבד) | ישראל
-זמן: ${nowDisplay} | ${nowIL()} | ${getDayHebrew()}
+זמן: ${nowDisplay} | ${nowIL()} | ${getDayHebrew()} | ${timeCtx}
 CRPS רגל שמאל (DRG) — כאב כרוני
-${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
+${painCtx ? painCtx + '\n' : ''}${topicsCtx ? topicsCtx + '\n' : ''}${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 • כלים: קרא רק כשמשתמש מבקש במפורש — משימה/תזכורת/בריאות/תרופות/חיפוש/מזג אוויר. אסור לקרוא ל-get_current_context על שאלות כלליות, סיפורים, שיחת חולין, או שאלות על אנשים/נושאים
 • יש לך גישה ל-Google Calendar וGmail — כששואלים על פגישות/יומן קרא ל-get_calendar_events, כששואלים "יש מיילים חדשים?" קרא ל-get_unread_emails, לחיפוש מיילים ספציפיים (חשבוניות, קבלות, מ-X, לפי נושא) — תמיד השתמש ב-search_emails ולא ב-get_unread_emails
 • תזכורות: חשב בדיוק מהשעה הנ"ל
@@ -208,6 +234,25 @@ ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
   "חדשות ישראל" / "סטארטאפים" → category='israel'
   "קריפטו" / "ביטקוין" / "חדשות קריפטו" → category='crypto'
   "CRPS" / "מחקר כאב" → category='crps'`;
+}
+
+// ── Save recent topic to memory ───────────────────────────────────────────────
+function saveRecentTopic(chatId, text) {
+  try {
+    const { loadMemory, saveMemory } = require('./agent-memory');
+    const memory = loadMemory(chatId);
+    if (!memory.context) memory.context = {};
+    if (!Array.isArray(memory.context.recentTopics)) memory.context.recentTopics = [];
+    // Extract a short topic label (first 5 words, no commands)
+    const topic = text.replace(/[^\u0590-\u05FFa-zA-Z0-9\s]/g, ' ').trim().split(/\s+/).slice(0, 5).join(' ');
+    if (topic.length < 3) return;
+    // Keep only last 5 unique topics
+    memory.context.recentTopics = [
+      ...memory.context.recentTopics.filter(t => t !== topic).slice(-4),
+      topic,
+    ];
+    saveMemory(chatId, memory);
+  } catch {} // never crash the main flow
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -298,6 +343,8 @@ const TOOL_DECLARATIONS = [
   { name: 'get_password',    description: 'שלוף סיסמה לשירות ספציפי.', parameters: { type: 'object', properties: { service: { type: 'string' } }, required: ['service'] } },
   { name: 'list_passwords',  description: 'הצג רשימת שירותים עם סיסמאות (שמות בלבד, ללא הסיסמאות עצמן).', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'delete_password', description: 'מחק סיסמה של שירות.', parameters: { type: 'object', properties: { service: { type: 'string' } }, required: ['service'] } },
+  // TTS (#11)
+  { name: 'voice_reply', description: 'שלח תשובה קולית (MP3). השתמש כשמבקשים "ענה בקול/דיבור/קולי/voice".', parameters: { type: 'object', properties: { text: { type: 'string', description: 'הטקסט לאמירה (עד 200 תווים)' }, lang: { type: 'string', description: 'iw=עברית en=אנגלית', enum: ['iw','en','ar'] } }, required: ['text'] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -336,6 +383,8 @@ const EXTENDED_KEYWORDS = [
   'pomodoro stats',
   // Market research
   'מחקר שוק', 'תחקור', 'מתחרים', 'מתחרה', 'market research', 'competitor',
+  // TTS
+  'ענה בקול', 'תדבר', 'קולי', 'voice', 'קול', 'דיבור', 'audio',
   // Password
   'סיסמה', 'סיסמאות', 'password', 'passwords',
   // Web search triggers
@@ -753,6 +802,15 @@ async function executeTool(name, args, ctx) {
         return ok ? `🗑️ סיסמת <b>${args.service}</b> נמחקה` : `❌ לא נמצאה סיסמה עבור "${args.service}"`;
       }
 
+      // ── TTS (#11) ─────────────────────────────────────────────────────────
+      case 'voice_reply': {
+        const ttsText = (args.text || '').slice(0, 200);
+        const ttsLang = args.lang || 'iw';
+        const mp3Path = await generateTTS(ttsText, ttsLang);
+        await bot.sendVoice(chatId, require('fs').createReadStream(mp3Path));
+        return '__AUDIO_SENT__';
+      }
+
       default:
         return `כלי לא מוכר: ${name}`;
     }
@@ -836,7 +894,7 @@ async function handleMessage(bot, chatId, text) {
 
   // Build message array for Groq
   const chatMessages = [
-    { role: 'system', content: buildSystemPrompt(memory) },
+    { role: 'system', content: buildSystemPrompt(memory, chatId) },
     ...toOpenAIHistory(messages),
     { role: 'user', content: text },
   ];
@@ -940,6 +998,7 @@ async function handleMessage(bot, chatId, text) {
   const reply = (rawContent && rawContent.trim()) ? rawContent.trim() : 'לא הצלחתי להבין. אפשר לנסח אחרת?';
   console.log('[Agent] REPLY:', reply);
   addMessage(chatId, 'model', reply);
+  saveRecentTopic(chatId, text); // context-aware: track what we discussed
   return reply;
 }
 
