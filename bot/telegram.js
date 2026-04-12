@@ -559,6 +559,21 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
+  // ── Dashboard command ────────────────────────────────────────────────────────
+  function sendDashboard(chatId) {
+    const dashUrl = (process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000') + '/dashboard';
+    bot.sendMessage(chatId, '📊 פתח את לוח הבקרה האישי שלך:', {
+      reply_markup: {
+        inline_keyboard: [[{
+          text: '📊 פתח דשבורד',
+          web_app: { url: dashUrl },
+        }]],
+      },
+    });
+  }
+
+  bot.onText(/\/dashboard/, (msg) => sendDashboard(msg.chat.id));
+
   // Handle all non-command messages
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
@@ -781,6 +796,12 @@ function startBot(token, webhookUrl = null) {
     }
 
     if (!msg.text || msg.text.startsWith('/')) return;
+
+    // ── Dashboard text intercept ─────────────────────────────────────────────
+    if (/דשבורד|dashboard/i.test(msg.text)) {
+      sendDashboard(chatId);
+      return;
+    }
 
     // ── English quiz intercept ───────────────────────────────────────────────
     if (isInQuiz(chatId)) {

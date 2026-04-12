@@ -394,6 +394,8 @@ const EXTENDED_KEYWORDS = [
   // Invoice/receipt email search + expense tracking
   'חשבונית', 'חשבוניות', 'קבלות', 'invoice',
   'הוצאות', 'סיכום חודשי', 'כמה הוצאתי', 'ייצא', 'export', 'csv', 'הוצאתי',
+  // Dashboard
+  'דשבורד', 'dashboard',
 ];
 
 function selectTools(userText) {

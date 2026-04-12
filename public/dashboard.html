@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>shilobilo — דשבורד</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      direction: rtl;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, #1a56db 0%, #059669 100%);
+      padding: 20px 16px 16px;
+      text-align: center;
+    }
+    .header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.5px; }
+    .header .subtitle { font-size: 0.8rem; opacity: 0.85; margin-top: 3px; }
+    .header .ts { font-size: 0.72rem; opacity: 0.7; margin-top: 6px; }
+
+    /* ── Grid ────────────────────────────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 16px;
+    }
+    @media (max-width: 400px) { .grid { grid-template-columns: 1fr; } }
+    .full { grid-column: 1 / -1; }
+
+    /* ── Card ────────────────────────────────────────────────────────────── */
+    .card {
+      background: #1e293b;
+      border-radius: 14px;
+      padding: 14px;
+      border: 1px solid #334155;
+    }
+    .card-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    .card-value {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .card-sub { font-size: 0.78rem; color: #64748b; margin-top: 4px; }
+
+    /* ── Pain meter ──────────────────────────────────────────────────────── */
+    .meter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .meter-label { font-size: 0.8rem; width: 80px; color: #94a3b8; }
+    .meter-bar {
+      flex: 1; height: 8px; background: #334155; border-radius: 4px; overflow: hidden;
+    }
+    .meter-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+    .meter-val { font-size: 0.78rem; width: 30px; text-align: left; color: #cbd5e1; }
+
+    /* ── Stocks ──────────────────────────────────────────────────────────── */
+    .stock-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-bottom: 1px solid #1e293b;
+    }
+    .stock-row:last-child { border-bottom: none; }
+    .stock-sym { font-weight: 700; font-size: 0.85rem; }
+    .stock-price { font-size: 0.85rem; }
+    .stock-chg { font-size: 0.75rem; padding: 2px 6px; border-radius: 6px; font-weight: 600; }
+    .up   { color: #34d399; }
+    .down { color: #f87171; }
+    .up-bg   { background: #064e3b; color: #34d399; }
+    .down-bg { background: #450a0a; color: #f87171; }
+
+    /* ── Habits ──────────────────────────────────────────────────────────── */
+    .habit-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; font-size: 0.83rem;
+    }
+    .habit-check { font-size: 1.1rem; }
+    .habit-name  { flex: 1; }
+    .habit-streak { font-size: 0.72rem; color: #f59e0b; }
+
+    /* ── Tasks ───────────────────────────────────────────────────────────── */
+    .task-row {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 5px 0; font-size: 0.82rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    .task-row:last-child { border-bottom: none; }
+    .task-dot { margin-top: 5px; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .high-dot { background: #ef4444; }
+    .med-dot  { background: #f59e0b; }
+    .low-dot  { background: #64748b; }
+
+    /* ── Quick actions ───────────────────────────────────────────────────── */
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn {
+      flex: 1 1 calc(50% - 4px);
+      background: #1a56db;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: opacity 0.15s;
+    }
+    .btn:active { opacity: 0.7; }
+    .btn.green { background: #059669; }
+    .btn.amber { background: #d97706; }
+    .btn.slate { background: #475569; }
+
+    /* ── No data ─────────────────────────────────────────────────────────── */
+    .empty { color: #475569; font-size: 0.8rem; font-style: italic; }
+
+    /* ── Loading ─────────────────────────────────────────────────────────── */
+    #loading {
+      display: flex; align-items: center; justify-content: center;
+      height: 60vh; font-size: 1.1rem; color: #64748b;
+    }
+
+    /* ── Refresh indicator ───────────────────────────────────────────────── */
+    #refresh-bar {
+      height: 3px;
+      background: linear-gradient(90deg, #1a56db, #059669);
+      width: 100%;
+      animation: shrink 30s linear infinite;
+      transform-origin: right;
+    }
+    @keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🚀 shilobilo</h1>
+  <div class="subtitle">לוח בקרה אישי</div>
+  <div class="ts" id="ts">טוען...</div>
+</div>
+<div id="refresh-bar"></div>
+
+<div id="loading">טוען נתונים...</div>
+<div id="main" style="display:none">
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+  const tg = window.Telegram?.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  const BASE = '';
+
+  function fmt(n, digits = 1) {
+    if (n == null) return '—';
+    return Number(n).toLocaleString('he-IL', { maximumFractionDigits: digits });
+  }
+
+  function painColor(v) {
+    if (v <= 3) return '#34d399';
+    if (v <= 6) return '#fbbf24';
+    return '#ef4444';
+  }
+
+  function moodColor(v) {
+    if (v >= 7) return '#34d399';
+    if (v >= 4) return '#fbbf24';
+    return '#ef4444';
+  }
+
+  function meter(label, value, max, color) {
+    const pct = Math.round((value / max) * 100);
+    return `
+      <div class="meter-row">
+        <span class="meter-label">${label}</span>
+        <div class="meter-bar"><div class="meter-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="meter-val">${fmt(value)}</span>
+      </div>`;
+  }
+
+  function renderHealth(h) {
+    if (!h) return `<p class="empty">לא דווח היום</p>`;
+    return (
+      meter('כאב', h.pain, 10, painColor(h.pain)) +
+      meter('מצב רוח', h.mood, 10, moodColor(h.mood)) +
+      meter('שינה', h.sleep, 12, '#818cf8')
+    );
+  }
+
+  function renderHabits(habits) {
+    if (!habits.length) return `<p class="empty">אין הרגלים</p>`;
+    return habits.map(h => `
+      <div class="habit-row">
+        <span class="habit-check">${h.doneToday ? '✅' : '⬜'}</span>
+        <span class="habit-name">${h.icon} ${h.name}</span>
+        ${h.streak > 0 ? `<span class="habit-streak">🔥 ${h.streak}</span>` : ''}
+      </div>`).join('');
+  }
+
+  function renderStocks(stocks) {
+    if (!stocks.length) return `<p class="empty">אין מניות</p>`;
+    return stocks.map(s => {
+      const up   = s.changePct >= 0;
+      const sign = up ? '+' : '';
+      return `
+        <div class="stock-row">
+          <span class="stock-sym">${s.symbol}</span>
+          <span class="stock-price">$${fmt(s.price, 2)}</span>
+          <span class="stock-chg ${up ? 'up-bg' : 'down-bg'}">${sign}${fmt(s.changePct)}%</span>
+        </div>`;
+    }).join('');
+  }
+
+  function renderTasks(tasks) {
+    if (!tasks.length) return `<p class="empty">אין משימות פתוחות</p>`;
+    return tasks.slice(0, 5).map(t => {
+      const dotCls = t.priority === 'high' ? 'high-dot' : t.priority === 'low' ? 'low-dot' : 'med-dot';
+      return `
+        <div class="task-row">
+          <div class="task-dot ${dotCls}"></div>
+          <span>${t.text}</span>
+        </div>`;
+    }).join('');
+  }
+
+  function sendCmd(cmd) {
+    if (tg) {
+      tg.sendData(cmd);
+    } else {
+      alert('פקודה: ' + cmd);
+    }
+  }
+
+  function render(d) {
+    // Timestamp
+    const dt = new Date(d.timestamp);
+    document.getElementById('ts').textContent =
+      'עודכן: ' + dt.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
+
+    const grid = document.getElementById('grid');
+    grid.innerHTML = `
+
+      <!-- Health -->
+      <div class="card full">
+        <div class="card-title">🩺 בריאות היום</div>
+        ${renderHealth(d.health)}
+      </div>
+
+      <!-- Tasks summary -->
+      <div class="card">
+        <div class="card-title">✅ משימות</div>
+        <div class="card-value" style="color:#60a5fa">${d.tasks.open}</div>
+        <div class="card-sub">פתוחות</div>
+        <div class="card-sub" style="margin-top:4px">הושלמו היום: ${d.tasks.completed_today}</div>
+      </div>
+
+      <!-- Expenses -->
+      <div class="card">
+        <div class="card-title">💰 הוצאות החודש</div>
+        <div class="card-value" style="color:#34d399;font-size:1.4rem">
+          ${d.expenses.total_ils > 0 ? '₪' + fmt(d.expenses.total_ils, 0) : '—'}
+        </div>
+        ${d.expenses.total_usd > 0 ? `<div class="card-sub">$${fmt(d.expenses.total_usd, 0)} USD</div>` : ''}
+        <div class="card-sub">${d.expenses.count} רשומות</div>
+      </div>
+
+      <!-- Habits -->
+      <div class="card full">
+        <div class="card-title">💪 הרגלים</div>
+        ${renderHabits(d.habits)}
+      </div>
+
+      <!-- Stocks -->
+      <div class="card full">
+        <div class="card-title">📈 מניות</div>
+        ${renderStocks(d.stocks)}
+      </div>
+
+      <!-- Open tasks list -->
+      <div class="card full">
+        <div class="card-title">📋 משימות פתוחות (top 5)</div>
+        ${renderTasks(d.openTasks)}
+      </div>
+
+      <!-- Quick actions -->
+      <div class="card full">
+        <div class="card-title">⚡ פעולות מהירות</div>
+        <div class="actions">
+          <button class="btn" onclick="sendCmd('/health')">🩺 דווח בריאות</button>
+          <button class="btn green" onclick="sendCmd('/boker')">🌅 בריפינג בוקר</button>
+          <button class="btn amber" onclick="sendCmd('/stocks')">📈 מניות</button>
+          <button class="btn slate" onclick="sendCmd('/task')">✅ משימה חדשה</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('main').style.display = '';
+  }
+
+  async function load() {
+    try {
+      const r = await fetch(BASE + '/api/dashboard');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      render(await r.json());
+    } catch (e) {
+      document.getElementById('loading').textContent = '⚠️ שגיאה בטעינה: ' + e.message;
+    }
+  }
+
+  load();
+
+  // Auto-refresh every 30s — reset the animation bar too
+  setInterval(() => {
+    const bar = document.getElementById('refresh-bar');
+    bar.style.animation = 'none';
+    bar.offsetHeight; // reflow
+    bar.style.animation = '';
+    load();
+  }, 30000);
+</script>
+</body>
+</html>

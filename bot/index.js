@@ -1,5 +1,8 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
+const path = require('path');
+const fs   = require('fs');
+
 process.on('unhandledRejection', (err) => {
   console.error('[UnhandledRejection]', err?.message || err);
 });
@@ -175,6 +178,92 @@ const server = http.createServer((req, res) => {
       return;
     }
     handleCronRoute(route, res);
+    return;
+  }
+
+  // Dashboard HTML
+  if (req.method === 'GET' && route === '/dashboard') {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+      const buf  = Buffer.from(html, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': buf.length });
+      res.end(buf);
+    } catch (e) {
+      res.writeHead(500); res.end('Error: ' + e.message);
+    }
+    return;
+  }
+
+  // Dashboard API — returns JSON for the dashboard page
+  if (req.method === 'GET' && route === '/api/dashboard') {
+    (async () => {
+      try {
+        const { getTodayHealth }        = require('./health');
+        const { getHabits }             = require('./habits');
+        const { getMonthlyExpenses }    = require('./expenses');
+        const { getOpenTasks, getCompletedToday } = require('./tasks');
+        const { getWatchlistForChat, fetchStockPrice } = require('./stocks');
+
+        const chatId = process.env.TELEGRAM_CHAT_ID || mainChatId || '';
+
+        // Health
+        const h = getTodayHealth();
+        const health = h ? { pain: h.painLevel, mood: h.mood, sleep: h.sleep } : null;
+
+        // Habits
+        const today  = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+        const habits = getHabits().map(habit => ({
+          name:      habit.name,
+          icon:      habit.icon,
+          streak:    habit.streak,
+          doneToday: !!(habit.logs || []).find(l => l.date === today && l.done),
+        }));
+
+        // Expenses (current month)
+        const exps = getMonthlyExpenses();
+        let total_ils = 0, total_usd = 0;
+        for (const e of exps) {
+          if (!e.amount) continue;
+          if ((e.currency || 'ILS') === 'USD') total_usd += e.amount;
+          else total_ils += e.amount;
+        }
+
+        // Tasks
+        const openTasks = getOpenTasks();
+        const doneToday = getCompletedToday();
+        const tasks     = { open: openTasks.length, completed_today: doneToday.length };
+
+        // Stocks — live prices from watchlist
+        const watchlist = getWatchlistForChat(chatId);
+        const stocks = [];
+        for (const w of watchlist) {
+          try {
+            const s = await fetchStockPrice(w.symbol);
+            stocks.push({ symbol: s.symbol, price: s.price, changePct: s.changePct });
+          } catch { stocks.push({ symbol: w.symbol, price: null, changePct: 0 }); }
+        }
+
+        const body = JSON.stringify({
+          health,
+          habits,
+          expenses: { total_ils: Math.round(total_ils * 100) / 100, total_usd: Math.round(total_usd * 100) / 100, count: exps.length },
+          tasks,
+          stocks,
+          openTasks: openTasks.slice(0, 5).map(t => ({ text: t.text, priority: t.priority })),
+          timestamp: new Date().toISOString(),
+        });
+        res.writeHead(200, {
+          'Content-Type':                'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Content-Length':              Buffer.byteLength(body),
+        });
+        res.end(body);
+      } catch (e) {
+        const body = JSON.stringify({ error: e.message });
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(body);
+      }
+    })();
     return;
   }
 
