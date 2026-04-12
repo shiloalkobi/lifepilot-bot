@@ -40,6 +40,7 @@ const { getExpenses, saveInvoice, getExpenseSummary, exportToCSV } = require('./
 const { fetchStockPrice, formatPrice, addToWatchlist, removeFromWatchlist, formatWatchlist } = require('./stocks');
 const { buildPainChartUrl, buildExpenseChartUrl, buildHabitChartUrl } = require('./charts');
 const { generateQuote } = require('./quote-generator');
+const { savePassword, getPassword, listPasswords, deletePassword } = require('./password-manager');
 
 console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
 console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
@@ -290,6 +291,13 @@ const TOOL_DECLARATIONS = [
   { name: 'export_expenses_csv',   description: 'ייצא הוצאות לקובץ CSV ושלח בטלגרם.', parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM, ברירת מחדל: חודש נוכחי' } }, required: [] } },
   { name: 'scan_invoice_emails',   description: 'סרוק Gmail לחשבוניות חדשות (30 ימים אחרונים) ושמור אוטומטית.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'add_manual_expense',    description: 'הוסף הוצאה ידנית: הוצאתי X על Y.', parameters: { type: 'object', properties: { vendor: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string', description: 'ILS/USD/EUR' }, category: { type: 'string', description: 'tech/food/health/office/other' }, description: { type: 'string' } }, required: ['vendor', 'amount'] } },
+  // Market Research (#38)
+  { name: 'market_research', description: 'חקור שוק/מתחרה/תחום עסקי — מחזיר דוח מובנה: סקירה, מתחרים, תמחור.', parameters: { type: 'object', properties: { topic: { type: 'string', description: 'נושא/חברה/תחום לחקירה' }, language: { type: 'string', enum: ['he','en'], description: 'שפת הדוח' } }, required: ['topic'] } },
+  // Password Manager (#40)
+  { name: 'save_password',   description: 'שמור סיסמה מוצפנת לשירות.', parameters: { type: 'object', properties: { service: { type: 'string' }, username: { type: 'string' }, password: { type: 'string' } }, required: ['service', 'password'] } },
+  { name: 'get_password',    description: 'שלוף סיסמה לשירות ספציפי.', parameters: { type: 'object', properties: { service: { type: 'string' } }, required: ['service'] } },
+  { name: 'list_passwords',  description: 'הצג רשימת שירותים עם סיסמאות (שמות בלבד, ללא הסיסמאות עצמן).', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'delete_password', description: 'מחק סיסמה של שירות.', parameters: { type: 'object', properties: { service: { type: 'string' } }, required: ['service'] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -304,6 +312,7 @@ const CORE_TOOL_NAMES = new Set([
   'get_habits', 'log_habit', 'add_habit',
   'get_news',
   'get_stock_price', 'get_watchlist',
+  'list_passwords',
 ]);
 
 const EXTENDED_KEYWORDS = [
@@ -325,6 +334,10 @@ const EXTENDED_KEYWORDS = [
   'הרגל', 'הרגלים', 'habit', 'habits', 'streak', 'רצף',
   'medications', 'תרופות', 'med',
   'pomodoro stats',
+  // Market research
+  'מחקר שוק', 'תחקור', 'מתחרים', 'מתחרה', 'market research', 'competitor',
+  // Password
+  'סיסמה', 'סיסמאות', 'password', 'passwords',
   // Web search triggers
   'חיפוש', 'search', 'מחיר', 'כמה עולה', 'מה זה', 'תחפש', 'תבדוק', 'מה המחיר',
   // OCR triggers
@@ -697,6 +710,48 @@ async function executeTool(name, args, ctx) {
 
       // ── Rate Stats ─────────────────────────────────────────────────────────
       case 'get_rate_stats': return formatStats();
+
+      // ── Market Research (#38) ─────────────────────────────────────────────
+      case 'market_research': {
+        const topic = (args.topic || '').trim();
+        if (!topic) return 'נא לציין נושא לחקירה.';
+        const queries = [
+          `${topic} market overview trends 2024 2025`,
+          `${topic} top competitors comparison`,
+          `${topic} pricing business model revenue`,
+        ];
+        bot.sendMessage(chatId, `🔍 מחקר שוק: <b>${topic}</b>\nמחפש מידע...`, { parse_mode: 'HTML' });
+        const [overview, competitors, pricing] = await Promise.all(
+          queries.map(q => executeAnyTool('web_search', { query: q }, ctx).catch(() => 'לא נמצא מידע'))
+        );
+        return [
+          `📊 <b>מחקר שוק: ${topic}</b>\n`,
+          `<b>🌐 סקירת שוק:</b>\n${overview}`,
+          `<b>🏢 מתחרים עיקריים:</b>\n${competitors}`,
+          `<b>💰 תמחור ומודל עסקי:</b>\n${pricing}`,
+          `\n💡 <i>הדוח מבוסס על חיפוש אינטרנט בזמן אמת</i>`,
+        ].join('\n\n');
+      }
+
+      // ── Password Manager (#40) ────────────────────────────────────────────
+      case 'save_password': {
+        savePassword(args.service, args.username || '', args.password);
+        return `🔐 סיסמה נשמרה: <b>${args.service}</b>${args.username ? ` (${args.username})` : ''}`;
+      }
+      case 'get_password': {
+        const entry = getPassword(args.service);
+        if (!entry) return `❌ לא נמצאה סיסמה עבור "${args.service}"`;
+        return `🔑 <b>${entry.service}</b>${entry.username ? `\n👤 ${entry.username}` : ''}\n🔒 <code>${entry.password}</code>`;
+      }
+      case 'list_passwords': {
+        const list = listPasswords();
+        if (!list.length) return '🔐 אין סיסמאות שמורות.';
+        return '🔐 <b>סיסמאות שמורות:</b>\n' + list.map((e, i) => `${i+1}. ${e.service}${e.username ? ` — ${e.username}` : ''}`).join('\n');
+      }
+      case 'delete_password': {
+        const ok = deletePassword(args.service);
+        return ok ? `🗑️ סיסמת <b>${args.service}</b> נמחקה` : `❌ לא נמצאה סיסמה עבור "${args.service}"`;
+      }
 
       default:
         return `כלי לא מוכר: ${name}`;

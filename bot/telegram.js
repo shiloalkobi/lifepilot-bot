@@ -679,6 +679,107 @@ function startBot(token, webhookUrl = null) {
       return;
     }
 
+    // ── CSV document analysis (#39) ──────────────────────────────────────────
+    if (msg.document) {
+      const doc  = msg.document;
+      const name = doc.file_name || '';
+      if (name.toLowerCase().endsWith('.csv') || doc.mime_type === 'text/csv' || doc.mime_type === 'text/plain' && name.endsWith('.csv')) {
+        bot.sendChatAction(chatId, 'typing');
+        try {
+          const file    = await bot.getFile(doc.file_id);
+          const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+          const https   = require('https');
+          const http    = require('http');
+          const raw     = await new Promise((res, rej) => {
+            const get = fileUrl.startsWith('https') ? https.get : http.get;
+            get(fileUrl, r => {
+              let d = '';
+              r.on('data', c => d += c);
+              r.on('end', () => res(d));
+              r.on('error', rej);
+            }).on('error', rej);
+          });
+
+          // Parse CSV
+          const lines   = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+          if (lines.length < 2) {
+            bot.sendMessage(chatId, '⚠️ הקובץ ריק או מכיל שורה אחת בלבד.');
+            return;
+          }
+
+          // Simple CSV parser (handles quoted fields)
+          function parseLine(line) {
+            const cols = [];
+            let cur = '', inQ = false;
+            for (let i = 0; i < line.length; i++) {
+              const c = line[i];
+              if (c === '"') { inQ = !inQ; }
+              else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+              else cur += c;
+            }
+            cols.push(cur.trim());
+            return cols;
+          }
+
+          const headers = parseLine(lines[0]);
+          const rows    = lines.slice(1).map(parseLine);
+          const numCols = headers.length;
+
+          // Per-column stats
+          const colStats = headers.map((h, ci) => {
+            const vals    = rows.map(r => r[ci] || '').filter(v => v !== '');
+            const nums    = vals.map(Number).filter(v => !isNaN(v) && v !== 0 || vals.every(v => !isNaN(Number(v))));
+            const allNums = vals.length > 0 && vals.every(v => v !== '' && !isNaN(Number(v)));
+            const missing = rows.length - vals.length;
+
+            if (allNums && vals.length > 0) {
+              const ns  = vals.map(Number);
+              const sum = ns.reduce((a, b) => a + b, 0);
+              return {
+                name: h, type: 'number', count: vals.length, missing,
+                min: Math.min(...ns), max: Math.max(...ns),
+                avg: sum / ns.length, sum,
+              };
+            } else {
+              const uniq = new Set(vals);
+              const freq = {};
+              vals.forEach(v => { freq[v] = (freq[v] || 0) + 1; });
+              const top  = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+              return {
+                name: h, type: 'text', count: vals.length, missing,
+                unique: uniq.size, top: top ? top[0] : '',
+              };
+            }
+          });
+
+          const fmtN = n => Number.isInteger(n) ? n : parseFloat(n.toFixed(2));
+          let report = `📊 <b>ניתוח CSV: ${name}</b>\n\n`;
+          report += `📋 <b>מבנה:</b> ${rows.length} שורות × ${numCols} עמודות\n`;
+          report += `<b>עמודות:</b> ${headers.join(', ')}\n\n`;
+
+          for (const s of colStats) {
+            if (s.type === 'number') {
+              report += `<b>📈 ${s.name}</b> (מספרי)\n`;
+              report += `  מינ: ${fmtN(s.min)} | מקס: ${fmtN(s.max)} | ממוצע: ${fmtN(s.avg)} | סכום: ${fmtN(s.sum)}`;
+              if (s.missing) report += ` | חסרים: ${s.missing}`;
+              report += '\n';
+            } else {
+              report += `<b>📝 ${s.name}</b> (טקסט)\n`;
+              report += `  ערכים ייחודיים: ${s.unique} | נפוץ: "${s.top}"`;
+              if (s.missing) report += ` | חסרים: ${s.missing}`;
+              report += '\n';
+            }
+          }
+
+          bot.sendMessage(chatId, report, { parse_mode: 'HTML' });
+        } catch (err) {
+          console.error('[CSV]', err.message);
+          bot.sendMessage(chatId, '⚠️ שגיאה בניתוח הקובץ. וודא שהוא CSV תקני.');
+        }
+        return;
+      }
+    }
+
     if (!msg.text || msg.text.startsWith('/')) return;
 
     // ── English quiz intercept ───────────────────────────────────────────────
