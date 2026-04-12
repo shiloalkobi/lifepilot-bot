@@ -197,7 +197,13 @@ ${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 • כשהודעה מתחילה ב-[תמונה שנשלחה] — עיבדת תמונה בהצלחה דרך Vision AI, תאר מה ראית
 • כשמשתמש אומר "תזכור ש..." — קרא ל-remember_fact עם העובדה
 • הרגלים: כשמשתמש אומר "עשיתי X" / "סיימתי X" — אם X תואם הרגל רשום, סמן אוטומטית
-• חדשות: כשמבקשים "חדשות" ללא קטגוריה → קרא get_news עם category='all' מיד, אל תשאל. "חדשות AI" → category='ai', "חדשות שוק" → category='market', "חדשות קריפטו" → category='crypto', "חדשות ישראל" → category='israel'`;
+• חדשות — ALWAYS קרא get_news מיד, אל תשאל אף פעם איזו קטגוריה:
+  "חדשות" / "תביא לי חדשות" / "מה החדשות" → category='all'
+  "חדשות AI" / "חדשות בינה מלאכותית" → category='ai'
+  "חדשות שוק" / "מניות" / "שוק ההון" → category='market'
+  "חדשות ישראל" / "סטארטאפים" → category='israel'
+  "קריפטו" / "ביטקוין" / "חדשות קריפטו" → category='crypto'
+  "CRPS" / "מחקר כאב" → category='crps'`;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -233,7 +239,7 @@ const TOOL_DECLARATIONS = [
   { name: 'stop_pomodoro',     description: 'עצור את סשן הפומודורו הנוכחי.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'get_pomodoro_stats', description: 'קבל סטטיסטיקת פומודורו של היום.', parameters: { type: 'object', properties: {}, required: [] } },
   // News (production 4-category system)
-  { name: 'get_news', description: 'חדשות אישיות: ai/saas/market/israel/crps/crypto/all.', parameters: { type: 'object', properties: { category: { type: 'string', enum: ['ai','saas','market','israel','crps','crypto','all'], description: 'ברירת מחדל: all' } }, required: [] } },
+  { name: 'get_news', description: 'הבא חדשות אישיות. ללא קטגוריה→all. "חדשות AI"→ai, "שוק"→market, "ישראל"→israel, "קריפטו"→crypto, "CRPS"→crps.', parameters: { type: 'object', properties: { category: { type: 'string', enum: ['ai','saas','market','israel','crps','crypto','all'], description: 'ברירת מחדל: all' } }, required: [] } },
   // Sites
   { name: 'get_site_status', description: 'הצג סטטוס up/down של האתרים.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'check_sites_now', description: 'בצע בדיקת up/down מיידית לאתרים.', parameters: { type: 'object', properties: {}, required: [] } },

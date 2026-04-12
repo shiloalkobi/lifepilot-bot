@@ -71,10 +71,19 @@ function formatBlock(catKey, items) {
 // ── Fetch one category ────────────────────────────────────────────────────────
 
 async function fetchCategory(catKey, ignoreDedup = false) {
-  const { fetcher, max } = META[catKey];
+  const meta = META[catKey];
+  if (!meta) return [];
+  const { fetcher, max } = meta;
   let raw = [];
-  try { raw = await fetcher(max + 2); } catch (e) { console.warn(`[News] ${catKey}:`, e.message); }
-  return filterAndMark(raw, ignoreDedup).slice(0, max);
+  try {
+    raw = await Promise.race([
+      fetcher(max + 2),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('category timeout')), 12000)),
+    ]);
+  } catch (e) {
+    console.warn(`[News] fetchCategory "${catKey}":`, e.message);
+  }
+  return filterAndMark(Array.isArray(raw) ? raw : [], ignoreDedup).slice(0, max);
 }
 
 // ── Build full news message ───────────────────────────────────────────────────
@@ -83,31 +92,44 @@ async function fetchCategory(catKey, ignoreDedup = false) {
 // opts.ignoreDedup = true  (manual/agent)       → always fresh, no dedup filter
 
 async function buildNewsMessage(category = 'all', opts = {}) {
-  const ignoreDedup = opts.ignoreDedup !== false; // default TRUE for safety — scheduler must pass false explicitly
-  const cats = category === 'all'
-    ? ['ai', 'saas', 'market', 'israel', 'crps', 'crypto']
-    : [category];
+  try {
+    const ignoreDedup = opts.ignoreDedup !== false; // default TRUE — scheduler must pass false explicitly
+    const cats = category === 'all'
+      ? ['ai', 'saas', 'market', 'israel', 'crps', 'crypto']
+      : [category];
 
-  const header = `📰 <b>חדשות אישיות — ${dateHeader()}</b>`;
-  const blocks  = [];
+    const header = `📰 <b>חדשות אישיות — ${dateHeader()}</b>`;
+    const blocks  = [];
 
-  await Promise.allSettled(
-    cats.map(async (cat) => {
-      const items = await fetchCategory(cat, ignoreDedup);
-      const block = formatBlock(cat, items);
-      if (block) blocks.push({ order: cats.indexOf(cat), text: block });
-    })
-  );
+    const results = await Promise.allSettled(
+      cats.map(async (cat, idx) => {
+        try {
+          const items = await fetchCategory(cat, ignoreDedup);
+          const block = formatBlock(cat, items);
+          if (block) blocks.push({ order: idx, text: block });
+        } catch (e) {
+          console.warn(`[News] category "${cat}" failed:`, e.message);
+        }
+      })
+    );
 
-  // Preserve category order
-  blocks.sort((a, b) => a.order - b.order);
+    // Log any unexpected rejections
+    for (const r of results) {
+      if (r.status === 'rejected') console.warn('[News] allSettled rejection:', r.reason?.message);
+    }
 
-  // Only show "no news" if ALL categories are empty
-  if (!blocks.length) {
-    return header + '\n\n🔄 אין חדשות זמינות כרגע. נסה שוב מאוחר יותר.';
+    // Preserve category order
+    blocks.sort((a, b) => a.order - b.order);
+
+    if (!blocks.length) {
+      return header + '\n\n🔄 אין חדשות זמינות כרגע. נסה שוב מאוחר יותר.';
+    }
+
+    return header + '\n\n' + blocks.map(b => b.text).join('\n\n');
+  } catch (err) {
+    console.error('[News] buildNewsMessage fatal:', err.message);
+    return '📰 שגיאה בטעינת חדשות. נסה שוב מאוחר יותר.';
   }
-
-  return header + '\n\n' + blocks.map(b => b.text).join('\n\n');
 }
 
 // ── fetchAINews — backward-compat for scheduler.js (uses dedup) ──────────────
