@@ -12,8 +12,11 @@ function httpGet(url, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 LifePilot-Bot/1.0',
-        'Accept':     'application/json',
+        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept':          'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer':         'https://finance.yahoo.com',
+        'Origin':          'https://finance.yahoo.com',
       },
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -32,7 +35,7 @@ function httpGet(url, timeoutMs = 8000) {
 // ── Yahoo Finance fetch ───────────────────────────────────────────────────────
 
 async function fetchStockPrice(symbol) {
-  const url  = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol.toUpperCase())}`;
+  const url  = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol.toUpperCase())}`;
   const data = JSON.parse(await httpGet(url));
   const meta = data?.chart?.result?.[0]?.meta;
   if (!meta) throw new Error(`לא נמצא מחיר עבור ${symbol}`);
