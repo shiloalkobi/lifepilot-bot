@@ -2,8 +2,9 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>shilobilo — דשבורד</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>shilobilo</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -13,321 +14,940 @@
       color: #e2e8f0;
       min-height: 100vh;
       direction: rtl;
+      padding-bottom: 72px; /* space for tab bar */
     }
 
-    /* ── Header ─────────────────────────────────────────────────────────── */
+    /* ── Header ───────────────────────────────────────────────────────── */
     .header {
       background: linear-gradient(135deg, #1a56db 0%, #059669 100%);
-      padding: 20px 16px 16px;
-      text-align: center;
+      padding: 14px 16px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.5px; }
-    .header .subtitle { font-size: 0.8rem; opacity: 0.85; margin-top: 3px; }
-    .header .ts { font-size: 0.72rem; opacity: 0.7; margin-top: 6px; }
+    .header h1 { font-size: 1.15rem; font-weight: 700; }
+    .header .ts { font-size: 0.7rem; opacity: 0.8; }
 
-    /* ── Grid ────────────────────────────────────────────────────────────── */
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      padding: 16px;
-    }
-    @media (max-width: 400px) { .grid { grid-template-columns: 1fr; } }
-    .full { grid-column: 1 / -1; }
+    /* ── Tabs content ─────────────────────────────────────────────────── */
+    .tab { display: none; padding: 12px 12px 4px; }
+    .tab.active { display: block; }
 
-    /* ── Card ────────────────────────────────────────────────────────────── */
+    /* ── Cards ────────────────────────────────────────────────────────── */
     .card {
       background: #1e293b;
       border-radius: 14px;
-      padding: 14px;
+      padding: 13px 14px;
       border: 1px solid #334155;
+      margin-bottom: 10px;
     }
     .card-title {
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.8px;
       color: #94a3b8;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
-    .card-value {
-      font-size: 2rem;
-      font-weight: 700;
-      line-height: 1;
-    }
-    .card-sub { font-size: 0.78rem; color: #64748b; margin-top: 4px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .card-val { font-size: 1.8rem; font-weight: 700; line-height: 1; }
+    .card-sub { font-size: 0.73rem; color: #64748b; margin-top: 3px; }
 
-    /* ── Pain meter ──────────────────────────────────────────────────────── */
-    .meter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-    .meter-label { font-size: 0.8rem; width: 80px; color: #94a3b8; }
-    .meter-bar {
-      flex: 1; height: 8px; background: #334155; border-radius: 4px; overflow: hidden;
-    }
-    .meter-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
-    .meter-val { font-size: 0.78rem; width: 30px; text-align: left; color: #cbd5e1; }
+    /* ── Meter bars ───────────────────────────────────────────────────── */
+    .meter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .meter-lbl { font-size: 0.75rem; color: #94a3b8; width: 72px; flex-shrink: 0; }
+    .meter-bar { flex: 1; height: 7px; background: #334155; border-radius: 4px; overflow: hidden; }
+    .meter-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+    .meter-num { font-size: 0.72rem; color: #cbd5e1; width: 26px; text-align: left; }
 
-    /* ── Stocks ──────────────────────────────────────────────────────────── */
-    .stock-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 6px 0; border-bottom: 1px solid #1e293b;
+    /* ── Quick action buttons ─────────────────────────────────────────── */
+    .quick-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .q-btn {
+      flex: 1 1 0;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 9px 6px;
+      font-size: 0.75rem;
+      color: #e2e8f0;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.15s;
     }
-    .stock-row:last-child { border-bottom: none; }
-    .stock-sym { font-weight: 700; font-size: 0.85rem; }
-    .stock-price { font-size: 0.85rem; }
-    .stock-chg { font-size: 0.75rem; padding: 2px 6px; border-radius: 6px; font-weight: 600; }
-    .up   { color: #34d399; }
-    .down { color: #f87171; }
-    .up-bg   { background: #064e3b; color: #34d399; }
-    .down-bg { background: #450a0a; color: #f87171; }
+    .q-btn:active { background: #2d3f55; }
 
-    /* ── Habits ──────────────────────────────────────────────────────────── */
-    .habit-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 5px 0; font-size: 0.83rem;
-    }
-    .habit-check { font-size: 1.1rem; }
-    .habit-name  { flex: 1; }
-    .habit-streak { font-size: 0.72rem; color: #f59e0b; }
-
-    /* ── Tasks ───────────────────────────────────────────────────────────── */
-    .task-row {
-      display: flex; align-items: flex-start; gap: 8px;
-      padding: 5px 0; font-size: 0.82rem;
+    /* ── Task list ────────────────────────────────────────────────────── */
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 7px 0;
       border-bottom: 1px solid #1e293b;
+      font-size: 0.82rem;
     }
-    .task-row:last-child { border-bottom: none; }
-    .task-dot { margin-top: 5px; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .high-dot { background: #ef4444; }
-    .med-dot  { background: #f59e0b; }
-    .low-dot  { background: #64748b; }
+    .task-item:last-child { border-bottom: none; }
+    .task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+    .dot-high { background: #ef4444; }
+    .dot-med  { background: #f59e0b; }
+    .dot-low  { background: #475569; }
 
-    /* ── Quick actions ───────────────────────────────────────────────────── */
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .btn {
-      flex: 1 1 calc(50% - 4px);
+    /* ── Habit cards ──────────────────────────────────────────────────── */
+    .habit-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 11px 13px;
+      margin-bottom: 8px;
+    }
+    .habit-icon { font-size: 1.4rem; }
+    .habit-info { flex: 1; }
+    .habit-name { font-size: 0.88rem; font-weight: 600; }
+    .habit-streak { font-size: 0.72rem; color: #f59e0b; margin-top: 2px; }
+    .habit-btn {
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .habit-btn:active { opacity: 0.7; }
+    .habit-done { background: #064e3b; color: #34d399; }
+    .habit-todo { background: #1a56db; color: #fff; }
+
+    /* ── Sliders (health form) ────────────────────────────────────────── */
+    .slider-row { margin-bottom: 14px; }
+    .slider-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+    .slider-label { font-size: 0.82rem; color: #94a3b8; }
+    .slider-val { font-size: 0.88rem; font-weight: 700; }
+    input[type=range] {
+      width: 100%;
+      -webkit-appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #1a56db;
+      cursor: pointer;
+    }
+    .slider-pain   { background: linear-gradient(90deg, #34d399, #fbbf24, #ef4444); }
+    .slider-mood   { background: linear-gradient(90deg, #ef4444, #fbbf24, #34d399); }
+    .slider-sleep  { background: linear-gradient(90deg, #6366f1, #818cf8); }
+
+    /* ── Expense form ─────────────────────────────────────────────────── */
+    .form-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .inp {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 9px 10px;
+      color: #e2e8f0;
+      font-size: 0.82rem;
+      outline: none;
+    }
+    .inp:focus { border-color: #1a56db; }
+    .inp-sm { max-width: 90px; }
+    select.inp { cursor: pointer; }
+    .btn-primary {
       background: #1a56db;
       color: #fff;
       border: none;
-      border-radius: 10px;
-      padding: 10px 8px;
-      font-size: 0.8rem;
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-primary:active { opacity: 0.8; }
+    .btn-primary.green { background: #059669; }
+
+    /* ── Stock cards ──────────────────────────────────────────────────── */
+    .stock-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 11px 14px;
+      margin-bottom: 8px;
+    }
+    .stock-sym { font-weight: 700; font-size: 0.9rem; }
+    .stock-name { font-size: 0.68rem; color: #64748b; margin-top: 2px; }
+    .stock-right { text-align: left; }
+    .stock-price { font-size: 0.92rem; font-weight: 600; }
+    .stock-chg {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+      margin-top: 3px;
+    }
+    .up-bg   { background: #064e3b; color: #34d399; }
+    .down-bg { background: #450a0a; color: #f87171; }
+
+    /* ── Bottom tab bar ───────────────────────────────────────────────── */
+    .tab-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1e293b;
+      border-top: 1px solid #334155;
+      display: flex;
+      z-index: 100;
+    }
+    .tab-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 4px;
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: 0.6rem;
+      cursor: pointer;
+      transition: color 0.15s;
+      gap: 2px;
+    }
+    .tab-btn .icon { font-size: 1.2rem; }
+    .tab-btn.active { color: #1a56db; }
+
+    /* ── FAB ──────────────────────────────────────────────────────────── */
+    .fab {
+      position: fixed;
+      bottom: 82px;
+      left: 16px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1a56db, #059669);
+      color: #fff;
+      font-size: 1.6rem;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(26,86,219,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      transition: transform 0.2s;
+    }
+    .fab.open { transform: rotate(45deg); }
+
+    .fab-menu {
+      position: fixed;
+      bottom: 142px;
+      left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .fab-menu.open { opacity: 1; pointer-events: auto; transform: translateY(0); }
+    .fab-item {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 9px 14px;
+      color: #e2e8f0;
+      font-size: 0.82rem;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .fab-item:active { background: #2d3f55; }
+
+    /* ── Toast ────────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 9px 18px;
+      font-size: 0.82rem;
+      color: #e2e8f0;
+      z-index: 300;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err  { border-color: #ef4444; color: #f87171; }
+
+    /* ── Section title ────────────────────────────────────────────────── */
+    .sec-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #64748b;
+      margin: 12px 0 6px;
+    }
+
+    /* ── Loading skeleton ─────────────────────────────────────────────── */
+    .loading-msg {
       text-align: center;
-      transition: opacity 0.15s;
-    }
-    .btn:active { opacity: 0.7; }
-    .btn.green { background: #059669; }
-    .btn.amber { background: #d97706; }
-    .btn.slate { background: #475569; }
-
-    /* ── No data ─────────────────────────────────────────────────────────── */
-    .empty { color: #475569; font-size: 0.8rem; font-style: italic; }
-
-    /* ── Loading ─────────────────────────────────────────────────────────── */
-    #loading {
-      display: flex; align-items: center; justify-content: center;
-      height: 60vh; font-size: 1.1rem; color: #64748b;
+      color: #64748b;
+      padding: 40px 16px;
+      font-size: 0.9rem;
     }
 
-    /* ── Refresh indicator ───────────────────────────────────────────────── */
-    #refresh-bar {
-      height: 3px;
-      background: linear-gradient(90deg, #1a56db, #059669);
-      width: 100%;
-      animation: shrink 30s linear infinite;
-      transform-origin: right;
-    }
-    @keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    /* ── Canvas containers ────────────────────────────────────────────── */
+    .chart-wrap { position: relative; width: 100%; max-height: 180px; }
   </style>
 </head>
 <body>
 
+<!-- Header -->
 <div class="header">
   <h1>🚀 shilobilo</h1>
-  <div class="subtitle">לוח בקרה אישי</div>
-  <div class="ts" id="ts">טוען...</div>
+  <span class="ts" id="ts">טוען...</span>
 </div>
-<div id="refresh-bar"></div>
 
-<div id="loading">טוען נתונים...</div>
-<div id="main" style="display:none">
-  <div class="grid" id="grid"></div>
+<!-- ── HOME TAB ─────────────────────────────────────────────────────────── -->
+<div id="tab-home" class="tab active">
+  <div id="home-content"><div class="loading-msg">טוען נתונים...</div></div>
 </div>
+
+<!-- ── HABITS TAB ──────────────────────────────────────────────────────── -->
+<div id="tab-habits" class="tab">
+  <div id="habits-content"><div class="loading-msg">טוען...</div></div>
+</div>
+
+<!-- ── HEALTH TAB ──────────────────────────────────────────────────────── -->
+<div id="tab-health" class="tab">
+  <div id="health-content"><div class="loading-msg">טוען...</div></div>
+</div>
+
+<!-- ── EXPENSES TAB ────────────────────────────────────────────────────── -->
+<div id="tab-expenses" class="tab">
+  <div id="expenses-content"><div class="loading-msg">טוען...</div></div>
+</div>
+
+<!-- ── STOCKS TAB ──────────────────────────────────────────────────────── -->
+<div id="tab-stocks" class="tab">
+  <div id="stocks-content"><div class="loading-msg">טוען...</div></div>
+</div>
+
+<!-- Bottom nav -->
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="home" onclick="setTab('home')">
+    <span class="icon">🏠</span><span>ראשי</span>
+  </button>
+  <button class="tab-btn" data-tab="habits" onclick="setTab('habits')">
+    <span class="icon">💪</span><span>הרגלים</span>
+  </button>
+  <button class="tab-btn" data-tab="health" onclick="setTab('health')">
+    <span class="icon">🩺</span><span>בריאות</span>
+  </button>
+  <button class="tab-btn" data-tab="expenses" onclick="setTab('expenses')">
+    <span class="icon">💰</span><span>הוצאות</span>
+  </button>
+  <button class="tab-btn" data-tab="stocks" onclick="setTab('stocks')">
+    <span class="icon">📈</span><span>מניות</span>
+  </button>
+</nav>
+
+<!-- FAB -->
+<button class="fab" id="fab" onclick="toggleFab()">+</button>
+<div class="fab-menu" id="fab-menu">
+  <button class="fab-item" onclick="fabTask()">➕ משימה חדשה</button>
+  <button class="fab-item" onclick="fabExpense()">💰 הוצאה מהירה</button>
+  <button class="fab-item" onclick="fabHealth()">🩺 תיעוד בריאות</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
 
 <script>
-  const tg = window.Telegram?.WebApp;
-  if (tg) { tg.ready(); tg.expand(); }
+'use strict';
 
-  const BASE = '';
+// ── Telegram WebApp ────────────────────────────────────────────────────────────
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
 
-  function fmt(n, digits = 1) {
-    if (n == null) return '—';
-    return Number(n).toLocaleString('he-IL', { maximumFractionDigits: digits });
-  }
+// ── State ──────────────────────────────────────────────────────────────────────
+let D = null; // dashboard data
+let activeTab = 'home';
+const charts = {};
 
-  function painColor(v) {
-    if (v <= 3) return '#34d399';
-    if (v <= 6) return '#fbbf24';
-    return '#ef4444';
-  }
+// ── Utility ───────────────────────────────────────────────────────────────────
+function fmt(n, d = 0) {
+  if (n == null) return '—';
+  return (+n).toLocaleString('he-IL', { maximumFractionDigits: d });
+}
 
-  function moodColor(v) {
-    if (v >= 7) return '#34d399';
-    if (v >= 4) return '#fbbf24';
-    return '#ef4444';
-  }
+function painColor(v) {
+  if (v <= 3) return '#34d399';
+  if (v <= 6) return '#fbbf24';
+  return '#ef4444';
+}
+function moodColor(v) {
+  if (v >= 7) return '#34d399';
+  if (v >= 4) return '#fbbf24';
+  return '#ef4444';
+}
+function sleepColor(v) { return v >= 7 ? '#818cf8' : v >= 5 ? '#a78bfa' : '#6366f1'; }
 
-  function meter(label, value, max, color) {
-    const pct = Math.round((value / max) * 100);
-    return `
-      <div class="meter-row">
-        <span class="meter-label">${label}</span>
-        <div class="meter-bar"><div class="meter-fill" style="width:${pct}%;background:${color}"></div></div>
-        <span class="meter-val">${fmt(value)}</span>
+function dotCls(p) { return p === 'high' ? 'dot-high' : p === 'low' ? 'dot-low' : 'dot-med'; }
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function toast(msg, isErr = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = 'toast'; }, 2200);
+}
+
+// ── FAB ────────────────────────────────────────────────────────────────────────
+function toggleFab() {
+  const open = document.getElementById('fab-menu').classList.toggle('open');
+  document.getElementById('fab').classList.toggle('open', open);
+}
+function closeFab() {
+  document.getElementById('fab-menu').classList.remove('open');
+  document.getElementById('fab').classList.remove('open');
+}
+
+function fabTask() {
+  closeFab();
+  const text = prompt('משימה חדשה:');
+  if (!text || !text.trim()) return;
+  api('/api/add-task', { text: text.trim() }).then(r => {
+    if (r.ok) { toast('✅ משימה נוספה!'); reload(); }
+    else toast('שגיאה: ' + r.e, true);
+  });
+}
+
+function fabExpense() {
+  closeFab();
+  setTab('expenses');
+  setTimeout(() => {
+    const el = document.getElementById('exp-vendor');
+    if (el) el.focus();
+  }, 100);
+}
+
+function fabHealth() {
+  closeFab();
+  setTab('health');
+}
+
+// ── API ────────────────────────────────────────────────────────────────────────
+async function api(path, body) {
+  const opts = body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    : {};
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+// ── Charts ─────────────────────────────────────────────────────────────────────
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+function mkChart(id, cfg) {
+  destroyChart(id);
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el, cfg);
+}
+
+const CHART_DEFAULTS = {
+  grid: { color: '#1e293b' },
+  ticks: { color: '#64748b' },
+  legend: { color: '#94a3b8' },
+};
+
+// ── Tab switching ──────────────────────────────────────────────────────────────
+function setTab(name) {
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
+  activeTab = name;
+  if (!D) return;
+  // Render on-demand
+  if (name === 'habits')   renderHabits();
+  if (name === 'health')   renderHealth();
+  if (name === 'expenses') renderExpenses();
+  if (name === 'stocks')   renderStocks();
+}
+
+// ── HOME TAB ───────────────────────────────────────────────────────────────────
+function renderHome() {
+  if (!D) return;
+  const h = D.health;
+
+  let healthCards = '';
+  if (h) {
+    healthCards = `
+      <div class="card">
+        <div class="card-title">🩺 בריאות היום</div>
+        <div class="meter-row">
+          <span class="meter-lbl">כאב</span>
+          <div class="meter-bar"><div class="meter-fill" style="width:${h.pain*10}%;background:${painColor(h.pain)}"></div></div>
+          <span class="meter-num">${h.pain}</span>
+        </div>
+        <div class="meter-row">
+          <span class="meter-lbl">מצב רוח</span>
+          <div class="meter-bar"><div class="meter-fill" style="width:${h.mood*10}%;background:${moodColor(h.mood)}"></div></div>
+          <span class="meter-num">${h.mood}</span>
+        </div>
+        <div class="meter-row">
+          <span class="meter-lbl">שינה</span>
+          <div class="meter-bar"><div class="meter-fill" style="width:${Math.min(h.sleep/12*100,100)}%;background:${sleepColor(h.sleep)}"></div></div>
+          <span class="meter-num">${h.sleep}ש'</span>
+        </div>
+      </div>`;
+  } else {
+    healthCards = `
+      <div class="card" onclick="setTab('health')" style="cursor:pointer">
+        <div class="card-title">🩺 בריאות היום</div>
+        <div style="color:#64748b;font-size:0.82rem;padding:8px 0">לא דווח היום — לחץ לתיעוד</div>
       </div>`;
   }
 
-  function renderHealth(h) {
-    if (!h) return `<p class="empty">לא דווח היום</p>`;
-    return (
-      meter('כאב', h.pain, 10, painColor(h.pain)) +
-      meter('מצב רוח', h.mood, 10, moodColor(h.mood)) +
-      meter('שינה', h.sleep, 12, '#818cf8')
-    );
-  }
+  const tasksDone  = D.tasks.completed_today;
+  const tasksOpen  = D.tasks.open;
+  const expILS     = D.expenses.total_ils;
+  const expCount   = D.expenses.count;
 
-  function renderHabits(habits) {
-    if (!habits.length) return `<p class="empty">אין הרגלים</p>`;
-    return habits.map(h => `
-      <div class="habit-row">
-        <span class="habit-check">${h.doneToday ? '✅' : '⬜'}</span>
-        <span class="habit-name">${h.icon} ${h.name}</span>
-        ${h.streak > 0 ? `<span class="habit-streak">🔥 ${h.streak}</span>` : ''}
-      </div>`).join('');
-  }
-
-  function renderStocks(stocks) {
-    if (!stocks.length) return `<p class="empty">אין מניות</p>`;
-    return stocks.map(s => {
-      const up   = s.changePct >= 0;
-      const sign = up ? '+' : '';
-      return `
-        <div class="stock-row">
-          <span class="stock-sym">${s.symbol}</span>
-          <span class="stock-price">$${fmt(s.price, 2)}</span>
-          <span class="stock-chg ${up ? 'up-bg' : 'down-bg'}">${sign}${fmt(s.changePct)}%</span>
-        </div>`;
-    }).join('');
-  }
-
-  function renderTasks(tasks) {
-    if (!tasks.length) return `<p class="empty">אין משימות פתוחות</p>`;
-    return tasks.slice(0, 5).map(t => {
-      const dotCls = t.priority === 'high' ? 'high-dot' : t.priority === 'low' ? 'low-dot' : 'med-dot';
-      return `
-        <div class="task-row">
-          <div class="task-dot ${dotCls}"></div>
+  const taskList = D.openTasks.length
+    ? D.openTasks.map(t => `
+        <div class="task-item">
+          <div class="task-dot ${dotCls(t.priority)}"></div>
           <span>${t.text}</span>
-        </div>`;
-    }).join('');
-  }
+        </div>`).join('')
+    : '<div style="color:#475569;font-size:0.8rem;padding:8px 0">אין משימות פתוחות 🎉</div>';
 
-  function sendCmd(cmd) {
-    if (tg) {
-      tg.sendData(cmd);
-    } else {
-      alert('פקודה: ' + cmd);
-    }
-  }
+  const habitsDone = D.habits.filter(h => h.doneToday).length;
+  const habitsTotal = D.habits.length;
 
-  function render(d) {
-    // Timestamp
-    const dt = new Date(d.timestamp);
-    document.getElementById('ts').textContent =
-      'עודכן: ' + dt.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
+  document.getElementById('home-content').innerHTML = `
+    ${healthCards}
 
-    const grid = document.getElementById('grid');
-    grid.innerHTML = `
-
-      <!-- Health -->
-      <div class="card full">
-        <div class="card-title">🩺 בריאות היום</div>
-        ${renderHealth(d.health)}
-      </div>
-
-      <!-- Tasks summary -->
-      <div class="card">
-        <div class="card-title">✅ משימות</div>
-        <div class="card-value" style="color:#60a5fa">${d.tasks.open}</div>
-        <div class="card-sub">פתוחות</div>
-        <div class="card-sub" style="margin-top:4px">הושלמו היום: ${d.tasks.completed_today}</div>
-      </div>
-
-      <!-- Expenses -->
-      <div class="card">
-        <div class="card-title">💰 הוצאות החודש</div>
-        <div class="card-value" style="color:#34d399;font-size:1.4rem">
-          ${d.expenses.total_ils > 0 ? '₪' + fmt(d.expenses.total_ils, 0) : '—'}
-        </div>
-        ${d.expenses.total_usd > 0 ? `<div class="card-sub">$${fmt(d.expenses.total_usd, 0)} USD</div>` : ''}
-        <div class="card-sub">${d.expenses.count} רשומות</div>
-      </div>
-
-      <!-- Habits -->
-      <div class="card full">
+    <div class="grid2">
+      <div class="card" onclick="setTab('habits')" style="cursor:pointer">
         <div class="card-title">💪 הרגלים</div>
-        ${renderHabits(d.habits)}
+        <div class="card-val" style="color:#818cf8">${habitsDone}/${habitsTotal}</div>
+        <div class="card-sub">בוצעו היום</div>
       </div>
+      <div class="card" onclick="setTab('expenses')" style="cursor:pointer">
+        <div class="card-title">💰 הוצאות</div>
+        <div class="card-val" style="color:#34d399;font-size:1.3rem">₪${fmt(expILS)}</div>
+        <div class="card-sub">${expCount} רשומות החודש</div>
+      </div>
+    </div>
 
-      <!-- Stocks -->
-      <div class="card full">
+    <div class="grid2">
+      <div class="card" onclick="setTab('habits')" style="cursor:pointer">
+        <div class="card-title">✅ משימות פתוחות</div>
+        <div class="card-val" style="color:#60a5fa">${tasksOpen}</div>
+        <div class="card-sub">הושלמו היום: ${tasksDone}</div>
+      </div>
+      <div class="card" onclick="setTab('stocks')" style="cursor:pointer">
         <div class="card-title">📈 מניות</div>
-        ${renderStocks(d.stocks)}
+        <div class="card-val" style="color:#f59e0b">${D.stocks.length}</div>
+        <div class="card-sub">במעקב</div>
       </div>
+    </div>
 
-      <!-- Open tasks list -->
-      <div class="card full">
-        <div class="card-title">📋 משימות פתוחות (top 5)</div>
-        ${renderTasks(d.openTasks)}
-      </div>
+    <div class="sec-title">פעולות מהירות</div>
+    <div class="quick-row">
+      <button class="q-btn" onclick="fabTask()">➕ משימה</button>
+      <button class="q-btn" onclick="setTab('health')">🩺 בריאות</button>
+      <button class="q-btn" onclick="setTab('stocks')">📈 מניות</button>
+    </div>
 
-      <!-- Quick actions -->
-      <div class="card full">
-        <div class="card-title">⚡ פעולות מהירות</div>
-        <div class="actions">
-          <button class="btn" onclick="sendCmd('/health')">🩺 דווח בריאות</button>
-          <button class="btn green" onclick="sendCmd('/boker')">🌅 בריפינג בוקר</button>
-          <button class="btn amber" onclick="sendCmd('/stocks')">📈 מניות</button>
-          <button class="btn slate" onclick="sendCmd('/task')">✅ משימה חדשה</button>
-        </div>
-      </div>
-    `;
+    <div class="card">
+      <div class="card-title">📋 משימות פתוחות</div>
+      ${taskList}
+    </div>
+  `;
+}
 
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('main').style.display = '';
+// ── HABITS TAB ─────────────────────────────────────────────────────────────────
+function renderHabits() {
+  if (!D) return;
+  const habits = D.habits;
+
+  const cards = habits.length
+    ? habits.map(h => `
+        <div class="habit-card">
+          <span class="habit-icon">${h.icon}</span>
+          <div class="habit-info">
+            <div class="habit-name">${h.name}</div>
+            <div class="habit-streak">${h.streak > 0 ? `🔥 ${h.streak} ימים רצוף` : 'התחל היום!'}</div>
+          </div>
+          <button class="habit-btn ${h.doneToday ? 'habit-done' : 'habit-todo'}"
+                  onclick="logHabit(${h.id}, ${!h.doneToday})">
+            ${h.doneToday ? '✅ בוצע' : 'בצעתי'}
+          </button>
+        </div>`).join('')
+    : '<div class="loading-msg">אין הרגלים. הוסף דרך הבוט!</div>';
+
+  const hasStreaks = habits.some(h => h.streak > 0);
+  const chartSection = habits.length
+    ? `<div class="card">
+         <div class="card-title">🔥 סטריקים</div>
+         <div class="chart-wrap"><canvas id="streaks-chart"></canvas></div>
+       </div>`
+    : '';
+
+  document.getElementById('habits-content').innerHTML = cards + chartSection;
+
+  if (habits.length && hasStreaks) {
+    setTimeout(() => {
+      mkChart('streaks-chart', {
+        type: 'bar',
+        data: {
+          labels: habits.map(h => h.icon + ' ' + h.name.slice(0, 8)),
+          datasets: [{
+            data: habits.map(h => h.streak),
+            backgroundColor: habits.map(h => h.doneToday ? '#059669' : '#1a56db'),
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          indexAxis: 'y',
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#64748b' }, grid: CHART_DEFAULTS.grid },
+            y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } },
+          }
+        }
+      });
+    }, 30);
   }
+}
 
-  async function load() {
-    try {
-      const r = await fetch(BASE + '/api/dashboard');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      render(await r.json());
-    } catch (e) {
-      document.getElementById('loading').textContent = '⚠️ שגיאה בטעינה: ' + e.message;
-    }
+async function logHabit(id, done) {
+  const r = await api('/api/log-habit', { id, done });
+  if (r.ok) {
+    toast(done ? `✅ בוצע! 🔥 ${r.streak} ימים` : 'בוטל');
+    await reload();
+    if (activeTab === 'habits') renderHabits();
+  } else {
+    toast('שגיאה', true);
   }
+}
 
-  load();
+// ── HEALTH TAB ─────────────────────────────────────────────────────────────────
+function renderHealth() {
+  if (!D) return;
+  const h = D.health;
 
-  // Auto-refresh every 30s — reset the animation bar too
-  setInterval(() => {
-    const bar = document.getElementById('refresh-bar');
-    bar.style.animation = 'none';
-    bar.offsetHeight; // reflow
-    bar.style.animation = '';
-    load();
-  }, 30000);
+  const todaySection = h
+    ? `<div class="card">
+         <div class="card-title">📋 דיווח היום</div>
+         <div class="meter-row">
+           <span class="meter-lbl">כאב</span>
+           <div class="meter-bar"><div class="meter-fill" style="width:${h.pain*10}%;background:${painColor(h.pain)}"></div></div>
+           <span class="meter-num">${h.pain}/10</span>
+         </div>
+         <div class="meter-row">
+           <span class="meter-lbl">מצב רוח</span>
+           <div class="meter-bar"><div class="meter-fill" style="width:${h.mood*10}%;background:${moodColor(h.mood)}"></div></div>
+           <span class="meter-num">${h.mood}/10</span>
+         </div>
+         <div class="meter-row">
+           <span class="meter-lbl">שינה</span>
+           <div class="meter-bar"><div class="meter-fill" style="width:${Math.min(h.sleep/12*100,100)}%;background:${sleepColor(h.sleep)}"></div></div>
+           <span class="meter-num">${h.sleep}ש'</span>
+         </div>
+       </div>`
+    : `<div class="card">
+         <div class="card-title">🩺 דיווח בריאות יומי</div>
+         <div class="slider-row">
+           <div class="slider-header">
+             <span class="slider-label">🩺 כאב</span>
+             <span class="slider-val" id="pain-val">5</span>
+           </div>
+           <input class="slider-pain" type="range" min="1" max="10" value="5" id="pain-s"
+                  oninput="document.getElementById('pain-val').textContent=this.value">
+         </div>
+         <div class="slider-row">
+           <div class="slider-header">
+             <span class="slider-label">😊 מצב רוח</span>
+             <span class="slider-val" id="mood-val">5</span>
+           </div>
+           <input class="slider-mood" type="range" min="1" max="10" value="5" id="mood-s"
+                  oninput="document.getElementById('mood-val').textContent=this.value">
+         </div>
+         <div class="slider-row">
+           <div class="slider-header">
+             <span class="slider-label">💤 שינה (שעות)</span>
+             <span class="slider-val" id="sleep-val">7</span>
+           </div>
+           <input class="slider-sleep" type="range" min="0" max="12" step="0.5" value="7" id="sleep-s"
+                  oninput="document.getElementById('sleep-val').textContent=this.value">
+         </div>
+         <button class="btn-primary green" style="width:100%;margin-top:4px" onclick="submitHealth()">💾 שמור דיווח</button>
+       </div>`;
+
+  const hasHistory = D.healthHistory.some(x => x.pain != null);
+  const chartSection = `
+    <div class="card">
+      <div class="card-title">📈 7 ימים אחרונים</div>
+      ${hasHistory
+        ? '<div class="chart-wrap"><canvas id="health-chart"></canvas></div>'
+        : '<div style="color:#475569;font-size:0.8rem;padding:8px 0">אין נתונים עדיין</div>'}
+    </div>`;
+
+  document.getElementById('health-content').innerHTML = todaySection + chartSection;
+
+  if (hasHistory) {
+    setTimeout(() => {
+      const labels = D.healthHistory.map(d => d.date.slice(5).replace('-', '/'));
+      mkChart('health-chart', {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'כאב',
+              data: D.healthHistory.map(d => d.pain),
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239,68,68,0.08)',
+              tension: 0.35,
+              spanGaps: true,
+              pointBackgroundColor: '#ef4444',
+              pointRadius: 4,
+            },
+            {
+              label: 'מצב רוח',
+              data: D.healthHistory.map(d => d.mood),
+              borderColor: '#34d399',
+              backgroundColor: 'rgba(52,211,153,0.08)',
+              tension: 0.35,
+              spanGaps: true,
+              pointBackgroundColor: '#34d399',
+              pointRadius: 4,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } }
+          },
+          scales: {
+            y: { min: 0, max: 10, ticks: { color: '#64748b', stepSize: 2 }, grid: CHART_DEFAULTS.grid },
+            x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
+          }
+        }
+      });
+    }, 30);
+  }
+}
+
+async function submitHealth() {
+  const pain  = +document.getElementById('pain-s').value;
+  const mood  = +document.getElementById('mood-s').value;
+  const sleep = +document.getElementById('sleep-s').value;
+  const r = await api('/api/log-health', { pain, mood, sleep });
+  if (r.ok) {
+    toast('✅ דיווח בריאות נשמר!');
+    await reload();
+    renderHealth();
+  } else {
+    toast('שגיאה בשמירה', true);
+  }
+}
+
+// ── EXPENSES TAB ────────────────────────────────────────────────────────────────
+function renderExpenses() {
+  if (!D) return;
+  const exp = D.expenses;
+  const byCat = exp.byCat || {};
+  const cats  = Object.keys(byCat);
+
+  const catEmoji = { tech:'💻', food:'🍔', health:'💊', office:'📦', other:'📌' };
+  const catColors = ['#3b82f6','#f59e0b','#10b981','#8b5cf6','#6b7280','#ec4899'];
+
+  const catList = cats.length
+    ? cats.map((c, i) => `
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:0.8rem;border-bottom:1px solid #1e293b">
+          <span>${catEmoji[c] || '📌'} ${c}</span>
+          <span style="color:#94a3b8">₪${fmt(byCat[c])}</span>
+        </div>`).join('')
+    : '<div style="color:#475569;font-size:0.8rem;padding:8px 0">אין הוצאות החודש</div>';
+
+  const hasChart = cats.length > 0;
+
+  document.getElementById('expenses-content').innerHTML = `
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title">💰 ILS החודש</div>
+        <div class="card-val" style="color:#34d399;font-size:1.5rem">₪${fmt(exp.total_ils)}</div>
+        <div class="card-sub">${exp.count} רשומות</div>
+      </div>
+      ${exp.total_usd > 0 ? `
+      <div class="card">
+        <div class="card-title">💵 USD החודש</div>
+        <div class="card-val" style="color:#60a5fa;font-size:1.5rem">$${fmt(exp.total_usd)}</div>
+      </div>` : '<div></div>'}
+    </div>
+
+    ${hasChart ? `
+    <div class="card">
+      <div class="card-title">📊 לפי קטגוריה</div>
+      <div class="chart-wrap" style="max-height:160px">
+        <canvas id="expenses-chart"></canvas>
+      </div>
+      <div style="margin-top:10px">${catList}</div>
+    </div>` : `<div class="card"><div class="card-title">📊 קטגוריות</div>${catList}</div>`}
+
+    <div class="card">
+      <div class="card-title">➕ הוצאה חדשה</div>
+      <div class="form-row">
+        <input class="inp" id="exp-vendor" placeholder="ספק/חנות" />
+      </div>
+      <div class="form-row">
+        <input class="inp inp-sm" id="exp-amount" type="number" placeholder="סכום" />
+        <select class="inp inp-sm" id="exp-currency">
+          <option value="ILS">₪ ILS</option>
+          <option value="USD">$ USD</option>
+        </select>
+        <select class="inp" id="exp-cat">
+          <option value="other">📌 אחר</option>
+          <option value="food">🍔 אוכל</option>
+          <option value="tech">💻 טכנולוגיה</option>
+          <option value="health">💊 בריאות</option>
+          <option value="office">📦 משרד</option>
+        </select>
+      </div>
+      <button class="btn-primary" style="width:100%" onclick="submitExpense()">💾 הוסף הוצאה</button>
+    </div>
+  `;
+
+  if (hasChart) {
+    setTimeout(() => {
+      mkChart('expenses-chart', {
+        type: 'doughnut',
+        data: {
+          labels: cats.map(c => (catEmoji[c] || '📌') + ' ' + c),
+          datasets: [{
+            data: cats.map(c => byCat[c]),
+            backgroundColor: cats.map((_, i) => catColors[i % catColors.length]),
+            borderWidth: 0,
+            hoverOffset: 4,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } }
+          }
+        }
+      });
+    }, 30);
+  }
+}
+
+async function submitExpense() {
+  const vendor   = document.getElementById('exp-vendor').value.trim();
+  const amount   = parseFloat(document.getElementById('exp-amount').value);
+  const currency = document.getElementById('exp-currency').value;
+  const category = document.getElementById('exp-cat').value;
+
+  if (!vendor || !amount || isNaN(amount)) {
+    toast('נדרש ספק וסכום', true);
+    return;
+  }
+  const r = await api('/api/add-expense', { vendor, amount, currency, category });
+  if (r.ok) {
+    toast('✅ הוצאה נשמרה!');
+    document.getElementById('exp-vendor').value = '';
+    document.getElementById('exp-amount').value  = '';
+    await reload();
+    renderExpenses();
+  } else {
+    toast('שגיאה', true);
+  }
+}
+
+// ── STOCKS TAB ──────────────────────────────────────────────────────────────────
+function renderStocks() {
+  if (!D) return;
+  const stocks = D.stocks;
+
+  const cards = stocks.length
+    ? stocks.map(s => {
+        const up   = s.changePct >= 0;
+        const sign = up ? '+' : '';
+        const price = s.price != null ? `${s.currency === 'USD' ? '$' : ''}${fmt(s.price, 2)}` : '—';
+        return `
+          <div class="stock-card">
+            <div>
+              <div class="stock-sym">${s.symbol}</div>
+              <div class="stock-name">${(s.name || '').slice(0, 22)}</div>
+            </div>
+            <div class="stock-right">
+              <div class="stock-price">${price}</div>
+              <span class="stock-chg ${up ? 'up-bg' : 'down-bg'}">${sign}${fmt(s.changePct, 2)}%</span>
+            </div>
+          </div>`;
+      }).join('')
+    : '<div class="loading-msg">אין מניות במעקב</div>';
+
+  document.getElementById('stocks-content').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="font-size:0.72rem;color:#64748b">מחירים חיים · מתרענן כל 30 שניות</span>
+    </div>
+    ${cards}
+  `;
+}
+
+// ── DATA LOAD ───────────────────────────────────────────────────────────────────
+async function reload() {
+  try {
+    D = await api('/api/dashboard');
+    const ts = new Date(D.timestamp).toLocaleTimeString('he-IL', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem'
+    });
+    document.getElementById('ts').textContent = 'עודכן: ' + ts;
+
+    renderHome();
+    if (activeTab === 'habits')   renderHabits();
+    if (activeTab === 'health')   renderHealth();
+    if (activeTab === 'expenses') renderExpenses();
+    if (activeTab === 'stocks')   renderStocks();
+  } catch (e) {
+    document.getElementById('ts').textContent = '⚠️ שגיאה';
+  }
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+reload();
+setInterval(reload, 30000);
 </script>
 </body>
 </html>

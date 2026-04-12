@@ -205,14 +205,27 @@ const server = http.createServer((req, res) => {
         const { getWatchlistForChat, fetchStockPrice } = require('./stocks');
 
         const chatId = process.env.TELEGRAM_CHAT_ID || mainChatId || '';
+        const today  = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 
-        // Health
+        // Health today
         const h = getTodayHealth();
         const health = h ? { pain: h.painLevel, mood: h.mood, sleep: h.sleep } : null;
 
+        // Health history — last 7 days
+        let allHealth = [];
+        try { allHealth = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'health-log.json'), 'utf8')); } catch {}
+        const healthHistory = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const ds = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+          const e  = allHealth.find(x => x.date === ds);
+          healthHistory.push({ date: ds, pain: e?.painLevel ?? null, mood: e?.mood ?? null });
+        }
+
         // Habits
-        const today  = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
         const habits = getHabits().map(habit => ({
+          id:        habit.id,
           name:      habit.name,
           icon:      habit.icon,
           streak:    habit.streak,
@@ -222,10 +235,16 @@ const server = http.createServer((req, res) => {
         // Expenses (current month)
         const exps = getMonthlyExpenses();
         let total_ils = 0, total_usd = 0;
+        const byCat = {};
         for (const e of exps) {
-          if (!e.amount) continue;
-          if ((e.currency || 'ILS') === 'USD') total_usd += e.amount;
+          if (!e.amount || e.amount <= 0) continue;
+          const cur = e.currency || 'ILS';
+          if (cur === 'USD') total_usd += e.amount;
           else total_ils += e.amount;
+          if (cur === 'ILS') {
+            const cat = e.category || 'other';
+            byCat[cat] = (byCat[cat] || 0) + e.amount;
+          }
         }
 
         // Tasks
@@ -239,17 +258,23 @@ const server = http.createServer((req, res) => {
         for (const w of watchlist) {
           try {
             const s = await fetchStockPrice(w.symbol);
-            stocks.push({ symbol: s.symbol, price: s.price, changePct: s.changePct });
-          } catch { stocks.push({ symbol: w.symbol, price: null, changePct: 0 }); }
+            stocks.push({ symbol: s.symbol, name: s.name, price: s.price, changePct: s.changePct, currency: s.currency });
+          } catch { stocks.push({ symbol: w.symbol, name: w.symbol, price: null, changePct: 0, currency: 'USD' }); }
         }
 
         const body = JSON.stringify({
           health,
+          healthHistory,
           habits,
-          expenses: { total_ils: Math.round(total_ils * 100) / 100, total_usd: Math.round(total_usd * 100) / 100, count: exps.length },
+          expenses: {
+            total_ils: Math.round(total_ils * 100) / 100,
+            total_usd: Math.round(total_usd * 100) / 100,
+            count: exps.length,
+            byCat,
+          },
           tasks,
           stocks,
-          openTasks: openTasks.slice(0, 5).map(t => ({ text: t.text, priority: t.priority })),
+          openTasks: openTasks.slice(0, 8).map(t => ({ id: t.id, text: t.text, priority: t.priority })),
           timestamp: new Date().toISOString(),
         });
         res.writeHead(200, {
@@ -264,6 +289,83 @@ const server = http.createServer((req, res) => {
         res.end(body);
       }
     })();
+    return;
+  }
+
+  // ── Dashboard POST API endpoints ──────────────────────────────────────────────
+
+  // CORS preflight for /api/*
+  if (req.method === 'OPTIONS' && route.startsWith('/api/')) {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin':  '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
+    return;
+  }
+
+  // Helper: read JSON body
+  function readJsonBody(r) {
+    return new Promise((resolve, reject) => {
+      let raw = '';
+      r.on('data', c => { raw += c; });
+      r.on('end', () => { try { resolve(JSON.parse(raw || '{}')); } catch { reject(new Error('Invalid JSON')); } });
+      r.on('error', reject);
+    });
+  }
+
+  function apiJson(r, obj, status = 200) {
+    const body = JSON.stringify(obj);
+    r.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Content-Length': Buffer.byteLength(body) });
+    r.end(body);
+  }
+
+  // POST /api/log-habit — { id, done }
+  if (req.method === 'POST' && route === '/api/log-habit') {
+    readJsonBody(req).then(b => {
+      const { logHabit } = require('./habits');
+      const result = logHabit(Number(b.id), b.done !== false);
+      if (!result) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+      apiJson(res, { ok: true, streak: result.streak });
+    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    return;
+  }
+
+  // POST /api/log-health — { pain, mood, sleep }
+  if (req.method === 'POST' && route === '/api/log-health') {
+    readJsonBody(req).then(b => {
+      const { logDirect } = require('./health');
+      logDirect({ pain: parseFloat(b.pain), mood: parseFloat(b.mood), sleep: parseFloat(b.sleep) });
+      apiJson(res, { ok: true });
+    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    return;
+  }
+
+  // POST /api/add-task — { text }
+  if (req.method === 'POST' && route === '/api/add-task') {
+    readJsonBody(req).then(b => {
+      const { addTask } = require('./tasks');
+      const task = addTask(String(b.text || '').trim());
+      if (!task) return apiJson(res, { ok: false, e: 'empty_text' }, 400);
+      apiJson(res, { ok: true, id: task.id });
+    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    return;
+  }
+
+  // POST /api/add-expense — { vendor, amount, currency, category }
+  if (req.method === 'POST' && route === '/api/add-expense') {
+    readJsonBody(req).then(b => {
+      const { saveInvoice } = require('./expenses');
+      const entry = saveInvoice({
+        vendor:   b.vendor   || 'ידני',
+        amount:   parseFloat(b.amount) || 0,
+        currency: b.currency || 'ILS',
+        category: b.category || 'other',
+        source:   'dashboard',
+      });
+      apiJson(res, { ok: true, id: entry.id });
+    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
     return;
   }
 
