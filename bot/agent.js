@@ -345,6 +345,16 @@ const TOOL_DECLARATIONS = [
   { name: 'delete_password', description: 'מחק סיסמה של שירות.', parameters: { type: 'object', properties: { service: { type: 'string' } }, required: ['service'] } },
   // TTS (#11)
   { name: 'voice_reply', description: 'שלח תשובה קולית (MP3). השתמש כשמבקשים "ענה בקול/דיבור/קולי/voice".', parameters: { type: 'object', properties: { text: { type: 'string', description: 'הטקסט לאמירה (עד 200 תווים)' }, lang: { type: 'string', description: 'iw=עברית en=אנגלית', enum: ['iw','en','ar'] } }, required: ['text'] } },
+  // Content Writing (#30)
+  { name: 'write_content', description: 'כתוב תוכן: פוסט לאינסטגרם/פייסבוק, מייל ללקוח, ביו, כותרת.', parameters: { type: 'object', properties: { type: { type: 'string', enum: ['instagram','facebook','email','bio','headline','whatsapp'] }, topic: { type: 'string' }, tone: { type: 'string', enum: ['professional','casual','funny','inspirational'] }, language: { type: 'string', enum: ['he','en'] } }, required: ['type','topic'] } },
+  // Code Generation (#31)
+  { name: 'generate_code', description: 'כתוב קוד לפי בקשה ושלח כקובץ או טקסט.', parameters: { type: 'object', properties: { description: { type: 'string' }, language: { type: 'string', enum: ['javascript','python','bash','html','css','sql'] }, send_as_file: { type: 'boolean' } }, required: ['description'] } },
+  // Form Generator (#28)
+  { name: 'generate_form', description: 'צור טופס HTML מותאם אישית ושלח כקובץ.', parameters: { type: 'object', properties: { title: { type: 'string' }, fields: { type: 'array', items: { type: 'string' } }, submit_text: { type: 'string' } }, required: ['title','fields'] } },
+  // Presentation Generator (#29)
+  { name: 'generate_presentation', description: 'צור מצגת HTML עם שקפים על נושא נתון.', parameters: { type: 'object', properties: { title: { type: 'string' }, topic: { type: 'string' }, slides_count: { type: 'number' }, language: { type: 'string', enum: ['he','en'] } }, required: ['title','topic'] } },
+  // Landing Page Generator (#27)
+  { name: 'generate_landing_page', description: 'צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] } }, required: ['business_name'] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -396,6 +406,16 @@ const EXTENDED_KEYWORDS = [
   'הוצאות', 'סיכום חודשי', 'כמה הוצאתי', 'ייצא', 'export', 'csv', 'הוצאתי',
   // Dashboard
   'דשבורד', 'dashboard',
+  // Content Writing (#30)
+  'פוסט', 'תוכן', 'מייל ללקוח', 'ביו', 'כתוב לי', 'content', 'כותרת', 'כתיבה',
+  // Code Generation (#31)
+  'קוד', 'סקריפט', 'כתוב קוד', 'תכתוב', 'script', 'code',
+  // Form Generator (#28)
+  'טופס', 'form', 'הרשמה', 'צור טופס',
+  // Presentation (#29)
+  'מצגת', 'שקפים', 'presentation', 'slides',
+  // Landing Page (#27)
+  'דף נחיתה', 'landing page', 'landing',
 ];
 
 function selectTools(userText) {
@@ -811,6 +831,406 @@ async function executeTool(name, args, ctx) {
         const mp3Path = await generateTTS(ttsText, ttsLang);
         await bot.sendVoice(chatId, require('fs').createReadStream(mp3Path));
         return '__AUDIO_SENT__';
+      }
+
+      // ── Content Writing (#30) ─────────────────────────────────────────────
+      case 'write_content': {
+        const contentType = args.type || 'instagram';
+        const topic       = args.topic || '';
+        const tone        = args.tone || 'professional';
+        const lang        = args.language || 'he';
+        const langLabel   = lang === 'he' ? 'Hebrew' : 'English';
+
+        const typePrompts = {
+          instagram: `Write an Instagram post in ${langLabel} about: "${topic}". Tone: ${tone}. Include relevant emojis throughout the text and add 10-15 relevant hashtags at the end.`,
+          facebook:  `Write a Facebook post in ${langLabel} about: "${topic}". Tone: ${tone}. Add 3-5 relevant hashtags.`,
+          email:     `Write a professional client email in ${langLabel} about: "${topic}". Tone: ${tone}. Include: Subject line (labeled "Subject:"), then a blank line, then the email body.`,
+          bio:       `Write a professional bio in ${langLabel} about: "${topic}". Tone: ${tone}. 2-3 sentences, suitable for social media profile.`,
+          headline:  `Generate 5 catchy headlines in ${langLabel} for: "${topic}". Tone: ${tone}. Number them 1-5.`,
+          whatsapp:  `Write a WhatsApp message in ${langLabel} about: "${topic}". Tone: ${tone}. Keep it concise and conversational.`,
+        };
+
+        const prompt = typePrompts[contentType] || typePrompts.instagram;
+        bot.sendMessage(chatId, `✍️ כותב תוכן...`, { parse_mode: 'HTML' });
+
+        const contentRes = await gemini.chat.completions.create({
+          model: 'gemini-2.5-flash',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.8,
+        });
+        const generated = contentRes.choices[0]?.message?.content || 'לא הצלחתי ליצור תוכן.';
+
+        const typeLabels = { instagram: '📸 Instagram', facebook: '📘 Facebook', email: '📧 מייל', bio: '👤 ביו', headline: '📰 כותרות', whatsapp: '💬 WhatsApp' };
+        return `${typeLabels[contentType] || '✍️ תוכן'} — <b>${topic}</b>\n\n${generated}`;
+      }
+
+      // ── Code Generation (#31) ─────────────────────────────────────────────
+      case 'generate_code': {
+        const codeDesc   = args.description || '';
+        const codeLang   = args.language || 'javascript';
+        const asFile     = args.send_as_file === true;
+
+        const codePrompt = `Write ${codeLang} code for: "${codeDesc}".
+Provide:
+1. A brief explanation (2-3 lines)
+2. The complete, working code
+
+Format the code inside a proper code block. Keep it clean and well-commented.`;
+
+        bot.sendMessage(chatId, `💻 כותב קוד ${codeLang}...`);
+
+        const codeRes = await gemini.chat.completions.create({
+          model: 'gemini-2.5-flash',
+          messages: [{ role: 'user', content: codePrompt }],
+          temperature: 0.3,
+        });
+        const codeOutput = codeRes.choices[0]?.message?.content || 'לא הצלחתי לייצר קוד.';
+
+        if (asFile) {
+          const extMap = { javascript: 'js', python: 'py', bash: 'sh', html: 'html', css: 'css', sql: 'sql' };
+          const ext      = extMap[codeLang] || 'txt';
+          const dateStr  = new Date().toISOString().slice(0,10);
+          const tmpPath  = `/tmp/code-${dateStr}-${Date.now()}.${ext}`;
+          // Extract just the code block if present
+          const codeMatch = codeOutput.match(/```(?:\w+)?\n([\s\S]*?)```/);
+          fs.writeFileSync(tmpPath, codeMatch ? codeMatch[1] : codeOutput, 'utf8');
+          return `__FILE__:${tmpPath}`;
+        }
+
+        return `💻 <b>קוד ${codeLang}:</b> ${codeDesc}\n\n${codeOutput}`;
+      }
+
+      // ── Form Generator (#28) ──────────────────────────────────────────────
+      case 'generate_form': {
+        const formTitle  = args.title || 'טופס';
+        const fields     = Array.isArray(args.fields) ? args.fields : [];
+        const submitText = args.submit_text || 'שלח';
+        const dateStr    = new Date().toISOString().slice(0,10);
+        const tmpPath    = `/tmp/form-${dateStr}-${Date.now()}.html`;
+
+        const fieldsHtml = fields.map(f => {
+          const isEmail   = /email|אימייל|מייל/i.test(f);
+          const isPhone   = /phone|טלפון|נייד/i.test(f);
+          const isMessage = /message|הודעה|תוכן|פרטים/i.test(f);
+          const inputType = isEmail ? 'email' : isPhone ? 'tel' : 'text';
+          if (isMessage) {
+            return `<div class="field"><label>${f}</label><textarea name="${f}" rows="4" placeholder="${f}..." required></textarea></div>`;
+          }
+          return `<div class="field"><label>${f}</label><input type="${inputType}" name="${f}" placeholder="${f}..." required /></div>`;
+        }).join('\n      ');
+
+        const formHtml = `<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${formTitle}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .container { background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 40px; max-width: 500px; width: 100%; }
+    h1 { color: #1a73e8; font-size: 1.6rem; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 28px; }
+    .field { margin-bottom: 20px; }
+    label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 0.95rem; }
+    input, textarea { width: 100%; border: 2px solid #e0e6ef; border-radius: 8px; padding: 10px 14px; font-size: 1rem; font-family: inherit; transition: border-color 0.2s; direction: rtl; }
+    input:focus, textarea:focus { outline: none; border-color: #1a73e8; }
+    textarea { resize: vertical; }
+    button { width: 100%; background: #1a73e8; color: #fff; border: none; border-radius: 8px; padding: 14px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: background 0.2s; margin-top: 8px; }
+    button:hover { background: #1557b0; }
+    .success { display: none; background: #e6f4ea; color: #2e7d32; border-radius: 8px; padding: 14px; text-align: center; font-weight: 600; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>${formTitle}</h1>
+    <p class="subtitle">אנא מלא את הפרטים הבאים</p>
+    <form id="mainForm">
+      ${fieldsHtml}
+      <button type="submit">${submitText}</button>
+    </form>
+    <div class="success" id="successMsg">✅ הטופס נשלח בהצלחה! נחזור אליך בהקדם.</div>
+  </div>
+  <script>
+    document.getElementById('mainForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      this.style.display = 'none';
+      document.getElementById('successMsg').style.display = 'block';
+    });
+  </script>
+</body>
+</html>`;
+
+        fs.writeFileSync(tmpPath, formHtml, 'utf8');
+        return `__FILE__:${tmpPath}`;
+      }
+
+      // ── Presentation Generator (#29) ──────────────────────────────────────
+      case 'generate_presentation': {
+        const presTitle  = args.title || args.topic || 'מצגת';
+        const presTopic  = args.topic || args.title || 'נושא כללי';
+        const slidesN    = Number(args.slides_count) || 5;
+        const presLang   = args.language || 'he';
+        const dateStr    = new Date().toISOString().slice(0,10);
+        const tmpPath    = `/tmp/presentation-${dateStr}-${Date.now()}.html`;
+
+        bot.sendMessage(chatId, `🎨 יוצר מצגת ${slidesN} שקפים...`);
+
+        const slidesPrompt = `Create content for a ${slidesN}-slide presentation about "${presTopic}" in ${presLang === 'he' ? 'Hebrew' : 'English'}.
+For each slide return EXACTLY this format (no extra text):
+SLIDE 1
+Title: <slide title>
+Bullets:
+- <point 1>
+- <point 2>
+- <point 3>
+
+Repeat for all ${slidesN} slides. Keep bullet points concise (max 8 words each).`;
+
+        const slideRes = await gemini.chat.completions.create({
+          model: 'gemini-2.5-flash',
+          messages: [{ role: 'user', content: slidesPrompt }],
+          temperature: 0.6,
+        });
+        const slideContent = slideRes.choices[0]?.message?.content || '';
+
+        // Parse slides
+        const slideBlocks = slideContent.split(/SLIDE \d+/i).filter(s => s.trim());
+        const slides = slideBlocks.map((block, i) => {
+          const titleMatch   = block.match(/Title:\s*(.+)/i);
+          const bulletsMatch = [...block.matchAll(/- (.+)/g)].map(m => m[1].trim());
+          return {
+            num:     i + 1,
+            title:   titleMatch ? titleMatch[1].trim() : `שקף ${i+1}`,
+            bullets: bulletsMatch.length ? bulletsMatch : ['נושא חשוב', 'פרט מרכזי', 'סיכום'],
+          };
+        });
+
+        // Ensure we have at least slidesN slides
+        while (slides.length < slidesN) {
+          slides.push({ num: slides.length + 1, title: `שקף ${slides.length + 1}`, bullets: ['תוכן כאן'] });
+        }
+
+        const slidesHtml = slides.slice(0, slidesN).map((s, i) => `
+    <div class="slide${i === 0 ? ' active' : ''}" data-index="${i}">
+      <div class="slide-number">${s.num} / ${slidesN}</div>
+      <h2>${s.title}</h2>
+      <ul>
+        ${s.bullets.map(b => `<li>${b}</li>`).join('\n        ')}
+      </ul>
+    </div>`).join('');
+
+        const presHtml = `<!DOCTYPE html>
+<html lang="${presLang}" dir="${presLang === 'he' ? 'rtl' : 'ltr'}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${presTitle}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f0f1a; color: #fff; height: 100vh; overflow: hidden; }
+    .presentation { position: relative; width: 100vw; height: 100vh; }
+    .slide { display: none; position: absolute; inset: 0; flex-direction: column; justify-content: center; align-items: ${presLang === 'he' ? 'flex-end' : 'flex-start'}; padding: 60px 80px; background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%); }
+    .slide.active { display: flex; }
+    .slide-number { position: absolute; top: 20px; ${presLang === 'he' ? 'left' : 'right'}: 30px; color: #888; font-size: 0.9rem; }
+    h2 { font-size: 2.5rem; font-weight: 700; margin-bottom: 32px; color: #7eb8f7; text-shadow: 0 0 20px rgba(126,184,247,0.3); max-width: 80%; text-align: ${presLang === 'he' ? 'right' : 'left'}; }
+    ul { list-style: none; max-width: 75%; }
+    li { font-size: 1.3rem; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.08); color: #dde; display: flex; align-items: center; gap: 12px; }
+    li::before { content: '▶'; color: #7eb8f7; font-size: 0.7rem; flex-shrink: 0; }
+    .nav { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; z-index: 10; }
+    .nav button { background: rgba(126,184,247,0.15); border: 1px solid rgba(126,184,247,0.4); color: #7eb8f7; padding: 10px 24px; border-radius: 30px; cursor: pointer; font-size: 1rem; transition: all 0.2s; }
+    .nav button:hover { background: rgba(126,184,247,0.3); }
+    .title-slide h2 { font-size: 3rem; }
+    .progress { position: fixed; bottom: 0; left: 0; height: 3px; background: #7eb8f7; transition: width 0.3s; }
+  </style>
+</head>
+<body>
+  <div class="presentation">
+    ${slidesHtml}
+    <div class="nav">
+      <button id="prev">&#8592; הקודם</button>
+      <button id="next">הבא &#8594;</button>
+    </div>
+    <div class="progress" id="progress"></div>
+  </div>
+  <script>
+    let current = 0;
+    const slides = document.querySelectorAll('.slide');
+    const total  = slides.length;
+    function show(n) {
+      slides[current].classList.remove('active');
+      current = (n + total) % total;
+      slides[current].classList.add('active');
+      document.getElementById('progress').style.width = ((current + 1) / total * 100) + '%';
+    }
+    document.getElementById('next').onclick = () => show(current + 1);
+    document.getElementById('prev').onclick = () => show(current - 1);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') show(current + 1);
+      if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   show(current - 1);
+    });
+    show(0);
+  </script>
+</body>
+</html>`;
+
+        fs.writeFileSync(tmpPath, presHtml, 'utf8');
+        return `__FILE__:${tmpPath}`;
+      }
+
+      // ── Landing Page Generator (#27) ──────────────────────────────────────
+      case 'generate_landing_page': {
+        const bizName   = args.business_name || 'העסק שלי';
+        const bizDesc   = args.description   || '';
+        const services  = Array.isArray(args.services) ? args.services : [];
+        const ctaText   = args.cta_text     || 'צור קשר';
+        const color     = args.color        || 'blue';
+        const dateStr   = new Date().toISOString().slice(0,10);
+        const tmpPath   = `/tmp/landing-${dateStr}-${Date.now()}.html`;
+
+        bot.sendMessage(chatId, `🌐 בונה דף נחיתה ל-${bizName}...`);
+
+        const copyPrompt = `Create Hebrew landing page copy for "${bizName}" — ${bizDesc}.
+Return EXACTLY this format:
+HERO_HEADLINE: <compelling 5-8 word headline>
+HERO_SUBTITLE: <supporting subtitle, 1 sentence>
+VALUE_1_TITLE: <benefit title>
+VALUE_1_TEXT: <1 sentence description>
+VALUE_2_TITLE: <benefit title>
+VALUE_2_TEXT: <1 sentence description>
+VALUE_3_TITLE: <benefit title>
+VALUE_3_TEXT: <1 sentence description>
+CTA_HEADLINE: <closing call to action headline>`;
+
+        const copyRes = await gemini.chat.completions.create({
+          model: 'gemini-2.5-flash',
+          messages: [{ role: 'user', content: copyPrompt }],
+          temperature: 0.7,
+        });
+        const copyText = copyRes.choices[0]?.message?.content || '';
+
+        function extractLine(key) {
+          const m = copyText.match(new RegExp(`${key}:\\s*(.+)`));
+          return m ? m[1].trim() : '';
+        }
+        const heroHeadline  = extractLine('HERO_HEADLINE')  || `ברוכים הבאים ל-${bizName}`;
+        const heroSubtitle  = extractLine('HERO_SUBTITLE')  || bizDesc;
+        const val1Title     = extractLine('VALUE_1_TITLE')  || 'מקצועיות';
+        const val1Text      = extractLine('VALUE_1_TEXT')   || 'שירות מקצועי ואמין';
+        const val2Title     = extractLine('VALUE_2_TITLE')  || 'ניסיון';
+        const val2Text      = extractLine('VALUE_2_TEXT')   || 'שנים של ניסיון בתחום';
+        const val3Title     = extractLine('VALUE_3_TITLE')  || 'תוצאות';
+        const val3Text      = extractLine('VALUE_3_TEXT')   || 'תוצאות מוכחות ללקוחות';
+        const ctaHeadline   = extractLine('CTA_HEADLINE')   || 'מוכנים להתחיל?';
+
+        const colorMap = {
+          blue:   { primary: '#1a73e8', dark: '#0d47a1', gradient: 'linear-gradient(135deg, #1a73e8, #0d47a1)' },
+          green:  { primary: '#2e7d32', dark: '#1b5e20', gradient: 'linear-gradient(135deg, #43a047, #2e7d32)' },
+          purple: { primary: '#6a1b9a', dark: '#4a148c', gradient: 'linear-gradient(135deg, #8e24aa, #6a1b9a)' },
+          orange: { primary: '#e65100', dark: '#bf360c', gradient: 'linear-gradient(135deg, #f4511e, #e65100)' },
+          dark:   { primary: '#212121', dark: '#000000', gradient: 'linear-gradient(135deg, #424242, #212121)' },
+        };
+        const c = colorMap[color] || colorMap.blue;
+
+        const servicesSection = services.length > 0
+          ? `<section class="services"><div class="container"><h2>השירותים שלנו</h2><div class="services-grid">${services.map(s => `<div class="service-card"><span class="icon">✓</span><span>${s}</span></div>`).join('')}</div></div></section>`
+          : '';
+
+        const landingHtml = `<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${bizName}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #222; direction: rtl; }
+    a { text-decoration: none; }
+    /* Nav */
+    nav { background: #fff; padding: 16px 40px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: sticky; top: 0; z-index: 100; }
+    .logo { font-size: 1.4rem; font-weight: 700; color: ${c.primary}; }
+    .nav-cta { background: ${c.primary}; color: #fff; padding: 10px 24px; border-radius: 25px; font-weight: 600; font-size: 0.95rem; transition: opacity 0.2s; }
+    .nav-cta:hover { opacity: 0.85; }
+    /* Hero */
+    .hero { background: ${c.gradient}; color: #fff; padding: 100px 40px; text-align: center; }
+    .hero h1 { font-size: 2.8rem; font-weight: 800; margin-bottom: 20px; line-height: 1.2; }
+    .hero p { font-size: 1.2rem; opacity: 0.9; max-width: 600px; margin: 0 auto 36px; }
+    .hero-btn { background: #fff; color: ${c.primary}; padding: 16px 40px; border-radius: 30px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s; }
+    .hero-btn:hover { transform: translateY(-2px); }
+    /* Values */
+    .values { padding: 80px 40px; background: #f8f9fa; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    .values h2 { text-align: center; font-size: 2rem; color: ${c.primary}; margin-bottom: 48px; }
+    .values-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; }
+    .value-card { background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 2px 16px rgba(0,0,0,0.07); border-top: 4px solid ${c.primary}; }
+    .value-card h3 { color: ${c.primary}; font-size: 1.2rem; margin-bottom: 12px; }
+    .value-card p { color: #555; line-height: 1.6; }
+    /* Services */
+    .services { padding: 60px 40px; background: #fff; }
+    .services h2 { text-align: center; font-size: 2rem; color: ${c.primary}; margin-bottom: 36px; }
+    .services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .service-card { background: #f0f4ff; border-radius: 12px; padding: 20px 24px; display: flex; align-items: center; gap: 12px; font-size: 1rem; font-weight: 500; }
+    .service-card .icon { color: ${c.primary}; font-size: 1.2rem; font-weight: 700; }
+    /* CTA */
+    .cta-section { background: ${c.gradient}; color: #fff; padding: 80px 40px; text-align: center; }
+    .cta-section h2 { font-size: 2.2rem; margin-bottom: 16px; }
+    .cta-section p { font-size: 1.1rem; opacity: 0.9; margin-bottom: 32px; }
+    .cta-btn { background: #fff; color: ${c.primary}; padding: 16px 48px; border-radius: 30px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s; }
+    .cta-btn:hover { transform: translateY(-2px); }
+    /* Contact */
+    .contact { padding: 60px 40px; background: #f8f9fa; text-align: center; }
+    .contact h2 { font-size: 1.8rem; color: ${c.primary}; margin-bottom: 24px; }
+    .contact-form { max-width: 480px; margin: 0 auto; }
+    .contact-form input, .contact-form textarea { width: 100%; border: 2px solid #e0e6ef; border-radius: 10px; padding: 12px 16px; font-size: 1rem; margin-bottom: 14px; font-family: inherit; direction: rtl; }
+    .contact-form input:focus, .contact-form textarea:focus { outline: none; border-color: ${c.primary}; }
+    .contact-form button { width: 100%; background: ${c.primary}; color: #fff; border: none; border-radius: 10px; padding: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; }
+    /* Footer */
+    footer { background: #222; color: #aaa; text-align: center; padding: 24px; font-size: 0.9rem; }
+    @media (max-width: 768px) { .hero h1 { font-size: 2rem; } nav { padding: 14px 20px; } .hero, .values, .services, .cta-section, .contact { padding: 60px 20px; } }
+  </style>
+</head>
+<body>
+  <nav>
+    <span class="logo">${bizName}</span>
+    <a href="#contact" class="nav-cta">${ctaText}</a>
+  </nav>
+  <section class="hero">
+    <h1>${heroHeadline}</h1>
+    <p>${heroSubtitle}</p>
+    <a href="#contact" class="hero-btn">${ctaText} &rsaquo;</a>
+  </section>
+  <section class="values">
+    <div class="container">
+      <h2>למה לבחור בנו?</h2>
+      <div class="values-grid">
+        <div class="value-card"><h3>${val1Title}</h3><p>${val1Text}</p></div>
+        <div class="value-card"><h3>${val2Title}</h3><p>${val2Text}</p></div>
+        <div class="value-card"><h3>${val3Title}</h3><p>${val3Text}</p></div>
+      </div>
+    </div>
+  </section>
+  ${servicesSection}
+  <section class="cta-section">
+    <h2>${ctaHeadline}</h2>
+    <p>${bizDesc || 'אנחנו כאן כדי לעזור לך להצליח'}</p>
+    <a href="#contact" class="cta-btn">${ctaText}</a>
+  </section>
+  <section class="contact" id="contact">
+    <h2>צור קשר</h2>
+    <div class="contact-form">
+      <input type="text" placeholder="שם מלא" />
+      <input type="email" placeholder="אימייל" />
+      <input type="tel" placeholder="טלפון" />
+      <textarea rows="4" placeholder="איך נוכל לעזור?"></textarea>
+      <button onclick="alert('תודה! נחזור אליך בהקדם 🙏')">${ctaText}</button>
+    </div>
+  </section>
+  <footer>&copy; ${new Date().getFullYear()} ${bizName}. כל הזכויות שמורות.</footer>
+</body>
+</html>`;
+
+        fs.writeFileSync(tmpPath, landingHtml, 'utf8');
+        return `__FILE__:${tmpPath}`;
       }
 
       default:
