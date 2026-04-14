@@ -181,6 +181,22 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Serve generated forms / landing pages from public/forms/
+  if (req.method === 'GET' && route.startsWith('/forms/')) {
+    const formFile = route.slice('/forms/'.length).replace(/\.\./g, ''); // strip path traversal
+    if (!formFile || !formFile.endsWith('.html')) { res.writeHead(400); res.end('Bad request'); return; }
+    const formFilePath = path.join(__dirname, '..', 'public', 'forms', formFile);
+    try {
+      const html = fs.readFileSync(formFilePath, 'utf8');
+      const buf  = Buffer.from(html, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': buf.length, 'Access-Control-Allow-Origin': '*' });
+      res.end(buf);
+    } catch (e) {
+      res.writeHead(404); res.end('Form not found');
+    }
+    return;
+  }
+
   // Dashboard HTML
   if (req.method === 'GET' && route === '/dashboard') {
     try {

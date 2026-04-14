@@ -946,8 +946,10 @@ Rules:
         const formTitle  = args.title || 'טופס';
         const fields     = Array.isArray(args.fields) ? args.fields : [];
         const submitText = args.submit_text || 'שלח';
-        const dateStr    = new Date().toISOString().slice(0,10);
-        const tmpPath    = `/tmp/form-${dateStr}-${Date.now()}.html`;
+        const formsDir   = path.join(__dirname, '..', 'public', 'forms');
+        fs.mkdirSync(formsDir, { recursive: true });
+        const formId   = Date.now().toString(36);
+        const formPath = path.join(formsDir, `${formId}.html`);
 
         // Detect form type and adapt design
         function detectFormStyle(title) {
@@ -1049,8 +1051,9 @@ Rules:
 </body>
 </html>`;
 
-        fs.writeFileSync(tmpPath, formHtml, 'utf8');
-        return `__FILE__:${tmpPath}`;
+        fs.writeFileSync(formPath, formHtml, 'utf8');
+        const formUrl = `https://lifepilot-bot.onrender.com/forms/${formId}.html`;
+        return `🔗 <b>הטופס מוכן!</b>\n<a href="${formUrl}">${formUrl}</a>\n\n<i>שתף את הקישור עם לקוחות — הגשות יגיעו ישירות לטלגרם שלך</i>`;
       }
 
       // ── Presentation Generator (#29) ──────────────────────────────────────
@@ -1225,8 +1228,10 @@ Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 
         const services  = Array.isArray(args.services) ? args.services : [];
         const ctaText   = args.cta_text     || 'צור קשר';
         const color     = args.color        || 'blue';
-        const dateStr   = new Date().toISOString().slice(0,10);
-        const tmpPath   = `/tmp/landing-${dateStr}-${Date.now()}.html`;
+        const formsDir2  = path.join(__dirname, '..', 'public', 'forms');
+        fs.mkdirSync(formsDir2, { recursive: true });
+        const landingId   = Date.now().toString(36);
+        const landingPath = path.join(formsDir2, `landing-${landingId}.html`);
 
         bot.sendMessage(chatId, `🌐 בונה דף נחיתה ל-${bizName}...`);
 
@@ -1509,8 +1514,9 @@ FAQ_3_A: <clear answer, 1-2 sentences>`;
 </body>
 </html>`;
 
-        fs.writeFileSync(tmpPath, landingHtml, 'utf8');
-        return `__FILE__:${tmpPath}`;
+        fs.writeFileSync(landingPath, landingHtml, 'utf8');
+        const landingUrl = `https://lifepilot-bot.onrender.com/forms/landing-${landingId}.html`;
+        return `🌐 <b>דף הנחיתה מוכן!</b>\n<a href="${landingUrl}">${landingUrl}</a>\n\n<i>הגשות טופס יצירת קשר יגיעו ישירות לטלגרם שלך</i>`;
       }
 
       default:
