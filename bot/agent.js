@@ -841,22 +841,30 @@ async function executeTool(name, args, ctx) {
         const lang        = args.language || 'he';
         const langLabel   = lang === 'he' ? 'Hebrew' : 'English';
 
+        const userContext = `You are a content writer for Shilo Alkobi, founder of Digital Web — an Israeli web development & SaaS company.
+He also builds CreatorShield (influencer protection platform) and Vibe (AI app builder).
+Write in first person as Shilo. Reflect his expertise in web dev, AI, and SaaS.
+Always make the content unique — never use generic filler phrases.`;
+
+        const toneMap = { professional: 'professional and authoritative', casual: 'friendly and conversational', funny: 'witty and humorous', inspirational: 'motivational and empowering' };
+        const toneLabel = toneMap[tone] || tone;
+
         const typePrompts = {
-          instagram: `Write an Instagram post in ${langLabel} about: "${topic}". Tone: ${tone}. Include relevant emojis throughout the text and add 10-15 relevant hashtags at the end.`,
-          facebook:  `Write a Facebook post in ${langLabel} about: "${topic}". Tone: ${tone}. Add 3-5 relevant hashtags.`,
-          email:     `Write a professional client email in ${langLabel} about: "${topic}". Tone: ${tone}. Include: Subject line (labeled "Subject:"), then a blank line, then the email body.`,
-          bio:       `Write a professional bio in ${langLabel} about: "${topic}". Tone: ${tone}. 2-3 sentences, suitable for social media profile.`,
-          headline:  `Generate 5 catchy headlines in ${langLabel} for: "${topic}". Tone: ${tone}. Number them 1-5.`,
-          whatsapp:  `Write a WhatsApp message in ${langLabel} about: "${topic}". Tone: ${tone}. Keep it concise and conversational.`,
+          instagram: `${userContext}\n\nWrite a compelling Instagram post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Hook sentence (grab attention immediately)\n2. Main message (2-4 lines with relevant emojis throughout)\n3. Call to action (1 line)\n4. 12-15 relevant hashtags on a new line`,
+          facebook:  `${userContext}\n\nWrite an engaging Facebook post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Opening hook (1-2 lines)\n2. Story or value (3-5 lines)\n3. Question or CTA to encourage comments\n4. 3-5 hashtags`,
+          email:     `${userContext}\n\nWrite a professional client email in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nFormat:\nSubject: <compelling subject line>\n\n<greeting>\n\n<opening paragraph — establish context>\n\n<main body — 2-3 paragraphs with value>\n\n<closing paragraph + clear next step>\n\n<signature: Shilo Alkobi | Digital Web | digitalweb.co.il>`,
+          bio:       `${userContext}\n\nWrite a professional social media bio in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\n2-3 punchy sentences. Include: who he is, what he builds, what makes him unique. Add 3-5 relevant emojis.`,
+          headline:  `${userContext}\n\nGenerate 5 unique, click-worthy headlines in ${langLabel} for: "${topic}".\nTone: ${toneLabel}.\nVariety: one question, one bold claim, one how-to, one number-based, one emotional.\nNumber them 1-5.`,
+          whatsapp:  `${userContext}\n\nWrite a WhatsApp business message in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nKeep it under 150 words. Conversational but professional. Include relevant emoji. Clear CTA at end.`,
         };
 
         const prompt = typePrompts[contentType] || typePrompts.instagram;
-        bot.sendMessage(chatId, `✍️ כותב תוכן...`, { parse_mode: 'HTML' });
+        bot.sendMessage(chatId, `✍️ כותב תוכן — ${contentType}...`);
 
         const contentRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
           messages: [{ role: 'user', content: prompt }],
-          temperature: 0.8,
+          temperature: 0.85,
         });
         const generated = contentRes.choices[0]?.message?.content || 'לא הצלחתי ליצור תוכן.';
 
@@ -870,19 +878,36 @@ async function executeTool(name, args, ctx) {
         const codeLang   = args.language || 'javascript';
         const asFile     = args.send_as_file === true;
 
-        const codePrompt = `Write ${codeLang} code for: "${codeDesc}".
-Provide:
-1. A brief explanation (2-3 lines)
-2. The complete, working code
+        const codePrompt = `Write production-ready ${codeLang} code for: "${codeDesc}".
 
-Format the code inside a proper code block. Keep it clean and well-commented.`;
+Structure your response EXACTLY as:
+
+## הסבר
+[2-3 lines in Hebrew explaining what the code does and why]
+
+## קוד
+\`\`\`${codeLang}
+[complete working code — add Hebrew comments on key logic lines, include proper error handling, edge cases handled]
+\`\`\`
+
+## שימוש
+[1-2 lines in Hebrew showing how to run or call this code]
+
+## הערות
+[Any important dependencies, limitations, or edge cases in Hebrew — skip if none]
+
+Rules:
+- Code must be complete and runnable, not pseudocode
+- Add error handling (try/catch, input validation)
+- Hebrew comments on non-obvious logic
+- Include a basic usage example in the code itself`;
 
         bot.sendMessage(chatId, `💻 כותב קוד ${codeLang}...`);
 
         const codeRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
           messages: [{ role: 'user', content: codePrompt }],
-          temperature: 0.3,
+          temperature: 0.2,
         });
         const codeOutput = codeRes.choices[0]?.message?.content || 'לא הצלחתי לייצר קוד.';
 
@@ -908,15 +933,32 @@ Format the code inside a proper code block. Keep it clean and well-commented.`;
         const dateStr    = new Date().toISOString().slice(0,10);
         const tmpPath    = `/tmp/form-${dateStr}-${Date.now()}.html`;
 
+        // Detect form type and adapt design
+        function detectFormStyle(title) {
+          if (/רפואי|קליניקה|בריאות|רופא|מרפאה/i.test(title))
+            return { bg: '#f0f9ff', accent: '#0ea5e9', accentDark: '#0284c7', cardBg: '#fff', icon: '🏥', subtitle: 'אנא מלא את הפרטים הרפואיים', successMsg: '✅ הפרטים התקבלו. הצוות הרפואי יחזור אליך בהקדם.' };
+          if (/אירוע|הזמנה|חגיגה|מסיבה|כנס|וובינר/i.test(title))
+            return { bg: '#fdf4ff', accent: '#a855f7', accentDark: '#7c3aed', cardBg: '#fff', icon: '🎉', subtitle: 'נשמח לראותך! מלא את הפרטים לרישום', successMsg: '🎉 נרשמת בהצלחה! נשלח לך אישור בקרוב.' };
+          if (/עסקי|ליד|פגישה|הצעת מחיר|ייעוץ|עסק/i.test(title))
+            return { bg: '#f0fdf4', accent: '#22c55e', accentDark: '#16a34a', cardBg: '#fff', icon: '💼', subtitle: 'נשמח לשמוע ממך ולהציע הצעה מותאמת', successMsg: '✅ קיבלנו את פרטיך. נחזור אליך תוך 24 שעות.' };
+          if (/סקר|משוב|חוות דעת|דירוג/i.test(title))
+            return { bg: '#fff7ed', accent: '#f97316', accentDark: '#ea580c', cardBg: '#fff', icon: '📊', subtitle: 'חוות דעתך חשובה לנו מאוד', successMsg: '🙏 תודה על המשוב! זה עוזר לנו להשתפר.' };
+          return { bg: '#f0f4f8', accent: '#1a73e8', accentDark: '#1557b0', cardBg: '#fff', icon: '📋', subtitle: 'אנא מלא את הפרטים הבאים', successMsg: '✅ הטופס נשלח בהצלחה! נחזור אליך בהקדם.' };
+        }
+        const style = detectFormStyle(formTitle);
+
         const fieldsHtml = fields.map(f => {
           const isEmail   = /email|אימייל|מייל/i.test(f);
           const isPhone   = /phone|טלפון|נייד/i.test(f);
-          const isMessage = /message|הודעה|תוכן|פרטים/i.test(f);
-          const inputType = isEmail ? 'email' : isPhone ? 'tel' : 'text';
+          const isMessage = /message|הודעה|תוכן|פרטים|הערות/i.test(f);
+          const isDate    = /תאריך|date/i.test(f);
+          const isNumber  = /גיל|מספר|כמות/i.test(f);
+          let inputType = isEmail ? 'email' : isPhone ? 'tel' : isDate ? 'date' : isNumber ? 'number' : 'text';
           if (isMessage) {
-            return `<div class="field"><label>${f}</label><textarea name="${f}" rows="4" placeholder="${f}..." required></textarea></div>`;
+            return `<div class="field"><label>${f} <span class="required">*</span></label><textarea name="${f}" rows="4" placeholder="${f}..." required></textarea></div>`;
           }
-          return `<div class="field"><label>${f}</label><input type="${inputType}" name="${f}" placeholder="${f}..." required /></div>`;
+          const validationAttr = isEmail ? 'pattern="[^@]+@[^@]+\\.[^@]+"' : isPhone ? 'pattern="[0-9+\\-\\s]{7,15}"' : '';
+          return `<div class="field"><label>${f} <span class="required">*</span></label><input type="${inputType}" name="${f}" placeholder="${f}..." required ${validationAttr} /></div>`;
         }).join('\n      ');
 
         const formHtml = `<!DOCTYPE html>
@@ -927,33 +969,54 @@ Format the code inside a proper code block. Keep it clean and well-commented.`;
   <title>${formTitle}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .container { background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 40px; max-width: 500px; width: 100%; }
-    h1 { color: #1a73e8; font-size: 1.6rem; margin-bottom: 8px; }
-    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 28px; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: ${style.bg}; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .container { background: ${style.cardBg}; border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); padding: 44px; max-width: 520px; width: 100%; }
+    .form-header { text-align: center; margin-bottom: 32px; }
+    .form-icon { font-size: 2.4rem; margin-bottom: 10px; }
+    h1 { color: ${style.accent}; font-size: 1.7rem; margin-bottom: 8px; }
+    .subtitle { color: #777; font-size: 0.92rem; }
     .field { margin-bottom: 20px; }
-    label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 0.95rem; }
-    input, textarea { width: 100%; border: 2px solid #e0e6ef; border-radius: 8px; padding: 10px 14px; font-size: 1rem; font-family: inherit; transition: border-color 0.2s; direction: rtl; }
-    input:focus, textarea:focus { outline: none; border-color: #1a73e8; }
-    textarea { resize: vertical; }
-    button { width: 100%; background: #1a73e8; color: #fff; border: none; border-radius: 8px; padding: 14px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: background 0.2s; margin-top: 8px; }
-    button:hover { background: #1557b0; }
-    .success { display: none; background: #e6f4ea; color: #2e7d32; border-radius: 8px; padding: 14px; text-align: center; font-weight: 600; margin-top: 16px; }
+    label { display: block; font-weight: 600; color: #333; margin-bottom: 7px; font-size: 0.95rem; }
+    .required { color: ${style.accent}; }
+    input, textarea { width: 100%; border: 2px solid #e2e8f0; border-radius: 10px; padding: 11px 15px; font-size: 1rem; font-family: inherit; transition: border-color 0.2s, box-shadow 0.2s; direction: rtl; background: #fafafa; }
+    input:focus, textarea:focus { outline: none; border-color: ${style.accent}; box-shadow: 0 0 0 3px ${style.accent}22; background: #fff; }
+    input:invalid:not(:placeholder-shown) { border-color: #ef4444; }
+    textarea { resize: vertical; min-height: 100px; }
+    button { width: 100%; background: ${style.accent}; color: #fff; border: none; border-radius: 10px; padding: 14px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: background 0.2s, transform 0.1s; margin-top: 10px; }
+    button:hover { background: ${style.accentDark}; transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    .success { display: none; background: #f0fdf4; border: 2px solid #86efac; color: #166534; border-radius: 12px; padding: 20px; text-align: center; font-weight: 600; font-size: 1.05rem; margin-top: 16px; }
+    .progress-bar { height: 4px; background: ${style.accent}; border-radius: 2px; width: 0%; transition: width 0.3s; margin-bottom: 28px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>${formTitle}</h1>
-    <p class="subtitle">אנא מלא את הפרטים הבאים</p>
-    <form id="mainForm">
+    <div class="progress-bar" id="progressBar"></div>
+    <div class="form-header">
+      <div class="form-icon">${style.icon}</div>
+      <h1>${formTitle}</h1>
+      <p class="subtitle">${style.subtitle}</p>
+    </div>
+    <form id="mainForm" novalidate>
       ${fieldsHtml}
       <button type="submit">${submitText}</button>
     </form>
-    <div class="success" id="successMsg">✅ הטופס נשלח בהצלחה! נחזור אליך בהקדם.</div>
+    <div class="success" id="successMsg">${style.successMsg}</div>
   </div>
   <script>
-    document.getElementById('mainForm').addEventListener('submit', function(e) {
+    const form = document.getElementById('mainForm');
+    const inputs = form.querySelectorAll('input, textarea');
+    // Live progress bar
+    function updateProgress() {
+      const filled = [...inputs].filter(i => i.value.trim()).length;
+      document.getElementById('progressBar').style.width = (filled / inputs.length * 100) + '%';
+    }
+    inputs.forEach(i => i.addEventListener('input', updateProgress));
+    form.addEventListener('submit', function(e) {
       e.preventDefault();
+      let valid = true;
+      inputs.forEach(i => { if (!i.value.trim()) { i.style.borderColor = '#ef4444'; valid = false; } else { i.style.borderColor = ''; } });
+      if (!valid) return;
       this.style.display = 'none';
       document.getElementById('successMsg').style.display = 'block';
     });
@@ -969,23 +1032,29 @@ Format the code inside a proper code block. Keep it clean and well-commented.`;
       case 'generate_presentation': {
         const presTitle  = args.title || args.topic || 'מצגת';
         const presTopic  = args.topic || args.title || 'נושא כללי';
-        const slidesN    = Number(args.slides_count) || 5;
-        const presLang   = args.language || 'he';
-        const dateStr    = new Date().toISOString().slice(0,10);
-        const tmpPath    = `/tmp/presentation-${dateStr}-${Date.now()}.html`;
+        const contentSlides = Math.max(1, (Number(args.slides_count) || 5) - 2); // title + thank you = 2 fixed
+        const totalSlides   = contentSlides + 2;
+        const presLang      = args.language || 'he';
+        const isRtl         = presLang === 'he';
+        const dateStr       = new Date().toISOString().slice(0,10);
+        const tmpPath       = `/tmp/presentation-${dateStr}-${Date.now()}.html`;
 
-        bot.sendMessage(chatId, `🎨 יוצר מצגת ${slidesN} שקפים...`);
+        bot.sendMessage(chatId, `🎨 יוצר מצגת ${totalSlides} שקפים על "${presTopic}"...`);
 
-        const slidesPrompt = `Create content for a ${slidesN}-slide presentation about "${presTopic}" in ${presLang === 'he' ? 'Hebrew' : 'English'}.
-For each slide return EXACTLY this format (no extra text):
+        const slidesPrompt = `Create content for ${contentSlides} content slides for a presentation about "${presTopic}" in ${isRtl ? 'Hebrew' : 'English'}.
+Also provide a subtitle for the title slide.
+
+Return EXACTLY this format (no extra text, no markdown):
+SUBTITLE: <one engaging subtitle for the title slide>
 SLIDE 1
 Title: <slide title>
 Bullets:
 - <point 1>
 - <point 2>
 - <point 3>
+Notes: <one sentence speaker note>
 
-Repeat for all ${slidesN} slides. Keep bullet points concise (max 8 words each).`;
+Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 10 words each.`;
 
         const slideRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
@@ -994,80 +1063,124 @@ Repeat for all ${slidesN} slides. Keep bullet points concise (max 8 words each).
         });
         const slideContent = slideRes.choices[0]?.message?.content || '';
 
-        // Parse slides
+        // Extract subtitle
+        const subtitleMatch = slideContent.match(/SUBTITLE:\s*(.+)/i);
+        const presSubtitle  = subtitleMatch ? subtitleMatch[1].trim() : presTopic;
+
+        // Parse content slides
         const slideBlocks = slideContent.split(/SLIDE \d+/i).filter(s => s.trim());
-        const slides = slideBlocks.map((block, i) => {
+        const contentSlideData = slideBlocks.map((block, i) => {
           const titleMatch   = block.match(/Title:\s*(.+)/i);
-          const bulletsMatch = [...block.matchAll(/- (.+)/g)].map(m => m[1].trim());
+          const bulletsMatch = [...block.matchAll(/^- (.+)/gm)].map(m => m[1].trim());
+          const notesMatch   = block.match(/Notes:\s*(.+)/i);
           return {
-            num:     i + 1,
             title:   titleMatch ? titleMatch[1].trim() : `שקף ${i+1}`,
-            bullets: bulletsMatch.length ? bulletsMatch : ['נושא חשוב', 'פרט מרכזי', 'סיכום'],
+            bullets: bulletsMatch.length ? bulletsMatch : ['נושא חשוב', 'פרט מרכזי'],
+            notes:   notesMatch ? notesMatch[1].trim() : '',
           };
         });
-
-        // Ensure we have at least slidesN slides
-        while (slides.length < slidesN) {
-          slides.push({ num: slides.length + 1, title: `שקף ${slides.length + 1}`, bullets: ['תוכן כאן'] });
+        while (contentSlideData.length < contentSlides) {
+          contentSlideData.push({ title: `שקף ${contentSlideData.length+1}`, bullets: ['תוכן כאן'], notes: '' });
         }
 
-        const slidesHtml = slides.slice(0, slidesN).map((s, i) => `
-    <div class="slide${i === 0 ? ' active' : ''}" data-index="${i}">
-      <div class="slide-number">${s.num} / ${slidesN}</div>
+        // Build all slides: title + content + thank-you
+        const allSlides = [
+          { type: 'title', title: presTitle, subtitle: presSubtitle, notes: '' },
+          ...contentSlideData.slice(0, contentSlides).map(s => ({ type: 'content', ...s })),
+          { type: 'thankyou', title: isRtl ? 'תודה רבה!' : 'Thank You!', subtitle: isRtl ? 'שאלות ותגובות' : 'Questions & Discussion', notes: '' },
+        ];
+
+        const buildSlideHtml = (s, idx, total) => {
+          const isActive = idx === 0 ? ' active' : '';
+          if (s.type === 'title') {
+            return `<div class="slide title-slide${isActive}" data-index="${idx}">
+      <div class="slide-label">${isRtl ? presTitle : presTitle}</div>
+      <h1>${s.title}</h1>
+      <p class="title-sub">${s.subtitle}</p>
+      <div class="slide-number">${idx+1} / ${total}</div>
+      <div class="speaker-notes">${s.notes}</div>
+    </div>`;
+          }
+          if (s.type === 'thankyou') {
+            return `<div class="slide thankyou-slide${isActive}" data-index="${idx}">
+      <h1>${s.title}</h1>
+      <p class="title-sub">${s.subtitle}</p>
+      <div class="slide-number">${idx+1} / ${total}</div>
+      <div class="speaker-notes"></div>
+    </div>`;
+          }
+          return `<div class="slide${isActive}" data-index="${idx}">
+      <div class="slide-number">${idx+1} / ${total}</div>
       <h2>${s.title}</h2>
       <ul>
         ${s.bullets.map(b => `<li>${b}</li>`).join('\n        ')}
       </ul>
-    </div>`).join('');
+      <div class="speaker-notes">${s.notes}</div>
+    </div>`;
+        };
+
+        const slidesHtml = allSlides.map((s, i) => buildSlideHtml(s, i, allSlides.length)).join('\n    ');
 
         const presHtml = `<!DOCTYPE html>
-<html lang="${presLang}" dir="${presLang === 'he' ? 'rtl' : 'ltr'}">
+<html lang="${presLang}" dir="${isRtl ? 'rtl' : 'ltr'}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${presTitle}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f0f1a; color: #fff; height: 100vh; overflow: hidden; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a18; color: #fff; height: 100vh; overflow: hidden; }
     .presentation { position: relative; width: 100vw; height: 100vh; }
-    .slide { display: none; position: absolute; inset: 0; flex-direction: column; justify-content: center; align-items: ${presLang === 'he' ? 'flex-end' : 'flex-start'}; padding: 60px 80px; background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%); }
-    .slide.active { display: flex; }
-    .slide-number { position: absolute; top: 20px; ${presLang === 'he' ? 'left' : 'right'}: 30px; color: #888; font-size: 0.9rem; }
-    h2 { font-size: 2.5rem; font-weight: 700; margin-bottom: 32px; color: #7eb8f7; text-shadow: 0 0 20px rgba(126,184,247,0.3); max-width: 80%; text-align: ${presLang === 'he' ? 'right' : 'left'}; }
-    ul { list-style: none; max-width: 75%; }
-    li { font-size: 1.3rem; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.08); color: #dde; display: flex; align-items: center; gap: 12px; }
-    li::before { content: '▶'; color: #7eb8f7; font-size: 0.7rem; flex-shrink: 0; }
-    .nav { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; z-index: 10; }
-    .nav button { background: rgba(126,184,247,0.15); border: 1px solid rgba(126,184,247,0.4); color: #7eb8f7; padding: 10px 24px; border-radius: 30px; cursor: pointer; font-size: 1rem; transition: all 0.2s; }
-    .nav button:hover { background: rgba(126,184,247,0.3); }
-    .title-slide h2 { font-size: 3rem; }
-    .progress { position: fixed; bottom: 0; left: 0; height: 3px; background: #7eb8f7; transition: width 0.3s; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(${isRtl ? '-' : ''}20px); } to { opacity: 1; transform: translateX(0); } }
+    .slide { display: none; position: absolute; inset: 0; flex-direction: column; justify-content: center; align-items: ${isRtl ? 'flex-end' : 'flex-start'}; padding: 60px 80px; background: linear-gradient(140deg, #0a0a18 0%, #131328 50%, #0d1b35 100%); }
+    .slide.active { display: flex; animation: slideIn 0.35s ease; }
+    .slide-number { position: absolute; top: 22px; ${isRtl ? 'left' : 'right'}: 32px; color: #556; font-size: 0.85rem; letter-spacing: 1px; }
+    /* Title + Thank-you slides */
+    .title-slide, .thankyou-slide { justify-content: center; align-items: center; text-align: center; background: linear-gradient(140deg, #0d1b35 0%, #1a1a40 60%, #0a0a18 100%); }
+    .title-slide h1, .thankyou-slide h1 { font-size: 3.4rem; font-weight: 800; color: #7eb8f7; text-shadow: 0 0 40px rgba(126,184,247,0.4); margin-bottom: 18px; }
+    .title-sub { font-size: 1.3rem; color: #99b; opacity: 0.85; margin-top: 8px; }
+    .slide-label { font-size: 0.85rem; letter-spacing: 3px; text-transform: uppercase; color: #7eb8f7; opacity: 0.7; margin-bottom: 20px; }
+    /* Content slides */
+    h2 { font-size: 2.4rem; font-weight: 700; margin-bottom: 36px; color: #7eb8f7; text-shadow: 0 0 20px rgba(126,184,247,0.25); max-width: 82%; text-align: ${isRtl ? 'right' : 'left'}; }
+    ul { list-style: none; max-width: 76%; }
+    li { font-size: 1.25rem; padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.07); color: #ccd; display: flex; align-items: center; gap: 14px; }
+    li::before { content: '▶'; color: #7eb8f7; font-size: 0.65rem; flex-shrink: 0; }
+    /* Speaker notes (hidden visually, toggle with N key) */
+    .speaker-notes { display: none; position: absolute; bottom: 70px; ${isRtl ? 'right' : 'left'}: 80px; font-size: 0.85rem; color: #778; font-style: italic; max-width: 60%; }
+    .notes-visible .speaker-notes { display: block; }
+    /* Nav */
+    .nav { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; z-index: 10; }
+    .nav button { background: rgba(126,184,247,0.12); border: 1px solid rgba(126,184,247,0.35); color: #7eb8f7; padding: 9px 22px; border-radius: 28px; cursor: pointer; font-size: 0.95rem; transition: all 0.2s; }
+    .nav button:hover { background: rgba(126,184,247,0.28); }
+    /* Progress bar */
+    .progress { position: fixed; bottom: 0; left: 0; height: 3px; background: linear-gradient(90deg, #7eb8f7, #a78bfa); transition: width 0.35s ease; }
   </style>
 </head>
 <body>
-  <div class="presentation">
+  <div class="presentation" id="pres">
     ${slidesHtml}
     <div class="nav">
-      <button id="prev">&#8592; הקודם</button>
-      <button id="next">הבא &#8594;</button>
+      <button id="prev">&#8592; ${isRtl ? 'הקודם' : 'Prev'}</button>
+      <button id="next">${isRtl ? 'הבא' : 'Next'} &#8594;</button>
     </div>
     <div class="progress" id="progress"></div>
   </div>
   <script>
-    let current = 0;
+    let cur = 0;
     const slides = document.querySelectorAll('.slide');
     const total  = slides.length;
     function show(n) {
-      slides[current].classList.remove('active');
-      current = (n + total) % total;
-      slides[current].classList.add('active');
-      document.getElementById('progress').style.width = ((current + 1) / total * 100) + '%';
+      slides[cur].classList.remove('active');
+      cur = (n + total) % total;
+      slides[cur].classList.add('active');
+      document.getElementById('progress').style.width = ((cur + 1) / total * 100) + '%';
     }
-    document.getElementById('next').onclick = () => show(current + 1);
-    document.getElementById('prev').onclick = () => show(current - 1);
+    document.getElementById('next').onclick = () => show(cur + 1);
+    document.getElementById('prev').onclick = () => show(cur - 1);
     document.addEventListener('keydown', e => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') show(current + 1);
-      if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   show(current - 1);
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') show(cur + 1);
+      if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')  show(cur - 1);
+      if (e.key === 'n' || e.key === 'N') document.getElementById('pres').classList.toggle('notes-visible');
     });
     show(0);
   </script>
@@ -1090,9 +1203,9 @@ Repeat for all ${slidesN} slides. Keep bullet points concise (max 8 words each).
 
         bot.sendMessage(chatId, `🌐 בונה דף נחיתה ל-${bizName}...`);
 
-        const copyPrompt = `Create Hebrew landing page copy for "${bizName}" — ${bizDesc}.
-Return EXACTLY this format:
-HERO_HEADLINE: <compelling 5-8 word headline>
+        const copyPrompt = `Create professional Hebrew landing page copy for "${bizName}" — ${bizDesc}.
+Return EXACTLY this format (no extra text):
+HERO_HEADLINE: <compelling 5-8 word Hebrew headline>
 HERO_SUBTITLE: <supporting subtitle, 1 sentence>
 VALUE_1_TITLE: <benefit title>
 VALUE_1_TEXT: <1 sentence description>
@@ -1100,7 +1213,22 @@ VALUE_2_TITLE: <benefit title>
 VALUE_2_TEXT: <1 sentence description>
 VALUE_3_TITLE: <benefit title>
 VALUE_3_TEXT: <1 sentence description>
-CTA_HEADLINE: <closing call to action headline>`;
+CTA_HEADLINE: <closing call to action headline>
+TEST_1_NAME: <realistic Israeli first+last name>
+TEST_1_ROLE: <job title, company>
+TEST_1_QUOTE: <realistic 1-2 sentence testimonial about ${bizName}>
+TEST_2_NAME: <realistic Israeli first+last name>
+TEST_2_ROLE: <job title, company>
+TEST_2_QUOTE: <realistic 1-2 sentence testimonial about ${bizName}>
+TEST_3_NAME: <realistic Israeli first+last name>
+TEST_3_ROLE: <job title, company>
+TEST_3_QUOTE: <realistic 1-2 sentence testimonial about ${bizName}>
+FAQ_1_Q: <common question about ${bizName}>
+FAQ_1_A: <clear answer, 1-2 sentences>
+FAQ_2_Q: <common question about ${bizName}>
+FAQ_2_A: <clear answer, 1-2 sentences>
+FAQ_3_Q: <common question about ${bizName}>
+FAQ_3_A: <clear answer, 1-2 sentences>`;
 
         const copyRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
@@ -1122,13 +1250,30 @@ CTA_HEADLINE: <closing call to action headline>`;
         const val3Title     = extractLine('VALUE_3_TITLE')  || 'תוצאות';
         const val3Text      = extractLine('VALUE_3_TEXT')   || 'תוצאות מוכחות ללקוחות';
         const ctaHeadline   = extractLine('CTA_HEADLINE')   || 'מוכנים להתחיל?';
+        // Testimonials
+        const t1Name  = extractLine('TEST_1_NAME')  || 'דנה לוי';
+        const t1Role  = extractLine('TEST_1_ROLE')  || 'מנכ"לית, חברת ABC';
+        const t1Quote = extractLine('TEST_1_QUOTE') || `${bizName} שינו לנו את כל התמונה. תוצאות מדהימות!`;
+        const t2Name  = extractLine('TEST_2_NAME')  || 'אמיר כהן';
+        const t2Role  = extractLine('TEST_2_ROLE')  || 'יזם, סטארטאפ XYZ';
+        const t2Quote = extractLine('TEST_2_QUOTE') || 'שירות מקצועי ומהיר. ממליץ בחום לכל עסק.';
+        const t3Name  = extractLine('TEST_3_NAME')  || 'מיכל ברק';
+        const t3Role  = extractLine('TEST_3_ROLE')  || 'בעלת עסק, Studio M';
+        const t3Quote = extractLine('TEST_3_QUOTE') || 'עובדים איתם כבר שנתיים. פשוט מצוינים בכל מה שעושים.';
+        // FAQ
+        const faq1Q   = extractLine('FAQ_1_Q') || `מה כולל השירות של ${bizName}?`;
+        const faq1A   = extractLine('FAQ_1_A') || 'השירות כולל ייעוץ מקצועי, ליווי מלא ותמיכה לאורך כל הדרך.';
+        const faq2Q   = extractLine('FAQ_2_Q') || 'כמה זמן לוקח להתחיל?';
+        const faq2A   = extractLine('FAQ_2_A') || 'אנחנו מתחילים בתוך 48 שעות ממועד אישור ההזמנה.';
+        const faq3Q   = extractLine('FAQ_3_Q') || 'האם יש אחריות?';
+        const faq3A   = extractLine('FAQ_3_A') || 'בהחלט — אנו עומדים מאחורי כל עבודה עם אחריות מלאה.';
 
         const colorMap = {
-          blue:   { primary: '#1a73e8', dark: '#0d47a1', gradient: 'linear-gradient(135deg, #1a73e8, #0d47a1)' },
-          green:  { primary: '#2e7d32', dark: '#1b5e20', gradient: 'linear-gradient(135deg, #43a047, #2e7d32)' },
-          purple: { primary: '#6a1b9a', dark: '#4a148c', gradient: 'linear-gradient(135deg, #8e24aa, #6a1b9a)' },
-          orange: { primary: '#e65100', dark: '#bf360c', gradient: 'linear-gradient(135deg, #f4511e, #e65100)' },
-          dark:   { primary: '#212121', dark: '#000000', gradient: 'linear-gradient(135deg, #424242, #212121)' },
+          blue:   { primary: '#1a73e8', dark: '#0d47a1', light: '#e8f0fe', gradient: 'linear-gradient(135deg, #1a73e8, #0d47a1)' },
+          green:  { primary: '#16a34a', dark: '#15803d', light: '#f0fdf4', gradient: 'linear-gradient(135deg, #22c55e, #16a34a)' },
+          purple: { primary: '#7c3aed', dark: '#6d28d9', light: '#f5f3ff', gradient: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' },
+          orange: { primary: '#ea580c', dark: '#c2410c', light: '#fff7ed', gradient: 'linear-gradient(135deg, #f97316, #ea580c)' },
+          dark:   { primary: '#374151', dark: '#1f2937', light: '#f9fafb', gradient: 'linear-gradient(135deg, #4b5563, #1f2937)' },
         };
         const c = colorMap[color] || colorMap.blue;
 
@@ -1141,7 +1286,14 @@ CTA_HEADLINE: <closing call to action headline>`;
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${bizName}</title>
+  <title>${bizName} — ${heroSubtitle}</title>
+  <meta name="description" content="${heroSubtitle}">
+  <meta name="keywords" content="${bizName}, ${services.slice(0,3).join(', ')}">
+  <meta property="og:title" content="${bizName}">
+  <meta property="og:description" content="${heroSubtitle}">
+  <meta property="og:type" content="website">
+  <!-- Google Analytics placeholder -->
+  <!-- <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script> -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; color: #222; direction: rtl; }
@@ -1152,41 +1304,65 @@ CTA_HEADLINE: <closing call to action headline>`;
     .nav-cta { background: ${c.primary}; color: #fff; padding: 10px 24px; border-radius: 25px; font-weight: 600; font-size: 0.95rem; transition: opacity 0.2s; }
     .nav-cta:hover { opacity: 0.85; }
     /* Hero */
-    .hero { background: ${c.gradient}; color: #fff; padding: 100px 40px; text-align: center; }
-    .hero h1 { font-size: 2.8rem; font-weight: 800; margin-bottom: 20px; line-height: 1.2; }
-    .hero p { font-size: 1.2rem; opacity: 0.9; max-width: 600px; margin: 0 auto 36px; }
-    .hero-btn { background: #fff; color: ${c.primary}; padding: 16px 40px; border-radius: 30px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s; }
-    .hero-btn:hover { transform: translateY(-2px); }
+    .hero { background: ${c.gradient}; color: #fff; padding: 110px 40px; text-align: center; }
+    .hero h1 { font-size: 3rem; font-weight: 800; margin-bottom: 20px; line-height: 1.2; }
+    .hero p { font-size: 1.2rem; opacity: 0.9; max-width: 620px; margin: 0 auto 38px; }
+    .hero-btn { background: #fff; color: ${c.primary}; padding: 16px 44px; border-radius: 32px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s, box-shadow 0.2s; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+    .hero-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,0.2); }
+    /* Container */
+    .container { max-width: 1100px; margin: 0 auto; }
+    section h2 { text-align: center; font-size: 2rem; color: ${c.primary}; margin-bottom: 44px; }
     /* Values */
     .values { padding: 80px 40px; background: #f8f9fa; }
-    .container { max-width: 1100px; margin: 0 auto; }
-    .values h2 { text-align: center; font-size: 2rem; color: ${c.primary}; margin-bottom: 48px; }
     .values-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; }
-    .value-card { background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 2px 16px rgba(0,0,0,0.07); border-top: 4px solid ${c.primary}; }
+    .value-card { background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 2px 16px rgba(0,0,0,0.06); border-top: 4px solid ${c.primary}; }
     .value-card h3 { color: ${c.primary}; font-size: 1.2rem; margin-bottom: 12px; }
-    .value-card p { color: #555; line-height: 1.6; }
+    .value-card p { color: #555; line-height: 1.65; }
     /* Services */
-    .services { padding: 60px 40px; background: #fff; }
-    .services h2 { text-align: center; font-size: 2rem; color: ${c.primary}; margin-bottom: 36px; }
+    .services { padding: 64px 40px; background: #fff; }
     .services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .service-card { background: #f0f4ff; border-radius: 12px; padding: 20px 24px; display: flex; align-items: center; gap: 12px; font-size: 1rem; font-weight: 500; }
-    .service-card .icon { color: ${c.primary}; font-size: 1.2rem; font-weight: 700; }
+    .service-card { background: ${c.light}; border-radius: 12px; padding: 20px 24px; display: flex; align-items: center; gap: 12px; font-size: 1rem; font-weight: 500; border: 1px solid ${c.primary}22; }
+    .service-card .icon { color: ${c.primary}; font-size: 1.1rem; font-weight: 800; }
+    /* Testimonials */
+    .testimonials { padding: 80px 40px; background: ${c.light}; }
+    .testimonials-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+    .testimonial-card { background: #fff; border-radius: 16px; padding: 28px 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); position: relative; }
+    .testimonial-card::before { content: '"'; font-size: 4rem; color: ${c.primary}; opacity: 0.15; position: absolute; top: 10px; right: 24px; line-height: 1; font-family: Georgia, serif; }
+    .testimonial-quote { color: #444; line-height: 1.7; margin-bottom: 20px; font-style: italic; }
+    .testimonial-author { display: flex; align-items: center; gap: 12px; }
+    .author-avatar { width: 42px; height: 42px; border-radius: 50%; background: ${c.gradient}; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 1rem; flex-shrink: 0; }
+    .author-name { font-weight: 700; color: #222; font-size: 0.95rem; }
+    .author-role { color: #888; font-size: 0.82rem; }
+    /* FAQ */
+    .faq { padding: 80px 40px; background: #fff; }
+    .faq-list { max-width: 800px; margin: 0 auto; }
+    .faq-item { border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+    .faq-q { padding: 18px 24px; font-weight: 600; cursor: pointer; display: flex; justify-content: space-between; align-items: center; color: #222; transition: background 0.2s; }
+    .faq-q:hover { background: ${c.light}; }
+    .faq-q .arrow { color: ${c.primary}; font-size: 1.1rem; transition: transform 0.2s; }
+    .faq-a { padding: 0 24px 18px; color: #555; line-height: 1.7; display: none; }
+    .faq-item.open .faq-a { display: block; }
+    .faq-item.open .arrow { transform: rotate(180deg); }
     /* CTA */
     .cta-section { background: ${c.gradient}; color: #fff; padding: 80px 40px; text-align: center; }
-    .cta-section h2 { font-size: 2.2rem; margin-bottom: 16px; }
+    .cta-section h2 { font-size: 2.2rem; margin-bottom: 16px; color: #fff; }
     .cta-section p { font-size: 1.1rem; opacity: 0.9; margin-bottom: 32px; }
-    .cta-btn { background: #fff; color: ${c.primary}; padding: 16px 48px; border-radius: 30px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s; }
+    .cta-btn { background: #fff; color: ${c.primary}; padding: 16px 48px; border-radius: 32px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s; }
     .cta-btn:hover { transform: translateY(-2px); }
     /* Contact */
-    .contact { padding: 60px 40px; background: #f8f9fa; text-align: center; }
-    .contact h2 { font-size: 1.8rem; color: ${c.primary}; margin-bottom: 24px; }
+    .contact { padding: 64px 40px; background: #f8f9fa; text-align: center; }
+    .contact h2 { color: ${c.primary}; margin-bottom: 28px; }
     .contact-form { max-width: 480px; margin: 0 auto; }
-    .contact-form input, .contact-form textarea { width: 100%; border: 2px solid #e0e6ef; border-radius: 10px; padding: 12px 16px; font-size: 1rem; margin-bottom: 14px; font-family: inherit; direction: rtl; }
+    .contact-form input, .contact-form textarea { width: 100%; border: 2px solid #e0e6ef; border-radius: 10px; padding: 12px 16px; font-size: 1rem; margin-bottom: 14px; font-family: inherit; direction: rtl; transition: border-color 0.2s; }
     .contact-form input:focus, .contact-form textarea:focus { outline: none; border-color: ${c.primary}; }
-    .contact-form button { width: 100%; background: ${c.primary}; color: #fff; border: none; border-radius: 10px; padding: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; }
+    .contact-form button { width: 100%; background: ${c.primary}; color: #fff; border: none; border-radius: 10px; padding: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+    .contact-form button:hover { background: ${c.dark}; }
+    /* WhatsApp floating button */
+    .whatsapp-btn { position: fixed; bottom: 28px; left: 28px; width: 58px; height: 58px; background: #25d366; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(37,211,102,0.4); font-size: 1.6rem; z-index: 999; transition: transform 0.2s; text-decoration: none; }
+    .whatsapp-btn:hover { transform: scale(1.1); }
     /* Footer */
-    footer { background: #222; color: #aaa; text-align: center; padding: 24px; font-size: 0.9rem; }
-    @media (max-width: 768px) { .hero h1 { font-size: 2rem; } nav { padding: 14px 20px; } .hero, .values, .services, .cta-section, .contact { padding: 60px 20px; } }
+    footer { background: #1f2937; color: #9ca3af; text-align: center; padding: 24px; font-size: 0.9rem; }
+    @media (max-width: 768px) { .hero h1 { font-size: 2.1rem; } nav { padding: 14px 20px; } .hero, .values, .testimonials, .faq, .cta-section, .contact { padding: 56px 20px; } }
   </style>
 </head>
 <body>
@@ -1194,11 +1370,13 @@ CTA_HEADLINE: <closing call to action headline>`;
     <span class="logo">${bizName}</span>
     <a href="#contact" class="nav-cta">${ctaText}</a>
   </nav>
+
   <section class="hero">
     <h1>${heroHeadline}</h1>
     <p>${heroSubtitle}</p>
     <a href="#contact" class="hero-btn">${ctaText} &rsaquo;</a>
   </section>
+
   <section class="values">
     <div class="container">
       <h2>למה לבחור בנו?</h2>
@@ -1209,23 +1387,82 @@ CTA_HEADLINE: <closing call to action headline>`;
       </div>
     </div>
   </section>
+
   ${servicesSection}
+
+  <section class="testimonials">
+    <div class="container">
+      <h2>מה הלקוחות אומרים</h2>
+      <div class="testimonials-grid">
+        <div class="testimonial-card">
+          <p class="testimonial-quote">${t1Quote}</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">${t1Name.charAt(0)}</div>
+            <div><div class="author-name">${t1Name}</div><div class="author-role">${t1Role}</div></div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <p class="testimonial-quote">${t2Quote}</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">${t2Name.charAt(0)}</div>
+            <div><div class="author-name">${t2Name}</div><div class="author-role">${t2Role}</div></div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <p class="testimonial-quote">${t3Quote}</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">${t3Name.charAt(0)}</div>
+            <div><div class="author-name">${t3Name}</div><div class="author-role">${t3Role}</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq">
+    <div class="container">
+      <h2>שאלות נפוצות</h2>
+      <div class="faq-list">
+        <div class="faq-item"><div class="faq-q">${faq1Q}<span class="arrow">▼</span></div><div class="faq-a">${faq1A}</div></div>
+        <div class="faq-item"><div class="faq-q">${faq2Q}<span class="arrow">▼</span></div><div class="faq-a">${faq2A}</div></div>
+        <div class="faq-item"><div class="faq-q">${faq3Q}<span class="arrow">▼</span></div><div class="faq-a">${faq3A}</div></div>
+      </div>
+    </div>
+  </section>
+
   <section class="cta-section">
     <h2>${ctaHeadline}</h2>
     <p>${bizDesc || 'אנחנו כאן כדי לעזור לך להצליח'}</p>
     <a href="#contact" class="cta-btn">${ctaText}</a>
   </section>
+
   <section class="contact" id="contact">
     <h2>צור קשר</h2>
     <div class="contact-form">
-      <input type="text" placeholder="שם מלא" />
-      <input type="email" placeholder="אימייל" />
+      <input type="text" placeholder="שם מלא" required />
+      <input type="email" placeholder="אימייל" required />
       <input type="tel" placeholder="טלפון" />
       <textarea rows="4" placeholder="איך נוכל לעזור?"></textarea>
-      <button onclick="alert('תודה! נחזור אליך בהקדם 🙏')">${ctaText}</button>
+      <button onclick="this.textContent='✅ נשלח! נחזור אליך בהקדם';this.disabled=true;">${ctaText}</button>
     </div>
   </section>
+
   <footer>&copy; ${new Date().getFullYear()} ${bizName}. כל הזכויות שמורות.</footer>
+
+  <!-- WhatsApp floating button -->
+  <a href="https://wa.me/972500000000" class="whatsapp-btn" target="_blank" title="WhatsApp">💬</a>
+
+  <script>
+    // FAQ accordion
+    document.querySelectorAll('.faq-q').forEach(q => {
+      q.addEventListener('click', () => {
+        const item = q.parentElement;
+        const wasOpen = item.classList.contains('open');
+        document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+        if (!wasOpen) item.classList.add('open');
+      });
+    });
+  </script>
 </body>
 </html>`;
 
