@@ -841,29 +841,45 @@ async function executeTool(name, args, ctx) {
         const lang        = args.language || 'he';
         const langLabel   = lang === 'he' ? 'Hebrew' : 'English';
 
-        const userContext = `You are a content writer for Shilo Alkobi, founder of Digital Web — an Israeli web development & SaaS company.
-He also builds CreatorShield (influencer protection platform) and Vibe (AI app builder).
-Write in first person as Shilo. Reflect his expertise in web dev, AI, and SaaS.
-Always make the content unique — never use generic filler phrases.`;
+        const userContext = `You are writing social media content for Shilo Alkobi, founder of Digital Web.
+
+FACTS about Shilo and Digital Web:
+- Full name: Shilo Alkobi (שילה אלקובי)
+- Location: Rishon LeZion, Israel
+- Company: Digital Web — builds WordPress sites, React/Next.js apps, eCommerce, B2B solutions
+- Also builds: CreatorShield (influencer protection platform), Vibe (AI app builder), personal AI bot
+- Expertise: web dev, AI tools, SaaS, automation, WordPress security
+- Audience: Israeli businesses and entrepreneurs
+- Language: Hebrew (unless explicitly requested in English)
+
+RULES:
+- Write ONLY about the specific topic given — do NOT add generic industry content
+- Write as Shilo in first person ("אני", "אצלנו", "בדיגיטל ווב")
+- Make it personal, specific, and authentic — as if posted from his real account
+- For Instagram: 150-200 words + emojis + 10-12 relevant hashtags including #digitalweb #שילהאלקובי
+- Never start with generic openers like "בעולם הדיגיטלי של היום..."`;
+
+        // Use system role for Gemini so context is always respected
+        const systemMsg = { role: 'system', content: userContext };
 
         const toneMap = { professional: 'professional and authoritative', casual: 'friendly and conversational', funny: 'witty and humorous', inspirational: 'motivational and empowering' };
         const toneLabel = toneMap[tone] || tone;
 
         const typePrompts = {
-          instagram: `${userContext}\n\nWrite a compelling Instagram post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Hook sentence (grab attention immediately)\n2. Main message (2-4 lines with relevant emojis throughout)\n3. Call to action (1 line)\n4. 12-15 relevant hashtags on a new line`,
-          facebook:  `${userContext}\n\nWrite an engaging Facebook post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Opening hook (1-2 lines)\n2. Story or value (3-5 lines)\n3. Question or CTA to encourage comments\n4. 3-5 hashtags`,
-          email:     `${userContext}\n\nWrite a professional client email in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nFormat:\nSubject: <compelling subject line>\n\n<greeting>\n\n<opening paragraph — establish context>\n\n<main body — 2-3 paragraphs with value>\n\n<closing paragraph + clear next step>\n\n<signature: Shilo Alkobi | Digital Web | digitalweb.co.il>`,
-          bio:       `${userContext}\n\nWrite a professional social media bio in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\n2-3 punchy sentences. Include: who he is, what he builds, what makes him unique. Add 3-5 relevant emojis.`,
-          headline:  `${userContext}\n\nGenerate 5 unique, click-worthy headlines in ${langLabel} for: "${topic}".\nTone: ${toneLabel}.\nVariety: one question, one bold claim, one how-to, one number-based, one emotional.\nNumber them 1-5.`,
-          whatsapp:  `${userContext}\n\nWrite a WhatsApp business message in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nKeep it under 150 words. Conversational but professional. Include relevant emoji. Clear CTA at end.`,
+          instagram: `Write a compelling Instagram post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Hook sentence (grab attention immediately — mention the specific topic)\n2. Main message (2-4 lines with relevant emojis throughout)\n3. Call to action (1 line, first person)\n4. 10-12 relevant hashtags on a new line including #digitalweb #שילהאלקובי #פיתוחאתרים`,
+          facebook:  `Write an engaging Facebook post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Opening hook (1-2 lines, specific to the topic)\n2. Story or value from Shilo's personal experience (3-5 lines)\n3. Question or CTA to encourage comments\n4. 3-5 hashtags`,
+          email:     `Write a professional client email in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nFormat:\nSubject: <compelling subject line specific to "${topic}">\n\n<greeting>\n\n<opening paragraph — establish context related to "${topic}">\n\n<main body — 2-3 paragraphs with value, based on Shilo's expertise>\n\n<closing paragraph + clear next step>\n\n<signature: שילה אלקובי | Digital Web | digitalweb.co.il>`,
+          bio:       `Write a professional social media bio in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\n2-3 punchy sentences. Specific to the topic. Include: who Shilo is, what he builds, what makes him unique. Add 3-5 relevant emojis.`,
+          headline:  `Generate 5 unique, click-worthy headlines in ${langLabel} for: "${topic}".\nTone: ${toneLabel}.\nMust be specific to "${topic}" — not generic.\nVariety: one question, one bold claim, one how-to, one number-based, one emotional.\nNumber them 1-5.`,
+          whatsapp:  `Write a WhatsApp business message in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nUnder 150 words. Conversational but professional. Specific to "${topic}". Relevant emoji. Clear CTA at end.`,
         };
 
-        const prompt = typePrompts[contentType] || typePrompts.instagram;
+        const userPrompt = typePrompts[contentType] || typePrompts.instagram;
         bot.sendMessage(chatId, `✍️ כותב תוכן — ${contentType}...`);
 
         const contentRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
-          messages: [{ role: 'user', content: prompt }],
+          messages: [systemMsg, { role: 'user', content: userPrompt }],
           temperature: 0.85,
         });
         const generated = contentRes.choices[0]?.message?.content || 'לא הצלחתי ליצור תוכן.';
@@ -1012,11 +1028,20 @@ Rules:
       document.getElementById('progressBar').style.width = (filled / inputs.length * 100) + '%';
     }
     inputs.forEach(i => i.addEventListener('input', updateProgress));
-    form.addEventListener('submit', function(e) {
+    form.addEventListener('submit', async function(e) {
       e.preventDefault();
       let valid = true;
       inputs.forEach(i => { if (!i.value.trim()) { i.style.borderColor = '#ef4444'; valid = false; } else { i.style.borderColor = ''; } });
       if (!valid) return;
+      const data = {};
+      inputs.forEach(i => { if (i.name) data[i.name] = i.value; });
+      try {
+        await fetch('https://lifepilot-bot.onrender.com/api/form-submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: '${formTitle}', data, chatId: '${chatId}' })
+        });
+      } catch(err) { /* silent fail — form still shows success */ }
       this.style.display = 'none';
       document.getElementById('successMsg').style.display = 'block';
     });
@@ -1032,8 +1057,10 @@ Rules:
       case 'generate_presentation': {
         const presTitle  = args.title || args.topic || 'מצגת';
         const presTopic  = args.topic || args.title || 'נושא כללי';
-        const contentSlides = Math.max(1, (Number(args.slides_count) || 5) - 2); // title + thank you = 2 fixed
-        const totalSlides   = contentSlides + 2;
+        const requested      = Number(args.slides_count) || 5;
+        const contentSlides  = requested <= 2 ? 1 : Math.max(1, requested - 2);
+        const includeThankyou = requested > 2;
+        const totalSlides    = contentSlides + 1 + (includeThankyou ? 1 : 0);
         const presLang      = args.language || 'he';
         const isRtl         = presLang === 'he';
         const dateStr       = new Date().toISOString().slice(0,10);
@@ -1083,11 +1110,11 @@ Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 
           contentSlideData.push({ title: `שקף ${contentSlideData.length+1}`, bullets: ['תוכן כאן'], notes: '' });
         }
 
-        // Build all slides: title + content + thank-you
+        // Build all slides: title + content + optional thank-you
         const allSlides = [
           { type: 'title', title: presTitle, subtitle: presSubtitle, notes: '' },
           ...contentSlideData.slice(0, contentSlides).map(s => ({ type: 'content', ...s })),
-          { type: 'thankyou', title: isRtl ? 'תודה רבה!' : 'Thank You!', subtitle: isRtl ? 'שאלות ותגובות' : 'Questions & Discussion', notes: '' },
+          ...(includeThankyou ? [{ type: 'thankyou', title: isRtl ? 'תודה רבה!' : 'Thank You!', subtitle: isRtl ? 'שאלות ותגובות' : 'Questions & Discussion', notes: '' }] : []),
         ];
 
         const buildSlideHtml = (s, idx, total) => {
@@ -1443,7 +1470,7 @@ FAQ_3_A: <clear answer, 1-2 sentences>`;
       <input type="email" placeholder="אימייל" required />
       <input type="tel" placeholder="טלפון" />
       <textarea rows="4" placeholder="איך נוכל לעזור?"></textarea>
-      <button onclick="this.textContent='✅ נשלח! נחזור אליך בהקדם';this.disabled=true;">${ctaText}</button>
+      <button id="contactBtn">${ctaText}</button>
     </div>
   </section>
 
@@ -1461,6 +1488,22 @@ FAQ_3_A: <clear answer, 1-2 sentences>`;
         document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
         if (!wasOpen) item.classList.add('open');
       });
+    });
+    // Contact form submission → Telegram
+    document.getElementById('contactBtn').addEventListener('click', async function() {
+      const inputs = document.querySelectorAll('.contact-form input, .contact-form textarea');
+      const data = {};
+      inputs.forEach(i => { if (i.value.trim()) data[i.placeholder] = i.value; });
+      this.textContent = '⏳ שולח...';
+      this.disabled = true;
+      try {
+        await fetch('https://lifepilot-bot.onrender.com/api/form-submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'יצירת קשר — ${bizName}', data, chatId: '${chatId}' })
+        });
+      } catch(e) {}
+      this.textContent = '✅ נשלח! נחזור אליך בהקדם 🙏';
     });
   </script>
 </body>
