@@ -59,4 +59,46 @@ function getOverdueLeads() {
   );
 }
 
-module.exports = { saveLead, updateLeadStatus, snoozeLead, getNewLeads, getOverdueLeads, loadLeads };
+function updateLead(idOrName, updates) {
+  const leads = loadLeads();
+  const q = String(idOrName || '').toLowerCase();
+  const lead = leads.find(l =>
+    l.id === idOrName ||
+    Object.values(l.data).some(v => String(v).toLowerCase().includes(q))
+  );
+  if (!lead) return null;
+  if (updates.status) lead.status = updates.status;
+  if (updates.notes)  lead.notes  = updates.notes;
+  lead.updatedAt = new Date().toISOString();
+  saveLeads(leads);
+  return lead;
+}
+
+function searchLeads(query) {
+  const q = String(query || '').toLowerCase();
+  return loadLeads().filter(l =>
+    Object.values(l.data).some(v => String(v).toLowerCase().includes(q)) ||
+    l.title.toLowerCase().includes(q) ||
+    (l.notes || '').toLowerCase().includes(q)
+  );
+}
+
+function getLeadsSummary() {
+  const leads   = loadLeads();
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return {
+    total:    leads.length,
+    new:      leads.filter(l => l.status === 'new').length,
+    closed:   leads.filter(l => l.status === 'closed').length,
+    reminded: leads.filter(l => l.status === 'reminded').length,
+    thisWeek: leads.filter(l => new Date(l.createdAt).getTime() > weekAgo).length,
+    convRate: leads.length > 0
+      ? Math.round(leads.filter(l => l.status === 'closed').length / leads.length * 100)
+      : 0,
+  };
+}
+
+module.exports = {
+  saveLead, updateLeadStatus, snoozeLead, getNewLeads, getOverdueLeads, loadLeads,
+  updateLead, searchLeads, getLeadsSummary,
+};

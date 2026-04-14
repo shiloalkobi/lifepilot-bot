@@ -353,8 +353,11 @@ const TOOL_DECLARATIONS = [
   { name: 'generate_form', description: 'צור טופס HTML מותאם אישית ושלח כקובץ.', parameters: { type: 'object', properties: { title: { type: 'string' }, fields: { type: 'array', items: { type: 'string' } }, submit_text: { type: 'string' } }, required: ['title','fields'] } },
   // Presentation Generator (#29)
   { name: 'generate_presentation', description: 'צור מצגת HTML עם שקפים על נושא נתון.', parameters: { type: 'object', properties: { title: { type: 'string' }, topic: { type: 'string' }, slides_count: { type: 'number' }, language: { type: 'string', enum: ['he','en'] } }, required: ['title','topic'] } },
-  // Lead Management (#42, #43)
-  { name: 'get_leads', description: 'הצג רשימת לידים (הגשות טפסים) עם סטטוס.', parameters: { type: 'object', properties: { status: { type: 'string', enum: ['all','new','closed','reminded'], description: 'ברירת מחדל: all' } }, required: [] } },
+  // Lead Management (#42, #43, #44)
+  { name: 'get_leads',      description: 'הצג רשימת לידים (הגשות טפסים) עם סטטוס.', parameters: { type: 'object', properties: { status: { type: 'string', enum: ['all','new','closed','reminded'], description: 'ברירת מחדל: all' } }, required: [] } },
+  { name: 'update_lead',    description: 'עדכן ליד: סטטוס, הערה. "סמן ישראל כנסגר" / "הוסף הערה לשילה".', parameters: { type: 'object', properties: { name_or_id: { type: 'string', description: 'שם או ID של הליד' }, status: { type: 'string', enum: ['new','contacted','closed','reminded'] }, notes: { type: 'string' } }, required: ['name_or_id'] } },
+  { name: 'search_leads',   description: 'חפש לידים לפי שם, מייל, טלפון, או הערה.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+  { name: 'leads_summary',  description: 'סיכום סטטיסטי של לידים: כמה חדשים, נסגרו, השבוע, אחוז המרה.', parameters: { type: 'object', properties: {}, required: [] } },
   // Landing Page Generator (#27)
   { name: 'generate_landing_page', description: 'צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] } }, required: ['business_name'] } },
 ];
@@ -418,8 +421,9 @@ const EXTENDED_KEYWORDS = [
   'מצגת', 'שקפים', 'presentation', 'slides',
   // Landing Page (#27)
   'דף נחיתה', 'landing page', 'landing',
-  // Leads (#42, #43)
+  // Leads (#42, #43, #44)
   'לידים', 'ליד', 'leads', 'lead', 'crm',
+  'עדכן ליד', 'סמן ליד', 'הערה לליד', 'חפש ליד', 'סיכום לידים', 'סטטיסטיקות לידים',
 ];
 
 function selectTools(userText) {
@@ -1245,6 +1249,44 @@ Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 
         const total = allLeads.length;
         const newCount = allLeads.filter(l => l.status === 'new').length;
         return `📋 <b>לידים</b> (${total} סה"כ, ${newCount} 🆕)\n\n` + lines.join('\n\n');
+      }
+
+      case 'update_lead': {
+        const { updateLead } = require('./leads');
+        const result = updateLead(args.name_or_id, { status: args.status, notes: args.notes });
+        if (!result) return `❌ לא נמצא ליד עבור "${args.name_or_id}"`;
+        const name = result.data?.['שם'] || result.data?.name || result.id;
+        let msg = `✅ <b>${name}</b> עודכן\n`;
+        if (args.status) msg += `סטטוס: ${args.status}\n`;
+        if (args.notes)  msg += `הערה: ${args.notes}\n`;
+        return msg;
+      }
+
+      case 'search_leads': {
+        const { searchLeads } = require('./leads');
+        const results = searchLeads(args.query || '');
+        if (!results.length) return `🔍 לא נמצאו לידים עבור "${args.query}"`;
+        const statusEmoji = { new: '🆕', closed: '✅', reminded: '⏰', contacted: '📞' };
+        return `🔍 <b>תוצאות: ${results.length}</b>\n\n` + results.map(l => {
+          const name  = l.data?.['שם'] || l.data?.name || '—';
+          const email = l.data?.['אימייל'] || l.data?.email || '';
+          const phone = l.data?.['טלפון'] || l.data?.phone || '';
+          const notes = l.notes ? `\n   📝 ${l.notes}` : '';
+          const date  = new Date(l.createdAt).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
+          return `${statusEmoji[l.status] || '•'} <b>${name}</b> (${date})\n   ${[email, phone].filter(Boolean).join(' | ')}${notes}`;
+        }).join('\n\n');
+      }
+
+      case 'leads_summary': {
+        const { getLeadsSummary } = require('./leads');
+        const s = getLeadsSummary();
+        return `📊 <b>סיכום לידים</b>\n\n` +
+          `סה"כ: ${s.total}\n` +
+          `🆕 חדשים: ${s.new}\n` +
+          `📞 טופלו/נסגרו: ${s.closed}\n` +
+          `⏰ הופנו: ${s.reminded}\n` +
+          `📅 השבוע: ${s.thisWeek}\n` +
+          `📈 אחוז המרה: ${s.convRate}%`;
       }
 
       // ── Landing Page Generator (#27) ──────────────────────────────────────
