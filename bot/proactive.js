@@ -145,7 +145,34 @@ function startProactiveScheduler(bot, chatId) {
     } catch (e) { console.warn('[Proactive] stocks error:', e.message); }
   }, { timezone: 'Asia/Jerusalem' });
 
-  console.log('[Proactive] Scheduler started — 3 jobs (Shabbat eve, health reminder, weekly plan) + stock alerts every 30min + Shabbat mode active');
+  // ── Lead overdue reminder — every 30 min ──────────────────────────────────
+  cron.schedule('*/30 * * * *', async () => {
+    try {
+      const { getOverdueLeads, updateLeadStatus } = require('./leads');
+      const overdue = getOverdueLeads();
+      for (const lead of overdue) {
+        const name    = lead.data?.['שם'] || lead.data?.name || 'לא ידוע';
+        const hoursAgo = Math.round((Date.now() - new Date(lead.createdAt).getTime()) / 3600000);
+        const timeLabel = hoursAgo < 24 ? `לפני ${hoursAgo} שעות` : `לפני ${Math.round(hoursAgo/24)} ימים`;
+        await bot.sendMessage(chatId,
+          `⚠️ <b>ליד לא מטופל!</b>\n\n<b>${name}</b> מ-${lead.title}\n${timeLabel}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '✅ טיפלתי',       callback_data: `lead_done_${lead.id}`   },
+                { text: '⏰ דחה 24 שעות',  callback_data: `lead_snooze_${lead.id}` },
+              ]],
+            },
+          }
+        );
+        // Mark as reminded so we don't spam
+        updateLeadStatus(lead.id, 'reminded');
+      }
+    } catch (e) { console.warn('[Proactive] lead reminder error:', e.message); }
+  }, { timezone: 'Asia/Jerusalem' });
+
+  console.log('[Proactive] Scheduler started — 3 jobs (Shabbat eve, health reminder, weekly plan) + stock alerts + lead reminders every 30min');
 }
 
 module.exports = { startProactiveScheduler, isPikudAlert };

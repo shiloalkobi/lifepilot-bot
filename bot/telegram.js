@@ -874,6 +874,67 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
+  // ── Lead management inline keyboard callbacks ──────────────────────────────
+  bot.on('callback_query', async (query) => {
+    const cbData = query.data || '';
+    const cbChat = query.message.chat.id;
+    const cbMsg  = query.message.message_id;
+    const { updateLeadStatus, snoozeLead, loadLeads } = require('./leads');
+
+    if (cbData.startsWith('lead_done_')) {
+      const id = cbData.replace('lead_done_', '');
+      updateLeadStatus(id, 'closed');
+      bot.answerCallbackQuery(query.id, { text: '✅ הליד סומן כטופל!' });
+      bot.editMessageReplyMarkup(
+        { inline_keyboard: [[{ text: '✅ טופל', callback_data: 'noop' }]] },
+        { chat_id: cbChat, message_id: cbMsg }
+      ).catch(() => {});
+      return;
+    }
+
+    if (cbData.startsWith('lead_snooze_')) {
+      const id = cbData.replace('lead_snooze_', '');
+      snoozeLead(id, 24);
+      bot.answerCallbackQuery(query.id, { text: '⏰ תזכורת נדחתה ל-24 שעות' });
+      bot.editMessageReplyMarkup(
+        { inline_keyboard: [[
+          { text: '✅ סמן כטופל',   callback_data: `lead_done_${id}`    },
+          { text: '⏰ נדחה ✓',      callback_data: 'noop'               },
+          { text: '📋 פרטים',       callback_data: `lead_details_${id}` },
+        ]] },
+        { chat_id: cbChat, message_id: cbMsg }
+      ).catch(() => {});
+      return;
+    }
+
+    if (cbData.startsWith('lead_details_')) {
+      const id   = cbData.replace('lead_details_', '');
+      const lead = loadLeads().find(l => l.id === id);
+      if (lead) {
+        const name  = lead.data?.['שם'] || lead.data?.name || '—';
+        const statusLabel = { new: '🆕 חדש', closed: '✅ טופל', reminded: '⏰ הופנה' }[lead.status] || lead.status;
+        let details = `📋 <b>פרטי ליד — ${name}</b>\n\n`;
+        details += `<b>סטטוס:</b> ${statusLabel}\n`;
+        details += `<b>טופס:</b> ${lead.title}\n`;
+        details += `<b>נוצר:</b> ${new Date(lead.createdAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}\n`;
+        details += `<b>תזכורת:</b> ${new Date(lead.followUpAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}\n`;
+        for (const [k, v] of Object.entries(lead.data || {})) {
+          details += `<b>${k}:</b> ${v}\n`;
+        }
+        bot.answerCallbackQuery(query.id);
+        bot.sendMessage(cbChat, details, { parse_mode: 'HTML' });
+      } else {
+        bot.answerCallbackQuery(query.id, { text: 'ליד לא נמצא' });
+      }
+      return;
+    }
+
+    // noop — silently ack
+    if (cbData === 'noop') {
+      bot.answerCallbackQuery(query.id).catch(() => {});
+    }
+  });
+
   console.log('✅ Telegram bot is running...');
   return bot;
 }

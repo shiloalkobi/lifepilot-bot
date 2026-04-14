@@ -385,19 +385,37 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // POST /api/form-submit — form submissions forwarded to Telegram
+  // POST /api/form-submit — form submissions forwarded to Telegram + saved as lead
   if (req.method === 'POST' && route === '/api/form-submit') {
     readJsonBody(req).then(b => {
       const { title, data, chatId: bodyChat } = b;
       const targetChat = bodyChat || process.env.TELEGRAM_CHAT_ID || mainChatId;
       if (!targetChat) return apiJson(res, { ok: false, e: 'no_chat_id' }, 400);
-      let msg = `📋 <b>הגשת טופס: ${title || 'טופס'}</b>\n\n`;
+
+      // Save to leads.json
+      const { saveLead } = require('./leads');
+      const lead = saveLead(title || 'טופס', data || {});
+
+      // Build message
+      let msg = `📋 <b>ליד חדש: ${title || 'טופס'}</b>\n\n`;
       for (const [k, v] of Object.entries(data || {})) {
         msg += `<b>${k}:</b> ${v}\n`;
       }
       msg += `\n<i>${new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}</i>`;
-      bot.sendMessage(targetChat, msg, { parse_mode: 'HTML' });
-      apiJson(res, { ok: true });
+
+      // Send with inline keyboard
+      bot.sendMessage(targetChat, msg, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ סמן כטופל',     callback_data: `lead_done_${lead.id}`    },
+            { text: '⏰ דחה 24 שעות',   callback_data: `lead_snooze_${lead.id}`  },
+            { text: '📋 פרטים',          callback_data: `lead_details_${lead.id}` },
+          ]],
+        },
+      });
+
+      apiJson(res, { ok: true, leadId: lead.id });
     }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
     return;
   }

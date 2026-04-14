@@ -353,6 +353,8 @@ const TOOL_DECLARATIONS = [
   { name: 'generate_form', description: 'צור טופס HTML מותאם אישית ושלח כקובץ.', parameters: { type: 'object', properties: { title: { type: 'string' }, fields: { type: 'array', items: { type: 'string' } }, submit_text: { type: 'string' } }, required: ['title','fields'] } },
   // Presentation Generator (#29)
   { name: 'generate_presentation', description: 'צור מצגת HTML עם שקפים על נושא נתון.', parameters: { type: 'object', properties: { title: { type: 'string' }, topic: { type: 'string' }, slides_count: { type: 'number' }, language: { type: 'string', enum: ['he','en'] } }, required: ['title','topic'] } },
+  // Lead Management (#42, #43)
+  { name: 'get_leads', description: 'הצג רשימת לידים (הגשות טפסים) עם סטטוס.', parameters: { type: 'object', properties: { status: { type: 'string', enum: ['all','new','closed','reminded'], description: 'ברירת מחדל: all' } }, required: [] } },
   // Landing Page Generator (#27)
   { name: 'generate_landing_page', description: 'צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] } }, required: ['business_name'] } },
 ];
@@ -416,6 +418,8 @@ const EXTENDED_KEYWORDS = [
   'מצגת', 'שקפים', 'presentation', 'slides',
   // Landing Page (#27)
   'דף נחיתה', 'landing page', 'landing',
+  // Leads (#42, #43)
+  'לידים', 'ליד', 'leads', 'lead', 'crm',
 ];
 
 function selectTools(userText) {
@@ -1219,6 +1223,28 @@ Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 
 
         fs.writeFileSync(tmpPath, presHtml, 'utf8');
         return `__FILE__:${tmpPath}`;
+      }
+
+      // ── Lead Management (#42, #43) ────────────────────────────────────────
+      case 'get_leads': {
+        const { loadLeads } = require('./leads');
+        const filterStatus = args.status || 'all';
+        const allLeads = loadLeads();
+        const filtered = (filterStatus === 'all' ? allLeads : allLeads.filter(l => l.status === filterStatus))
+          .slice(-20).reverse(); // newest first
+        if (!filtered.length) return `📋 אין לידים${filterStatus !== 'all' ? ` בסטטוס "${filterStatus}"` : ''}.`;
+        const statusEmoji = { new: '🆕', closed: '✅', reminded: '⏰' };
+        const lines = filtered.map(l => {
+          const name  = l.data?.['שם'] || l.data?.name || '—';
+          const email = l.data?.['אימייל'] || l.data?.email || '';
+          const phone = l.data?.['טלפון'] || l.data?.phone || '';
+          const date  = new Date(l.createdAt).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
+          const contact = [email, phone].filter(Boolean).join(' | ');
+          return `${statusEmoji[l.status] || '•'} <b>${name}</b> — ${l.title}\n   ${contact ? contact + ' | ' : ''}${date}`;
+        });
+        const total = allLeads.length;
+        const newCount = allLeads.filter(l => l.status === 'new').length;
+        return `📋 <b>לידים</b> (${total} סה"כ, ${newCount} 🆕)\n\n` + lines.join('\n\n');
       }
 
       // ── Landing Page Generator (#27) ──────────────────────────────────────
