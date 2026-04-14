@@ -862,8 +862,13 @@ function startBot(token, webhookUrl = null) {
       } else if (reply === '__CHART_SENT__' || reply === '__AUDIO_SENT__') {
         // Media already sent inside executeTool — nothing more to send
       } else {
-        bot.sendMessage(chatId, reply)
-          .catch(sendErr => console.error('[Telegram] sendMessage error:', sendErr.message));
+        const hasHtml = /<[^>]+>/.test(reply);
+        bot.sendMessage(chatId, reply, hasHtml ? { parse_mode: 'HTML' } : {})
+          .catch(() => {
+            // HTML parse failed — strip tags and resend as plain text
+            bot.sendMessage(chatId, reply.replace(/<[^>]*>/g, ''))
+              .catch(e => console.error('[Telegram] sendMessage error:', e.message));
+          });
       }
     } catch (err) {
       console.error('[Agent] error:', err.message);
