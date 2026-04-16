@@ -352,6 +352,11 @@
   <div id="stocks-content"><div class="loading-msg">טוען...</div></div>
 </div>
 
+<!-- ── LEADS TAB ───────────────────────────────────────────────────────── -->
+<div id="tab-leads" class="tab">
+  <div id="leads-content"><div class="loading-msg">טוען...</div></div>
+</div>
+
 <!-- Bottom nav -->
 <nav class="tab-bar">
   <button class="tab-btn active" data-tab="home" onclick="setTab('home')">
@@ -368,6 +373,9 @@
   </button>
   <button class="tab-btn" data-tab="stocks" onclick="setTab('stocks')">
     <span class="icon">📈</span><span>מניות</span>
+  </button>
+  <button class="tab-btn" data-tab="leads" onclick="setTab('leads')">
+    <span class="icon">💼</span><span>לידים</span>
   </button>
 </nav>
 
@@ -497,6 +505,7 @@ function setTab(name) {
   if (name === 'health')   renderHealth();
   if (name === 'expenses') renderExpenses();
   if (name === 'stocks')   renderStocks();
+  if (name === 'leads')    renderLeads();
 }
 
 // ── HOME TAB ───────────────────────────────────────────────────────────────────
@@ -939,6 +948,65 @@ function renderStocks() {
   `;
 }
 
+// ── LEADS TAB ───────────────────────────────────────────────────────────────────
+function renderLeads() {
+  if (!D) return;
+  const leads = D.leads || [];
+  const s = D.leadsSummary || {};
+
+  const statusEmoji = { new:'🆕', closed:'✅', reminded:'⏰', contacted:'📞' };
+  const statusLabel = { new:'חדש', closed:'טופל', reminded:'הופנה', contacted:'בטיפול' };
+  const statusColor = { new:'#3b82f6', closed:'#059669', reminded:'#f59e0b', contacted:'#8b5cf6' };
+
+  const summaryHtml = `
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title">📊 סה"כ לידים</div>
+        <div class="card-val" style="color:#60a5fa">${s.total||0}</div>
+        <div class="card-sub">השבוע: ${s.thisWeek||0}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">📈 אחוז המרה</div>
+        <div class="card-val" style="color:#34d399">${s.convRate||0}%</div>
+        <div class="card-sub">נסגרו: ${s.closed||0}</div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:0">
+      <div class="card">
+        <div class="card-title">🆕 חדשים</div>
+        <div class="card-val" style="color:#f59e0b">${s.new||0}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">📞 טופלו</div>
+        <div class="card-val" style="color:#a78bfa">${s.closed||0}</div>
+      </div>
+    </div>`;
+
+  const leadsHtml = leads.length
+    ? leads.map(l => `
+      <div class="card" style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-weight:700;font-size:1rem">${l.name}</span>
+          <span style="background:${statusColor[l.status]||'#475569'};color:white;
+                       padding:2px 8px;border-radius:12px;font-size:0.72rem">
+            ${statusEmoji[l.status]||'•'} ${statusLabel[l.status]||l.status}
+          </span>
+        </div>
+        <div style="font-size:0.82rem;color:#64748b">
+          ${l.email ? '📧 ' + l.email : ''}
+          ${l.phone ? ' | 📱 ' + l.phone : ''}
+        </div>
+        <div style="font-size:0.75rem;color:#475569;margin-top:4px">
+          ${l.title} · ${new Date(l.createdAt).toLocaleDateString('he-IL')}
+        </div>
+        ${l.notes ? '<div style="font-size:0.8rem;color:#94a3b8;margin-top:4px">📝 ' + l.notes + '</div>' : ''}
+      </div>`).join('')
+    : '<div class="loading-msg">אין לידים עדיין 🎯<br>צור טופס ושתף עם לקוחות</div>';
+
+  document.getElementById('leads-content').innerHTML = summaryHtml +
+    '<div class="sec-title">רשימת לידים</div>' + leadsHtml;
+}
+
 // ── DATA LOAD ───────────────────────────────────────────────────────────────────
 async function reload() {
   try {
@@ -953,6 +1021,7 @@ async function reload() {
     if (activeTab === 'health')   renderHealth();
     if (activeTab === 'expenses') renderExpenses();
     if (activeTab === 'stocks')   renderStocks();
+    if (activeTab === 'leads')    renderLeads();
   } catch (e) {
     document.getElementById('ts').textContent = '⚠️ שגיאה';
   }

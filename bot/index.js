@@ -278,6 +278,11 @@ const server = http.createServer((req, res) => {
           } catch { stocks.push({ symbol: w.symbol, name: w.symbol, price: null, changePct: 0, currency: 'USD' }); }
         }
 
+        // Leads
+        const { loadLeads, getLeadsSummary } = require('./leads');
+        const leads = loadLeads().slice(-20).reverse();
+        const leadsSummary = getLeadsSummary();
+
         const body = JSON.stringify({
           health,
           healthHistory,
@@ -290,6 +295,17 @@ const server = http.createServer((req, res) => {
           },
           tasks,
           stocks,
+          leads: leads.map(l => ({
+            id: l.id,
+            name: l.data?.['שם'] || l.data?.name || '—',
+            email: l.data?.['אימייל'] || l.data?.email || '',
+            phone: l.data?.['טלפון'] || l.data?.phone || '',
+            title: l.title,
+            status: l.status,
+            createdAt: l.createdAt,
+            notes: l.notes || '',
+          })),
+          leadsSummary,
           openTasks: openTasks.slice(0, 8).map(t => ({ id: t.id, text: t.text, priority: t.priority })),
           timestamp: new Date().toISOString(),
         });
