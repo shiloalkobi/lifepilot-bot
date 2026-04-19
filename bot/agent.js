@@ -218,6 +218,16 @@ function buildSystemPrompt(memory, chatId) {
 זמן: ${nowDisplay} | ${nowIL()} | ${getDayHebrew()} | ${timeCtx}
 CRPS רגל שמאל (DRG) — כאב כרוני
 ${painCtx ? painCtx + '\n' : ''}${topicsCtx ? topicsCtx + '\n' : ''}${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
+CRITICAL TOOL ROUTING — HIGHEST PRIORITY (NEVER respond with text for these):
+• "תכתוב פוסט" / "פוסט אינסטגרם" / "פוסט לפייסבוק" / "תכתוב תוכן" → MUST call write_content immediately
+• "תבנה דף נחיתה" / "דף נחיתה ל" / "landing page" → MUST call generate_landing_page immediately
+• "תבנה טופס" / "צור טופס" / "טופס יצירת קשר" → MUST call generate_form immediately
+• "תעשה מצגת" / "מצגת על" / "תבנה מצגת" → MUST call generate_presentation immediately
+• "תכתוב קוד" / "סקריפט" / "כתוב לי קוד" → MUST call generate_code immediately
+• "מייל ל" / "תכתוב מייל" → MUST call write_content with type=email immediately
+• "ביו" / "כותרת" / "כותרות" / "תכתוב כותרת" → MUST call write_content immediately
+DEFAULTS (use when info missing — NEVER ask clarifying questions for these tools):
+- Missing color → 'blue' | Missing services → [] | Missing tone → 'professional' | Missing slides_count → 5
 • כלים: קרא רק כשמשתמש מבקש במפורש — משימה/תזכורת/בריאות/תרופות/חיפוש/מזג אוויר. אסור לקרוא ל-get_current_context על שאלות כלליות, סיפורים, שיחת חולין, או שאלות על אנשים/נושאים
 • יש לך גישה ל-Google Calendar וGmail — כששואלים על פגישות/יומן קרא ל-get_calendar_events, כששואלים "יש מיילים חדשים?" קרא ל-get_unread_emails, לחיפוש מיילים ספציפיים (חשבוניות, קבלות, מ-X, לפי נושא) — תמיד השתמש ב-search_emails ולא ב-get_unread_emails
 • תזכורות: חשב בדיוק מהשעה הנ"ל
@@ -346,20 +356,20 @@ const TOOL_DECLARATIONS = [
   // TTS (#11)
   { name: 'voice_reply', description: 'שלח תשובה קולית (MP3). השתמש כשמבקשים "ענה בקול/דיבור/קולי/voice".', parameters: { type: 'object', properties: { text: { type: 'string', description: 'הטקסט לאמירה (עד 200 תווים)' }, lang: { type: 'string', description: 'iw=עברית en=אנגלית', enum: ['iw','en','ar'] } }, required: ['text'] } },
   // Content Writing (#30)
-  { name: 'write_content', description: 'כתוב תוכן: פוסט לאינסטגרם/פייסבוק, מייל ללקוח, ביו, כותרת.', parameters: { type: 'object', properties: { type: { type: 'string', enum: ['instagram','facebook','email','bio','headline','whatsapp'] }, topic: { type: 'string' }, tone: { type: 'string', enum: ['professional','casual','funny','inspirational'] }, language: { type: 'string', enum: ['he','en'] } }, required: ['type','topic'] } },
+  { name: 'write_content', description: 'ALWAYS call when asked to write any post/content/email/bio/headline. כתוב תוכן: פוסט לאינסטגרם/פייסבוק, מייל ללקוח, ביו, כותרת.', parameters: { type: 'object', properties: { type: { type: 'string', enum: ['instagram','facebook','email','bio','headline','whatsapp'] }, topic: { type: 'string' }, tone: { type: 'string', enum: ['professional','casual','funny','inspirational'] }, language: { type: 'string', enum: ['he','en'] } }, required: ['type','topic'] } },
   // Code Generation (#31)
   { name: 'generate_code', description: 'כתוב קוד לפי בקשה ושלח כקובץ או טקסט.', parameters: { type: 'object', properties: { description: { type: 'string' }, language: { type: 'string', enum: ['javascript','python','bash','html','css','sql'] }, send_as_file: { type: 'boolean' } }, required: ['description'] } },
   // Form Generator (#28)
-  { name: 'generate_form', description: 'צור טופס HTML מותאם אישית ושלח כקובץ.', parameters: { type: 'object', properties: { title: { type: 'string' }, fields: { type: 'array', items: { type: 'string' } }, submit_text: { type: 'string' } }, required: ['title','fields'] } },
+  { name: 'generate_form', description: 'ALWAYS call when asked to create a form. צור טופס HTML מותאם אישית ושלח כקובץ.', parameters: { type: 'object', properties: { title: { type: 'string' }, fields: { type: 'array', items: { type: 'string' } }, submit_text: { type: 'string' } }, required: ['title','fields'] } },
   // Presentation Generator (#29)
-  { name: 'generate_presentation', description: 'צור מצגת HTML עם שקפים על נושא נתון.', parameters: { type: 'object', properties: { title: { type: 'string' }, topic: { type: 'string' }, slides_count: { type: 'number' }, language: { type: 'string', enum: ['he','en'] } }, required: ['title','topic'] } },
+  { name: 'generate_presentation', description: 'ALWAYS call when asked for a presentation/slides. צור מצגת HTML עם שקפים על נושא נתון.', parameters: { type: 'object', properties: { title: { type: 'string' }, topic: { type: 'string' }, slides_count: { type: 'number' }, language: { type: 'string', enum: ['he','en'] } }, required: ['title','topic'] } },
   // Lead Management (#42, #43, #44)
   { name: 'get_leads',      description: 'הצג רשימת לידים (הגשות טפסים) עם סטטוס.', parameters: { type: 'object', properties: { status: { type: 'string', enum: ['all','new','closed','reminded'], description: 'ברירת מחדל: all' } }, required: [] } },
   { name: 'update_lead',    description: 'עדכן ליד: סטטוס, הערה. "סמן ישראל כנסגר" / "הוסף הערה לשילה".', parameters: { type: 'object', properties: { name_or_id: { type: 'string', description: 'שם או ID של הליד' }, status: { type: 'string', enum: ['new','contacted','closed','reminded'] }, notes: { type: 'string' } }, required: ['name_or_id'] } },
   { name: 'search_leads',   description: 'חפש לידים לפי שם, מייל, טלפון, או הערה.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'leads_summary',  description: 'סיכום סטטיסטי של לידים: כמה חדשים, נסגרו, השבוע, אחוז המרה.', parameters: { type: 'object', properties: {}, required: [] } },
   // Landing Page Generator (#27)
-  { name: 'generate_landing_page', description: 'צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] } }, required: ['business_name'] } },
+  { name: 'generate_landing_page', description: 'ALWAYS call when asked for a landing page. צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] } }, required: ['business_name'] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
