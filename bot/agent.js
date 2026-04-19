@@ -1319,6 +1319,22 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a18; color: #fff; height: 100vh; overflow: hidden; }
     .presentation { position: relative; width: 100vw; height: 100vh; }
+    /* Mobile optimization */
+    @media (max-width: 768px) {
+      .slide { padding: 40px 24px !important; }
+      .title-slide h1, .thankyou-slide h1 { font-size: 2.2rem !important; }
+      h2 { font-size: 1.6rem !important; max-width: 100% !important; margin-bottom: 24px !important; }
+      li { font-size: 1rem !important; }
+      .nav { bottom: 16px !important; gap: 8px !important; left: 50% !important; transform: translateX(-50%) !important; }
+      .nav button { padding: 10px 16px !important; font-size: 0.85rem !important; min-width: 70px !important; }
+      .slide-number { top: 12px !important; left: 16px !important; font-size: 0.75rem !important; }
+      .title-sub { font-size: 1rem !important; }
+      .slide-label { font-size: 0.75rem !important; }
+    }
+    /* Touch hint */
+    .touch-hint { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: #fff; padding: 16px 24px; border-radius: 12px; font-size: 0.9rem; z-index: 100; pointer-events: none; animation: fadeOut 3s forwards; }
+    @media (max-width: 768px) { .touch-hint { display: block; } }
+    @keyframes fadeOut { 0%, 70% { opacity: 1; } 100% { opacity: 0; display: none; } }
     @keyframes slideIn { from { opacity: 0; transform: translateX(${isRtl ? '-' : ''}20px); } to { opacity: 1; transform: translateX(0); } }
     .slide { display: none; position: absolute; inset: 0; flex-direction: column; justify-content: center; align-items: ${isRtl ? 'flex-end' : 'flex-start'}; padding: 60px 80px; background: linear-gradient(140deg, #0a0a18 0%, #131328 50%, #0d1b35 100%); }
     .slide.active { display: flex; animation: slideIn 0.35s ease; }
@@ -1354,23 +1370,52 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
     </div>
     <div class="progress" id="progress"></div>
   </div>
+  <div class="touch-hint">👆 הקש או החלק להעברת שקפים</div>
   <script>
     let cur = 0;
     const slides = document.querySelectorAll('.slide');
     const total  = slides.length;
+
     function show(n) {
       slides[cur].classList.remove('active');
       cur = (n + total) % total;
       slides[cur].classList.add('active');
       document.getElementById('progress').style.width = ((cur + 1) / total * 100) + '%';
     }
+
+    // Button clicks
     document.getElementById('next').onclick = () => show(cur + 1);
     document.getElementById('prev').onclick = () => show(cur - 1);
+
+    // Keyboard (desktop)
     document.addEventListener('keydown', e => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') show(cur + 1);
       if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')  show(cur - 1);
       if (e.key === 'n' || e.key === 'N') document.getElementById('pres').classList.toggle('notes-visible');
     });
+
+    // Mobile: swipe + tap
+    let touchStartX = 0;
+    let touchEndX   = 0;
+    const pres = document.getElementById('pres');
+
+    pres.addEventListener('touchstart', e => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    pres.addEventListener('touchend', e => {
+      touchEndX = e.changedTouches[0].screenX;
+      const diff = touchEndX - touchStartX;
+      if (Math.abs(diff) < 50) {
+        // Tap — advance forward
+        show(cur + 1);
+        return;
+      }
+      // RTL: swipe LEFT = next, swipe RIGHT = prev
+      if (diff < 0) show(cur + 1);
+      else          show(cur - 1);
+    }, { passive: true });
+
     show(0);
   </script>
 </body>
