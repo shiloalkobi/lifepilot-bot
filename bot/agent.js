@@ -1145,8 +1145,10 @@ button{border-radius:4px!important;font-weight:700;letter-spacing:0.3px}`,
         const totalSlides    = contentSlides + 1 + (includeThankyou ? 1 : 0);
         const presLang      = args.language || 'he';
         const isRtl         = presLang === 'he';
-        const dateStr       = new Date().toISOString().slice(0,10);
-        const tmpPath       = `/tmp/presentation-${dateStr}-${Date.now()}.html`;
+        const formsDir3     = path.join(__dirname, '..', 'public', 'forms');
+        fs.mkdirSync(formsDir3, { recursive: true });
+        const presId        = Date.now().toString(36);
+        const presPath      = path.join(formsDir3, `presentation-${presId}.html`);
 
         bot.sendMessage(chatId, `🎨 יוצר מצגת ${totalSlides} שקפים על "${presTopic}"...`);
 
@@ -1421,8 +1423,9 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
 </body>
 </html>`;
 
-        fs.writeFileSync(tmpPath, presHtml, 'utf8');
-        return `__FILE__:${tmpPath}`;
+        fs.writeFileSync(presPath, presHtml, 'utf8');
+        const presUrl = `https://lifepilot-bot.onrender.com/forms/presentation-${presId}.html`;
+        return `🎯 <b>המצגת מוכנה!</b>\n<a href="${presUrl}">${presUrl}</a>\n\n<i>פתח בדפדפן לחוויה מלאה — החלקה, הקשה, וכפתורים</i>`;
       }
 
       // ── Lead Management (#42, #43) ────────────────────────────────────────
