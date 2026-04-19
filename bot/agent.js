@@ -360,16 +360,16 @@ const TOOL_DECLARATIONS = [
   // Code Generation (#31)
   { name: 'generate_code', description: 'כתוב קוד לפי בקשה ושלח כקובץ או טקסט.', parameters: { type: 'object', properties: { description: { type: 'string' }, language: { type: 'string', enum: ['javascript','python','bash','html','css','sql'] }, send_as_file: { type: 'boolean' } }, required: ['description'] } },
   // Form Generator (#28)
-  { name: 'generate_form', description: 'ALWAYS call when asked to create a form. צור טופס HTML מותאם אישית ושלח כקובץ.', parameters: { type: 'object', properties: { title: { type: 'string' }, fields: { type: 'array', items: { type: 'string' } }, submit_text: { type: 'string' } }, required: ['title','fields'] } },
+  { name: 'generate_form', description: 'ALWAYS call when asked to create a form. צור טופס HTML מותאם אישית ושלח כקובץ.', parameters: { type: 'object', properties: { title: { type: 'string' }, fields: { type: 'array', items: { type: 'string' } }, submit_text: { type: 'string' }, style: { type: 'string', enum: ['glass','neumorphic','flat','material','minimalist','random'], description: 'סגנון עיצוב ויזואלי — random לאקראי' } }, required: ['title','fields'] } },
   // Presentation Generator (#29)
-  { name: 'generate_presentation', description: 'ALWAYS call when asked for a presentation/slides. צור מצגת HTML עם שקפים על נושא נתון.', parameters: { type: 'object', properties: { title: { type: 'string' }, topic: { type: 'string' }, slides_count: { type: 'number' }, language: { type: 'string', enum: ['he','en'] } }, required: ['title','topic'] } },
+  { name: 'generate_presentation', description: 'ALWAYS call when asked for a presentation/slides. צור מצגת HTML עם שקפים על נושא נתון.', parameters: { type: 'object', properties: { title: { type: 'string' }, topic: { type: 'string' }, slides_count: { type: 'number' }, language: { type: 'string', enum: ['he','en'] }, theme: { type: 'string', enum: ['dark-tech','light-minimal','gradient','corporate','creative','elegant','random'], description: 'ערכת נושא ויזואלית — random לאקראי' } }, required: ['title','topic'] } },
   // Lead Management (#42, #43, #44)
   { name: 'get_leads',      description: 'הצג רשימת לידים (הגשות טפסים) עם סטטוס.', parameters: { type: 'object', properties: { status: { type: 'string', enum: ['all','new','closed','reminded'], description: 'ברירת מחדל: all' } }, required: [] } },
   { name: 'update_lead',    description: 'עדכן ליד: סטטוס, הערה. "סמן ישראל כנסגר" / "הוסף הערה לשילה".', parameters: { type: 'object', properties: { name_or_id: { type: 'string', description: 'שם או ID של הליד' }, status: { type: 'string', enum: ['new','contacted','closed','reminded'] }, notes: { type: 'string' } }, required: ['name_or_id'] } },
   { name: 'search_leads',   description: 'חפש לידים לפי שם, מייל, טלפון, או הערה.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'leads_summary',  description: 'סיכום סטטיסטי של לידים: כמה חדשים, נסגרו, השבוע, אחוז המרה.', parameters: { type: 'object', properties: {}, required: [] } },
   // Landing Page Generator (#27)
-  { name: 'generate_landing_page', description: 'ALWAYS call when asked for a landing page. צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] } }, required: ['business_name'] } },
+  { name: 'generate_landing_page', description: 'ALWAYS call when asked for a landing page. צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] }, template: { type: 'string', enum: ['minimal','bold','elegant','tech','corporate','random'], description: 'סגנון עיצוב — random לאקראי' } }, required: ['business_name'] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -1001,6 +1001,48 @@ Rules:
         }
         const style = detectFormStyle(formTitle);
 
+        // ── Form visual style selection ───────────────────────────────────────
+        let formStyleName = args.style;
+        if (!formStyleName || formStyleName === 'random') {
+          const styleOpts = ['glass','neumorphic','flat','material','minimalist'];
+          formStyleName = styleOpts[Math.floor(Math.random() * styleOpts.length)];
+        }
+        console.log(`[Form] Using style: ${formStyleName}`);
+
+        const formVisualCss = {
+          glass: `body{background:linear-gradient(135deg,#667eea,#764ba2)!important}
+.container{background:rgba(255,255,255,0.15)!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.3)!important;box-shadow:0 8px 32px rgba(0,0,0,0.3)!important}
+h1{color:#fff!important}
+.subtitle{color:rgba(255,255,255,0.8)!important}
+label{color:#fff!important}
+.required{color:#ffe!important}
+input,textarea{background:rgba(255,255,255,0.2)!important;border:1px solid rgba(255,255,255,0.4)!important;color:#fff!important}
+input::placeholder,textarea::placeholder{color:rgba(255,255,255,0.55)!important}
+input:focus,textarea:focus{background:rgba(255,255,255,0.3)!important;border-color:#fff!important;box-shadow:0 0 0 3px rgba(255,255,255,0.2)!important}`,
+          neumorphic: `body{background:#e0e5ec!important}
+.container{background:#e0e5ec!important;box-shadow:9px 9px 16px #a3b1c6,-9px -9px 16px #fff!important;border-radius:20px!important}
+input,textarea{background:#e0e5ec!important;border:none!important;box-shadow:inset 4px 4px 8px #a3b1c6,inset -4px -4px 8px #fff!important;border-radius:10px!important}
+input:focus,textarea:focus{box-shadow:inset 5px 5px 10px #a3b1c6,inset -5px -5px 10px #fff!important;outline:none!important;border:none!important}
+button{box-shadow:4px 4px 8px #a3b1c6,-4px -4px 8px #fff!important}
+button:hover{box-shadow:2px 2px 4px #a3b1c6,-2px -2px 4px #fff!important;transform:none!important}`,
+          flat: `body{background:#3498db!important}
+.container{background:#fff!important;border-radius:0!important;box-shadow:none!important;border-left:6px solid #2c3e50}
+input,textarea{background:#ecf0f1!important;border:none!important;border-radius:0!important;border-bottom:2px solid #bdc3c7!important;box-shadow:none!important}
+input:focus,textarea:focus{border-bottom-color:#3498db!important;background:#fff!important;box-shadow:none!important}
+button{border-radius:0!important;letter-spacing:1px;text-transform:uppercase;font-size:0.9rem}`,
+          material: `body{background:#f5f5f5!important}
+.container{background:#fff!important;border-radius:2px!important;box-shadow:0 2px 4px rgba(0,0,0,0.12),0 8px 16px rgba(0,0,0,0.08)!important}
+input,textarea{background:#fff!important;border:none!important;border-bottom:1px solid #bdbdbd!important;border-radius:0!important;padding-left:0!important;padding-right:0!important}
+input:focus,textarea:focus{border-bottom:2px solid ${style.accent}!important;box-shadow:none!important;background:#fff!important}
+button{border-radius:2px!important;letter-spacing:0.5px;text-transform:uppercase;font-size:0.85rem;box-shadow:0 2px 4px rgba(0,0,0,0.2)!important}
+button:hover{box-shadow:0 4px 8px rgba(0,0,0,0.2)!important}`,
+          minimalist: `body{background:#fff!important}
+.container{background:#fff!important;box-shadow:none!important;border:1px solid #ebebeb!important;border-radius:8px!important}
+input,textarea{background:#fafafa!important;border:1px solid #e0e0e0!important;border-radius:4px!important}
+input:focus,textarea:focus{border-color:#111!important;box-shadow:none!important;background:#fff!important}
+button{border-radius:4px!important;font-weight:700;letter-spacing:0.3px}`,
+        }[formStyleName] || '';
+
         const fieldsHtml = fields.map(f => {
           const isEmail   = /email|אימייל|מייל/i.test(f);
           const isPhone   = /phone|טלפון|נייד/i.test(f);
@@ -1042,6 +1084,7 @@ Rules:
     .success { display: none; background: #f0fdf4; border: 2px solid #86efac; color: #166534; border-radius: 12px; padding: 20px; text-align: center; font-weight: 600; font-size: 1.05rem; margin-top: 16px; }
     .progress-bar { height: 4px; background: ${style.accent}; border-radius: 2px; width: 0%; transition: width 0.3s; margin-bottom: 28px; }
   </style>
+  ${formVisualCss ? `<style>/* style: ${formStyleName} */\n${formVisualCss}\n  </style>` : ''}
 </head>
 <body>
   <div class="container">
@@ -1162,6 +1205,79 @@ CREATIVITY:
           ...(includeThankyou ? [{ type: 'thankyou', title: isRtl ? 'תודה רבה!' : 'Thank You!', subtitle: isRtl ? 'שאלות ותגובות' : 'Questions & Discussion', notes: '' }] : []),
         ];
 
+        // ── Presentation theme selection ──────────────────────────────────────
+        let presThemeName = args.theme;
+        if (!presThemeName || presThemeName === 'random') {
+          const themeOpts = ['dark-tech','light-minimal','gradient','corporate','creative','elegant'];
+          presThemeName = themeOpts[Math.floor(Math.random() * themeOpts.length)];
+        }
+        console.log(`[Presentation] Using theme: ${presThemeName}`);
+
+        const presThemeCss = {
+          'dark-tech': '', // default — existing dark theme
+          'light-minimal': `body{background:#fff!important;color:#111}
+.slide{background:#fff!important;color:#111}
+.title-slide,.thankyou-slide{background:#f4f6f8!important}
+.title-slide h1,.thankyou-slide h1{color:#111!important;text-shadow:none!important}
+.title-sub{color:#555!important}
+.slide-label{color:#999!important}
+h2{color:#111!important;text-shadow:none!important}
+li{color:#333!important;border-bottom-color:rgba(0,0,0,0.07)!important}
+li::before{color:#666!important}
+.slide-number{color:#bbb!important}
+.nav button{background:rgba(0,0,0,0.05)!important;border-color:rgba(0,0,0,0.15)!important;color:#333!important}
+.progress{background:linear-gradient(90deg,#333,#777)!important}`,
+          gradient: `.slide:nth-child(1){background:linear-gradient(135deg,#667eea,#764ba2)!important}
+.slide:nth-child(2){background:linear-gradient(135deg,#f093fb,#f5576c)!important}
+.slide:nth-child(3){background:linear-gradient(135deg,#4facfe,#00f2fe)!important}
+.slide:nth-child(4){background:linear-gradient(135deg,#43e97b,#38f9d7)!important}
+.slide:nth-child(5){background:linear-gradient(135deg,#fa709a,#fee140)!important}
+.slide:nth-child(6){background:linear-gradient(135deg,#a18cd1,#fbc2eb)!important}
+.slide:nth-child(7){background:linear-gradient(135deg,#fccb90,#d57eeb)!important}
+.slide:nth-child(8){background:linear-gradient(135deg,#96fbc4,#f9f586)!important;color:#333!important}
+.title-slide,.thankyou-slide{background:linear-gradient(135deg,#667eea,#764ba2)!important}
+h2{text-shadow:0 2px 8px rgba(0,0,0,0.2)!important}
+li{border-bottom-color:rgba(255,255,255,0.15)!important}
+.progress{background:linear-gradient(90deg,#f093fb,#f5576c,#667eea)!important}`,
+          corporate: `body{background:#003366!important}
+.slide{background:linear-gradient(180deg,#003d80 0%,#003366 100%)!important}
+.title-slide,.thankyou-slide{background:linear-gradient(135deg,#001f4d,#003366)!important}
+.title-slide h1,.thankyou-slide h1{color:#7eb8f7!important;text-shadow:none!important}
+.title-sub{color:rgba(126,184,247,0.75)!important}
+.slide-label{color:rgba(126,184,247,0.6)!important}
+h2{color:#7eb8f7!important;text-shadow:none!important;font-size:2.1rem!important}
+li{color:#d0e8fa!important;border-bottom-color:rgba(126,184,247,0.12)!important}
+li::before{content:'■'!important;font-size:0.45rem!important;color:#7eb8f7!important}
+.slide-number{color:rgba(126,184,247,0.5)!important}
+.nav button{background:rgba(126,184,247,0.08)!important;border-color:rgba(126,184,247,0.2)!important;color:#7eb8f7!important}
+.progress{background:linear-gradient(90deg,#7eb8f7,#4a9fd4)!important}`,
+          creative: `body{background:#12001e!important}
+.slide{background:linear-gradient(135deg,#1a0030,#0f0a2e)!important}
+.title-slide,.thankyou-slide{background:linear-gradient(135deg,#e94560,#1a0030)!important}
+.title-slide h1,.thankyou-slide h1{color:#fff!important;text-shadow:0 0 30px rgba(233,69,96,0.6)!important}
+.title-sub{color:rgba(255,255,255,0.7)!important}
+.slide-label{color:rgba(233,69,96,0.8)!important}
+h2{color:#e94560!important;font-size:2.5rem!important;text-shadow:0 0 20px rgba(233,69,96,0.3)!important}
+li{color:#e8e0ff!important;border-bottom-color:rgba(233,69,96,0.12)!important}
+li::before{content:'◆'!important;color:#e94560!important;font-size:0.45rem!important}
+.slide-number{color:rgba(233,69,96,0.5)!important}
+.nav button{background:rgba(233,69,96,0.12)!important;border-color:rgba(233,69,96,0.35)!important;color:#e94560!important}
+.progress{background:linear-gradient(90deg,#e94560,#f5a623)!important}`,
+          elegant: `@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap');
+body{background:#f5f0e8!important;color:#2c1810}
+.slide{background:linear-gradient(160deg,#faf6ef,#f0e8d8)!important;color:#2c1810!important}
+.title-slide,.thankyou-slide{background:linear-gradient(135deg,#2c1810,#4a2e22)!important}
+.title-slide h1,.thankyou-slide h1{color:#d4a853!important;text-shadow:none!important;font-family:'Cormorant Garamond',Georgia,serif!important;font-weight:600}
+.title-sub{color:rgba(212,168,83,0.75)!important}
+.slide-label{color:#a08060!important}
+h2{color:#2c1810!important;text-shadow:none!important;font-family:'Cormorant Garamond',Georgia,serif!important;font-size:2.9rem!important;font-weight:600}
+li{color:#4a3728!important;border-bottom-color:rgba(44,24,16,0.1)!important}
+li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!important;font-weight:normal}
+.slide-number{color:#a08060!important}
+.nav button{background:rgba(44,24,16,0.05)!important;border-color:rgba(44,24,16,0.2)!important;color:#2c1810!important}
+.progress{background:linear-gradient(90deg,#d4a853,#8b6f47)!important}`,
+        }[presThemeName] || '';
+
         const buildSlideHtml = (s, idx, total) => {
           const isActive = idx === 0 ? ' active' : '';
           if (s.type === 'title') {
@@ -1227,6 +1343,7 @@ CREATIVITY:
     /* Progress bar */
     .progress { position: fixed; bottom: 0; left: 0; height: 3px; background: linear-gradient(90deg, #7eb8f7, #a78bfa); transition: width 0.35s ease; }
   </style>
+  ${presThemeCss ? `<style>/* theme: ${presThemeName} */\n${presThemeCss}\n  </style>` : ''}
 </head>
 <body>
   <div class="presentation" id="pres">
@@ -1427,6 +1544,114 @@ HERO STYLE: ${heroStyle}`;
         };
         const c = colorMap[color] || colorMap.blue;
 
+        // ── Landing page template selection ──────────────────────────────────
+        let lpTemplateName = args.template;
+        if (!lpTemplateName || lpTemplateName === 'random') {
+          const tplOpts = ['minimal','bold','elegant','tech','corporate'];
+          lpTemplateName = tplOpts[Math.floor(Math.random() * tplOpts.length)];
+        }
+        console.log(`[LandingPage] Using template: ${lpTemplateName}`);
+
+        const landingTplCss = {
+          minimal: `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+body{font-family:'Inter',sans-serif!important;background:#fff;color:#111}
+.hero{background:#fff!important;color:#111;padding:160px 40px}
+.hero h1{font-size:4rem;color:#000;text-shadow:none}
+.hero p{color:#555}
+.hero-btn{background:#000!important;color:#fff!important;border-radius:2px!important}
+nav{background:#fff;box-shadow:0 1px 0 #eee}
+.logo{color:#000!important}
+.nav-cta{background:#000!important;border-radius:2px!important}
+section h2{color:#000!important}
+.values{background:#f9f9f9}
+.value-card{border-top:2px solid #000!important;border-radius:0!important;box-shadow:none!important}
+.value-card h3{color:#000!important}
+.testimonials{background:#fff}
+.testimonial-card{border-radius:0!important;box-shadow:none!important;border:1px solid #eee}
+.testimonial-card::before{color:#000!important}
+.cta-section{background:#111!important}
+footer{background:#111}`,
+          bold: `@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700;900&display=swap');
+body{font-family:'Poppins',sans-serif!important}
+.hero{padding:120px 40px}
+.hero h1{font-size:5rem;font-weight:900}
+.value-card{background:${c.primary}!important;color:#fff;border-radius:24px!important;border:none!important;box-shadow:0 8px 32px rgba(0,0,0,0.15)!important}
+.value-card h3{color:#fff!important}
+.value-card p{color:rgba(255,255,255,0.85)!important}`,
+          elegant: `@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap');
+body{font-family:'Playfair Display',Georgia,serif!important;background:#faf7f2;color:#2c1810}
+.hero{background:#faf7f2!important;color:#2c1810;padding:140px 40px}
+.hero h1{font-size:3.5rem;color:#2c1810;text-shadow:none}
+.hero p{color:#6b4c3b}
+.hero-btn{background:#8b6f47!important;color:#fff!important;border-radius:4px!important}
+nav{background:#faf7f2;box-shadow:0 1px 0 #e8ddd0}
+.logo{color:#8b6f47!important}
+.nav-cta{background:#8b6f47!important}
+section h2{color:#8b6f47!important}
+.values{background:#faf7f2}
+.value-card{background:#fff;border-top:none!important;border-bottom:2px solid #8b6f47!important;border-radius:0!important;box-shadow:none!important}
+.value-card h3{color:#8b6f47!important}
+.testimonials{background:#fff}
+.testimonial-card{background:#faf7f2!important;border-radius:4px!important;box-shadow:none!important;border:1px solid #e8ddd0}
+.testimonial-card::before{color:#8b6f47!important}
+.cta-section{background:#2c1810!important}
+footer{background:#2c1810}`,
+          tech: `@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;800&display=swap');
+body{font-family:'Space Grotesk',sans-serif!important;background:#0a0e27;color:#e0e8ff}
+.hero{background:linear-gradient(135deg,#0a0e27 0%,#1a0a3e 100%)!important;color:#e0e8ff;padding:120px 40px}
+.hero h1{font-size:4.5rem;color:#00ffd1;text-shadow:0 0 40px rgba(0,255,209,0.4)}
+.hero p{color:rgba(0,255,209,0.85)}
+.hero-btn{background:#00ffd1!important;color:#0a0e27!important}
+nav{background:#0a0e27;box-shadow:0 1px 0 rgba(0,255,209,0.2)}
+.logo{color:#00ffd1!important}
+.nav-cta{background:#00ffd1!important;color:#0a0e27!important}
+section h2{color:#00ffd1!important}
+.values{background:#0d112b}
+.value-card{background:rgba(0,255,209,0.05)!important;border:1px solid rgba(0,255,209,0.3)!important;border-top:none!important;border-radius:12px!important;box-shadow:none!important;color:#e0e8ff}
+.value-card h3{color:#00ffd1!important}
+.value-card p{color:#99c!important}
+.testimonials{background:#0a0e27}
+.testimonial-card{background:rgba(255,255,255,0.03)!important;border:1px solid rgba(0,255,209,0.2)!important;box-shadow:none!important;border-radius:12px!important}
+.testimonial-card::before{color:#00ffd1!important}
+.testimonial-quote{color:#aac!important}
+.author-name{color:#e0e8ff!important}
+.faq{background:#0d112b}
+.faq-item{border-color:rgba(0,255,209,0.2)!important}
+.faq-q{color:#e0e8ff!important}
+.faq-q:hover{background:rgba(0,255,209,0.05)!important}
+.faq-q .arrow{color:#00ffd1!important}
+.faq-a{color:#aac!important}
+.cta-section{background:linear-gradient(135deg,#00ffd1,#00b4d8)!important}
+.cta-section h2{color:#0a0e27!important}
+.cta-section p{color:rgba(0,0,0,0.7)!important;opacity:1!important}
+.cta-btn{background:#0a0e27!important;color:#00ffd1!important}
+.contact{background:#0a0e27}
+.contact h2{color:#00ffd1!important}
+.contact-form input,.contact-form textarea{border-color:#00ffd133!important;background:#0d112b!important;color:#e0e8ff}
+.contact-form input:focus,.contact-form textarea:focus{border-color:#00ffd1!important}
+.contact-form button{background:#00ffd1!important;color:#0a0e27!important}
+.service-card{background:rgba(0,255,209,0.05)!important;border-color:rgba(0,255,209,0.3)!important;color:#e0e8ff}
+.service-card .icon{color:#00ffd1!important}
+footer{background:#060918}`,
+          corporate: `@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+body{font-family:'Roboto',Arial,sans-serif!important}
+.hero{background:linear-gradient(135deg,#003366 0%,#004d99 100%)!important;padding:100px 40px}
+.hero h1{font-size:3rem}
+.hero-btn{background:#fff!important;color:#003366!important;border-radius:4px!important}
+nav{box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+.logo{color:#003366!important}
+.nav-cta{background:#003366!important;border-radius:4px!important}
+section h2{color:#003366!important}
+.values{background:#f5f7fa}
+.value-card{border-top:4px solid #003366!important;border-radius:4px!important}
+.value-card h3{color:#003366!important}
+.testimonials{background:#eef2f7}
+.testimonial-card{border-radius:4px!important}
+.testimonial-card::before{color:#003366!important}
+.cta-section{background:#003366!important}
+footer{background:#001a33}`,
+        }[lpTemplateName] || '';
+
         const servicesSection = services.length > 0
           ? `<section class="services"><div class="container"><h2>השירותים שלנו</h2><div class="services-grid">${services.map(s => `<div class="service-card"><span class="icon">✓</span><span>${s}</span></div>`).join('')}</div></div></section>`
           : '';
@@ -1514,6 +1739,7 @@ HERO STYLE: ${heroStyle}`;
     footer { background: #1f2937; color: #9ca3af; text-align: center; padding: 24px; font-size: 0.9rem; }
     @media (max-width: 768px) { .hero h1 { font-size: 2.1rem; } nav { padding: 14px 20px; } .hero, .values, .testimonials, .faq, .cta-section, .contact { padding: 56px 20px; } }
   </style>
+  ${landingTplCss ? `<style>/* template: ${lpTemplateName} */\n${landingTplCss}\n  </style>` : ''}
 </head>
 <body>
   <nav>
