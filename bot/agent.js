@@ -849,6 +849,16 @@ async function executeTool(name, args, ctx) {
         const lang        = args.language || 'he';
         const langLabel   = lang === 'he' ? 'Hebrew' : 'English';
 
+        const contentStyles = [
+          'use a personal anecdote or real moment',
+          'start with a bold claim or surprising statistic',
+          'open with a question that challenges assumptions',
+          'use a contrarian or unexpected opinion',
+          'tell a mini story in 3 sentences',
+          'use an unexpected analogy or comparison',
+        ];
+        const styleHint = contentStyles[Math.floor(Math.random() * contentStyles.length)];
+
         const userContext = `You are writing social media content for Shilo Alkobi, founder of Digital Web.
 
 FACTS about Shilo and Digital Web:
@@ -865,7 +875,14 @@ RULES:
 - Write as Shilo in first person ("אני", "אצלנו", "בדיגיטל ווב")
 - Make it personal, specific, and authentic — as if posted from his real account
 - For Instagram: 150-200 words + emojis + 10-12 relevant hashtags including #digitalweb #שילהאלקובי
-- Never start with generic openers like "בעולם הדיגיטלי של היום..."`;
+- Never start with generic openers like "בעולם הדיגיטלי של היום..."
+
+CREATIVITY RULES:
+- Never start with: 'בעידן הדיגיטלי', 'בעולם של היום', 'אנחנו חיים בעידן', 'בשנים האחרונות'
+- Avoid clichés: 'פתרון מקיף', 'מקצועיות ללא פשרות', 'שירות איכותי', 'הצלחה מובטחת'
+- Use specific numbers, real examples, surprising angles
+- Pick ONE strong message, not 3 weak ones
+- Each post must feel different from typical Israeli business content`;
 
         // Use system role for Gemini so context is always respected
         const systemMsg = { role: 'system', content: userContext };
@@ -874,21 +891,22 @@ RULES:
         const toneLabel = toneMap[tone] || tone;
 
         const typePrompts = {
-          instagram: `Write a compelling Instagram post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Hook sentence (grab attention immediately — mention the specific topic)\n2. Main message (2-4 lines with relevant emojis throughout)\n3. Call to action (1 line, first person)\n4. 10-12 relevant hashtags on a new line including #digitalweb #שילהאלקובי #פיתוחאתרים`,
-          facebook:  `Write an engaging Facebook post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Opening hook (1-2 lines, specific to the topic)\n2. Story or value from Shilo's personal experience (3-5 lines)\n3. Question or CTA to encourage comments\n4. 3-5 hashtags`,
+          instagram: `Write a compelling Instagram post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Hook sentence (grab attention immediately — mention the specific topic)\n2. Main message (2-4 lines with relevant emojis throughout)\n3. Call to action (1 line, first person)\n4. 10-12 relevant hashtags on a new line including #digitalweb #שילהאלקובי #פיתוחאתרים\n\nSTYLE FOR THIS POST: ${styleHint}`,
+          facebook:  `Write an engaging Facebook post in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nStructure:\n1. Opening hook (1-2 lines, specific to the topic)\n2. Story or value from Shilo's personal experience (3-5 lines)\n3. Question or CTA to encourage comments\n4. 3-5 hashtags\n\nSTYLE FOR THIS POST: ${styleHint}`,
           email:     `Write a professional client email in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nFormat:\nSubject: <compelling subject line specific to "${topic}">\n\n<greeting>\n\n<opening paragraph — establish context related to "${topic}">\n\n<main body — 2-3 paragraphs with value, based on Shilo's expertise>\n\n<closing paragraph + clear next step>\n\n<signature: שילה אלקובי | Digital Web | digitalweb.co.il>`,
           bio:       `Write a professional social media bio in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\n2-3 punchy sentences. Specific to the topic. Include: who Shilo is, what he builds, what makes him unique. Add 3-5 relevant emojis.`,
-          headline:  `Generate 5 unique, click-worthy headlines in ${langLabel} for: "${topic}".\nTone: ${toneLabel}.\nMust be specific to "${topic}" — not generic.\nVariety: one question, one bold claim, one how-to, one number-based, one emotional.\nNumber them 1-5.`,
-          whatsapp:  `Write a WhatsApp business message in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nUnder 150 words. Conversational but professional. Specific to "${topic}". Relevant emoji. Clear CTA at end.`,
+          headline:  `Generate 5 unique, click-worthy headlines in ${langLabel} for: "${topic}".\nTone: ${toneLabel}.\nMust be specific to "${topic}" — not generic.\nVariety: one question, one bold claim, one how-to, one number-based, one emotional.\nNumber them 1-5.\n\nSTYLE DIRECTION: ${styleHint}`,
+          whatsapp:  `Write a WhatsApp business message in ${langLabel} about: "${topic}".\nTone: ${toneLabel}.\nUnder 150 words. Conversational but professional. Specific to "${topic}". Relevant emoji. Clear CTA at end.\n\nSTYLE FOR THIS MESSAGE: ${styleHint}`,
         };
 
         const userPrompt = typePrompts[contentType] || typePrompts.instagram;
         bot.sendMessage(chatId, `✍️ כותב תוכן — ${contentType}...`);
 
+        const creativeTemp = ['email'].includes(contentType) ? 0.7 : 0.95;
         const contentRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
           messages: [systemMsg, { role: 'user', content: userPrompt }],
-          temperature: 0.85,
+          temperature: creativeTemp,
         });
         const generated = contentRes.choices[0]?.message?.content || 'לא הצלחתי ליצור תוכן.';
 
@@ -1092,12 +1110,18 @@ Bullets:
 - <point 3>
 Notes: <one sentence speaker note>
 
-Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 10 words each.`;
+Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 10 words each.
+
+CREATIVITY:
+- Each slide title must be unique and specific — not generic like 'מבוא' or 'סקירה כללית'
+- Use action verbs in titles (e.g. 'גלה', 'בנה', 'הבן', 'שנה')
+- Bullet points start with action words or surprising facts
+- Avoid repeating the same structure across slides`;
 
         const slideRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
           messages: [{ role: 'user', content: slidesPrompt }],
-          temperature: 0.6,
+          temperature: 0.85,
         });
         const slideContent = slideRes.choices[0]?.message?.content || '';
 
@@ -1303,6 +1327,15 @@ Repeat SLIDE N format for all ${contentSlides} slides. Keep bullet points under 
 
         bot.sendMessage(chatId, `🌐 בונה דף נחיתה ל-${bizName}...`);
 
+        const heroStyles = [
+          'punchy and direct — short powerful sentence',
+          'emotional and inspiring — connect to a dream or fear',
+          'data-driven — lead with a specific number or stat',
+          'question-based — challenge an assumption',
+          'metaphor or comparison — unexpected analogy',
+        ];
+        const heroStyle = heroStyles[Math.floor(Math.random() * heroStyles.length)];
+
         const copyPrompt = `Create professional Hebrew landing page copy for "${bizName}" — ${bizDesc}.
 Return EXACTLY this format (no extra text):
 HERO_HEADLINE: <compelling 5-8 word Hebrew headline>
@@ -1328,12 +1361,19 @@ FAQ_1_A: <clear answer, 1-2 sentences>
 FAQ_2_Q: <common question about ${bizName}>
 FAQ_2_A: <clear answer, 1-2 sentences>
 FAQ_3_Q: <common question about ${bizName}>
-FAQ_3_A: <clear answer, 1-2 sentences>`;
+FAQ_3_A: <clear answer, 1-2 sentences>
+
+CREATIVITY RULES:
+- Hero headline must NOT start with 'ברוכים הבאים' or contain 'מובילה' / 'מקצועית' / 'איכותית'
+- Use specific numbers where possible: '150 אתרים בנינו השנה' not 'ניסיון רב'
+- Each VALUE title must be UNIQUE — not generic like 'מקצועיות' / 'אמינות' / 'ניסיון'
+- Testimonials must sound like REAL Israelis: use natural speech, specific company names, exact problems solved
+HERO STYLE: ${heroStyle}`;
 
         const copyRes = await gemini.chat.completions.create({
           model: 'gemini-2.5-flash',
           messages: [{ role: 'user', content: copyPrompt }],
-          temperature: 0.7,
+          temperature: 0.9,
         });
         const copyText = copyRes.choices[0]?.message?.content || '';
 
