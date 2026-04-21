@@ -3,7 +3,7 @@
 /**
  * password-manager.js — AES-256-CBC encrypted password storage.
  * Key derived from TELEGRAM_BOT_TOKEN (first 32 chars, padded).
- * Data stored in Supabase (passwords table) with JSON fallback.
+ * Data stored in Supabase (passwords table, unified schema) with JSON fallback.
  * Values remain encrypted at rest either way.
  */
 
@@ -56,12 +56,14 @@ function persistToJson(list) {
   }
 }
 
+// Unified schema row → in-memory entry.
 function rowToEntry(r) {
+  const d = r.data || {};
   return {
-    key:       r.key,
-    service:   r.service,
-    username:  r.username || '',
-    password:  r.password,
+    key:       r.id,
+    service:   d.service,
+    username:  d.username || '',
+    password:  d.password,
     updatedAt: r.updated_at,
   };
 }
@@ -89,12 +91,16 @@ async function savePassword(service, username, password) {
 
   if (isEnabled()) {
     const { error } = await supabase.from('passwords').upsert({
-      key:        entry.key,
-      service:    entry.service,
-      username:   entry.username,
-      password:   entry.password,
+      id:      entry.key,
+      chat_id: null,
+      data: {
+        service:  entry.service,
+        username: entry.username,
+        password: entry.password,
+      },
+      created_at: entry.updatedAt,
       updated_at: entry.updatedAt,
-    }, { onConflict: 'key' });
+    }, { onConflict: 'id' });
     if (error) console.warn('[Supabase] savePassword error:', error.message);
   }
 
@@ -129,7 +135,7 @@ async function deletePassword(service) {
   const key = service.toLowerCase();
 
   if (isEnabled()) {
-    const { error } = await supabase.from('passwords').delete().eq('key', key);
+    const { error } = await supabase.from('passwords').delete().eq('id', key);
     if (error) console.warn('[Supabase] deletePassword error:', error.message);
   }
 

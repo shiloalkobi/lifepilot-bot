@@ -41,13 +41,17 @@ function saveAllToJson(all) {
   }
 }
 
+function memoryId(chatId) {
+  return `mem_${chatId}`;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 async function loadMemory(chatId) {
   if (isEnabled()) {
     const { data, error } = await supabase
       .from('memory')
-      .select('data')
-      .eq('chat_id', String(chatId))
+      .select('*')
+      .eq('id', memoryId(chatId))
       .maybeSingle();
     if (!error && data && data.data) return data.data;
     if (error && error.code !== 'PGRST116') {
@@ -63,10 +67,12 @@ async function saveMemory(chatId, memory) {
 
   if (isEnabled()) {
     const { error } = await supabase.from('memory').upsert({
-      chat_id:    String(chatId),
+      id:         memoryId(chatId),
+      chat_id:    Number(chatId) || null,
       data:       withTs,
+      created_at: withTs.lastUpdated,
       updated_at: withTs.lastUpdated,
-    }, { onConflict: 'chat_id' });
+    }, { onConflict: 'id' });
     if (error) console.warn('[Supabase] saveMemory error:', error.message);
   }
 

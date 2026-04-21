@@ -487,6 +487,7 @@ async function executeTool(name, args, ctx) {
         const text = args.priority === 'high' ? `!${args.text}` : args.text;
         const task = await addTask(text);
         if (!task) return 'שגיאה: לא הצלחתי להוסיף משימה';
+        if (task.isDuplicate) return `⚠️ המשימה "${task.text}" כבר קיימת (#${task.id})`;
         return `נוסף: #${task.id} "${task.text}" [${task.priority}]`;
       }
       case 'get_tasks': {
@@ -780,6 +781,7 @@ async function executeTool(name, args, ctx) {
       // ── Habit Tracker (#35) ────────────────────────────────────────────────
       case 'add_habit': {
         const habit = await addHabit(args.name, args.icon, args.frequency);
+        if (habit.isDuplicate) return `⚠️ ההרגל "${habit.name}" כבר קיים (ID: ${habit.id})`;
         return `✅ הרגל נוסף: ${habit.icon} "${habit.name}" (ID: ${habit.id}, ${habit.frequency})`;
       }
       case 'log_habit': {

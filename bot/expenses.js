@@ -20,19 +20,21 @@ function saveToJson(data) {
   }
 }
 
+// Unified schema row → in-memory expense (numeric id preserved).
 function rowToExpense(r) {
+  const d = r.data || {};
   return {
-    id:          r.id,
-    date:        r.date,
-    vendor:      r.vendor,
-    amount:      r.amount,
-    currency:    r.currency || 'ILS',
-    category:    r.category || 'other',
-    source:      r.source   || 'manual',
-    emailId:     r.email_id || null,
-    description: r.description || null,
-    month:       r.month,
-    savedAt:     r.saved_at,
+    id:          Number(r.id),
+    date:        d.date,
+    vendor:      d.vendor || d.store || null,
+    amount:      d.amount,
+    currency:    d.currency    || 'ILS',
+    category:    d.category    || 'other',
+    source:      d.source      || 'manual',
+    emailId:     d.email_id    || d.emailId || null,
+    description: d.description || null,
+    month:       d.month,
+    savedAt:     r.created_at,
   };
 }
 
@@ -40,9 +42,10 @@ async function load() {
   if (isEnabled()) {
     const { data, error } = await supabase
       .from('expenses')
-      .select('*')
-      .order('id', { ascending: true });
-    if (!error && Array.isArray(data)) return data.map(rowToExpense);
+      .select('*');
+    if (!error && Array.isArray(data)) {
+      return data.map(rowToExpense).sort((a, b) => a.id - b.id);
+    }
     if (error) console.warn('[Supabase] expenses load error:', error.message);
   }
   return loadFromJson();
@@ -53,9 +56,6 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/**
- * Save a full invoice/expense record.
- */
 async function saveInvoice(fields) {
   const existing = await load();
   const entry = {
@@ -74,22 +74,26 @@ async function saveInvoice(fields) {
 
   if (isEnabled()) {
     const { error } = await supabase.from('expenses').insert({
-      id:          entry.id,
-      date:        entry.date,
-      vendor:      entry.vendor,
-      amount:      entry.amount,
-      currency:    entry.currency,
-      category:    entry.category,
-      source:      entry.source,
-      email_id:    entry.emailId,
-      description: entry.description,
-      month:       entry.month,
-      saved_at:    entry.savedAt,
+      id:         String(entry.id),
+      chat_id:    null,
+      data: {
+        date:        entry.date,
+        vendor:      entry.vendor,
+        store:       entry.vendor,
+        amount:      entry.amount,
+        currency:    entry.currency,
+        category:    entry.category,
+        source:      entry.source,
+        email_id:    entry.emailId,
+        description: entry.description,
+        month:       entry.month,
+      },
+      created_at: entry.savedAt,
+      updated_at: entry.savedAt,
     });
     if (error) console.warn('[Supabase] saveInvoice error:', error.message);
   }
 
-  // mirror to JSON
   const expenses = loadFromJson();
   expenses.push(entry);
   saveToJson(expenses);
@@ -126,7 +130,6 @@ async function getExpenseSummary(month) {
 
   const totals = {};
   const byCat  = {};
-  let unknownCount = 0;
   for (const e of items) {
     const cur = e.currency || 'ILS';
     if (e.amount != null && e.amount > 0) {
@@ -134,8 +137,6 @@ async function getExpenseSummary(month) {
       const cat = e.category || 'other';
       if (!byCat[cat]) byCat[cat] = {};
       byCat[cat][cur] = (byCat[cat][cur] || 0) + e.amount;
-    } else {
-      unknownCount++;
     }
   }
 

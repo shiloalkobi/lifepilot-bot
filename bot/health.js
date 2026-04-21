@@ -20,14 +20,16 @@ function saveToJson(entries) {
   }
 }
 
+// Unpack unified schema row → in-memory entry.
 function rowToEntry(r) {
+  const d = r.data || {};
   return {
-    date:       r.date,
-    painLevel:  r.pain_level,
-    mood:       r.mood,
-    sleep:      r.sleep,
-    symptoms:   r.symptoms || '',
-    notes:      r.notes || '',
+    date:       d.date || r.id,
+    painLevel:  d.pain ?? d.painLevel ?? null,
+    mood:       d.mood ?? null,
+    sleep:      d.sleep ?? null,
+    symptoms:   d.symptoms || '',
+    notes:      d.notes || '',
     createdAt:  r.created_at,
   };
 }
@@ -38,25 +40,30 @@ async function load() {
     const { data, error } = await supabase
       .from('health_logs')
       .select('*')
-      .order('date', { ascending: true });
+      .order('id', { ascending: true });
     if (!error && Array.isArray(data)) return data.map(rowToEntry);
     if (error) console.warn('[Supabase] health load error:', error.message);
   }
   return loadFromJson();
 }
 
-// ── Unified save (one entry, upsert by date) ──────────────────────────────────
+// ── Unified save (one entry per date, upsert by id = date) ────────────────────
 async function saveEntry(entry) {
   if (isEnabled()) {
     const { error } = await supabase.from('health_logs').upsert({
-      date:       entry.date,
-      pain_level: entry.painLevel,
-      mood:       entry.mood,
-      sleep:      entry.sleep,
-      symptoms:   entry.symptoms || '',
-      notes:      entry.notes || '',
+      id:         entry.date,
+      chat_id:    null,
+      data: {
+        date:     entry.date,
+        pain:     entry.painLevel,
+        mood:     entry.mood,
+        sleep:    entry.sleep,
+        symptoms: entry.symptoms || '',
+        notes:    entry.notes || '',
+      },
       created_at: entry.createdAt,
-    }, { onConflict: 'date' });
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' });
     if (error) console.warn('[Supabase] health saveEntry error:', error.message);
   }
 

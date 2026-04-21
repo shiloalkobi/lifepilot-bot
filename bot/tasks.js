@@ -20,14 +20,16 @@ function saveToJson(tasks) {
   }
 }
 
+// Unified schema row → in-memory task (numeric id preserved).
 function rowToTask(r) {
+  const d = r.data || {};
   return {
-    id:        r.id,
-    text:      r.text,
-    done:      !!r.done,
-    priority:  r.priority || 'medium',
+    id:        Number(r.id),
+    text:      d.text,
+    done:      !!d.done,
+    priority:  d.priority || 'medium',
     createdAt: r.created_at,
-    doneAt:    r.done_at || null,
+    doneAt:    d.doneAt || d.completed_at || null,
   };
 }
 
@@ -35,9 +37,10 @@ async function loadTasks() {
   if (isEnabled()) {
     const { data, error } = await supabase
       .from('tasks')
-      .select('*')
-      .order('id', { ascending: true });
-    if (!error && Array.isArray(data)) return data.map(rowToTask);
+      .select('*');
+    if (!error && Array.isArray(data)) {
+      return data.map(rowToTask).sort((a, b) => a.id - b.id);
+    }
     if (error) console.warn('[Supabase] tasks load error:', error.message);
   }
   return loadFromJson();
@@ -46,12 +49,17 @@ async function loadTasks() {
 async function upsertTask(task) {
   if (isEnabled()) {
     const { error } = await supabase.from('tasks').upsert({
-      id:         task.id,
-      text:       task.text,
-      done:       task.done,
-      priority:   task.priority,
+      id:         String(task.id),
+      chat_id:    null,
+      data: {
+        text:      task.text,
+        done:      task.done,
+        priority:  task.priority,
+        status:    task.done ? 'done' : 'open',
+        doneAt:    task.doneAt,
+      },
       created_at: task.createdAt,
-      done_at:    task.doneAt,
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'id' });
     if (error) console.warn('[Supabase] tasks upsert error:', error.message);
   }
@@ -65,7 +73,7 @@ async function upsertTask(task) {
 
 async function deleteTaskRow(id) {
   if (isEnabled()) {
-    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    const { error } = await supabase.from('tasks').delete().eq('id', String(id));
     if (error) console.warn('[Supabase] tasks delete error:', error.message);
   }
   const tasks = loadFromJson();
@@ -89,6 +97,11 @@ async function addTask(text) {
   const isHigh = text.startsWith('!');
   const cleanText = isHigh ? text.slice(1).trim() : text.trim();
   if (!cleanText) return null;
+
+  // Duplicate prevention — match by text (case-insensitive, trimmed) amongst OPEN tasks
+  const norm = cleanText.toLowerCase();
+  const dup  = tasks.find(t => !t.done && (t.text || '').toLowerCase().trim() === norm);
+  if (dup) return { ...dup, isDuplicate: true };
 
   const task = {
     id: nextId(tasks),

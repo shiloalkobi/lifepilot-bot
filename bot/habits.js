@@ -20,14 +20,16 @@ function saveToJson(habits) {
   }
 }
 
+// Unpack unified schema row → in-memory habit (numeric id).
 function rowToHabit(r) {
+  const d = r.data || {};
   return {
-    id:        r.id,
-    name:      r.name,
-    icon:      r.icon || '✅',
-    frequency: r.frequency || 'daily',
+    id:        Number(r.id),
+    name:      d.name,
+    icon:      d.icon || '✅',
+    frequency: d.frequency || 'daily',
     createdAt: r.created_at,
-    logs:      Array.isArray(r.logs) ? r.logs : [],
+    logs:      Array.isArray(d.logs) ? d.logs : [],
   };
 }
 
@@ -35,9 +37,10 @@ async function load() {
   if (isEnabled()) {
     const { data, error } = await supabase
       .from('habits')
-      .select('*')
-      .order('id', { ascending: true });
-    if (!error && Array.isArray(data)) return data.map(rowToHabit);
+      .select('*');
+    if (!error && Array.isArray(data)) {
+      return data.map(rowToHabit).sort((a, b) => a.id - b.id);
+    }
     if (error) console.warn('[Supabase] habits load error:', error.message);
   }
   return loadFromJson();
@@ -46,12 +49,16 @@ async function load() {
 async function upsertHabit(habit) {
   if (isEnabled()) {
     const { error } = await supabase.from('habits').upsert({
-      id:         habit.id,
-      name:       habit.name,
-      icon:       habit.icon,
-      frequency:  habit.frequency,
+      id:         String(habit.id),
+      chat_id:    null,
+      data: {
+        name:          habit.name,
+        icon:          habit.icon,
+        frequency:     habit.frequency,
+        logs:          habit.logs || [],
+      },
       created_at: habit.createdAt,
-      logs:       habit.logs || [],
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'id' });
     if (error) console.warn('[Supabase] habits upsert error:', error.message);
   }
@@ -65,7 +72,7 @@ async function upsertHabit(habit) {
 
 async function deleteHabitRow(id) {
   if (isEnabled()) {
-    const { error } = await supabase.from('habits').delete().eq('id', id);
+    const { error } = await supabase.from('habits').delete().eq('id', String(id));
     if (error) console.warn('[Supabase] habits delete error:', error.message);
   }
   const habits = loadFromJson();
@@ -105,6 +112,12 @@ function calcStreak(habit) {
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 async function addHabit(name, icon = '✅', frequency = 'daily') {
   const habits = await load();
+
+  // Duplicate prevention — match by name (case-insensitive, trimmed)
+  const norm = String(name || '').toLowerCase().trim();
+  const dup  = habits.find(h => (h.name || '').toLowerCase().trim() === norm);
+  if (dup) return { ...dup, isDuplicate: true };
+
   const habit = {
     id:        nextId(habits),
     name,

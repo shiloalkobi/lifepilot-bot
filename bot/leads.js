@@ -21,17 +21,30 @@ function saveLeadsToJson(leads) {
   }
 }
 
-// Map Supabase row → in-memory lead shape (camelCase like before)
+// Map Supabase row → in-memory lead (unpack data JSONB).
 function rowToLead(r) {
+  const d = r.data || {};
   return {
     id:         r.id,
-    title:      r.title,
-    data:       r.data,
-    status:     r.status,
-    notes:      r.notes || '',
+    chat_id:    r.chat_id,
+    title:      d.title || '',
+    data:       d.fields || d.data || {},
+    status:     d.status || 'new',
+    notes:      d.notes || '',
     createdAt:  r.created_at,
-    followUpAt: r.follow_up_at,
+    followUpAt: d.followUpAt,
     updatedAt:  r.updated_at,
+  };
+}
+
+// Build the JSONB payload from a lead object.
+function toDataPayload(lead) {
+  return {
+    title:      lead.title || '',
+    status:     lead.status || 'new',
+    notes:      lead.notes || '',
+    followUpAt: lead.followUpAt || null,
+    fields:     lead.data || {},
   };
 }
 
@@ -61,13 +74,11 @@ async function saveLead(title, data) {
 
   if (isEnabled()) {
     const { error } = await supabase.from('leads').insert({
-      id:           lead.id,
-      title:        lead.title,
-      data:         lead.data,
-      status:       lead.status,
-      notes:        lead.notes,
-      created_at:   lead.createdAt,
-      follow_up_at: lead.followUpAt,
+      id:         lead.id,
+      chat_id:    null,
+      data:       toDataPayload(lead),
+      created_at: lead.createdAt,
+      updated_at: lead.createdAt,
     });
     if (error) console.warn('[Supabase] saveLead error:', error.message);
   }
@@ -83,21 +94,27 @@ async function saveLead(title, data) {
 }
 
 async function updateLeadStatus(id, status) {
+  const updatedAt = new Date().toISOString();
+
   if (isEnabled()) {
-    const { data, error } = await supabase
-      .from('leads')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single();
-    if (!error && data) {
-      // mirror to JSON
-      const leads = loadLeadsFromJson();
-      const l = leads.find(x => x.id === id);
-      if (l) { l.status = status; saveLeadsToJson(leads); }
-      return rowToLead(data);
+    const { data: existing, error: fetchErr } = await supabase
+      .from('leads').select('*').eq('id', id).maybeSingle();
+    if (!fetchErr && existing) {
+      const newData = { ...(existing.data || {}), status };
+      const { data, error } = await supabase
+        .from('leads')
+        .update({ data: newData, updated_at: updatedAt })
+        .eq('id', id)
+        .select()
+        .single();
+      if (!error && data) {
+        const leads = loadLeadsFromJson();
+        const l = leads.find(x => x.id === id);
+        if (l) { l.status = status; saveLeadsToJson(leads); }
+        return rowToLead(data);
+      }
+      if (error) console.warn('[Supabase] updateLeadStatus error:', error.message);
     }
-    if (error) console.warn('[Supabase] updateLeadStatus error:', error.message);
   }
 
   const leads = loadLeadsFromJson();
@@ -108,21 +125,27 @@ async function updateLeadStatus(id, status) {
 
 async function snoozeLead(id, hours = 24) {
   const followUpAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  const updatedAt  = new Date().toISOString();
 
   if (isEnabled()) {
-    const { data, error } = await supabase
-      .from('leads')
-      .update({ follow_up_at: followUpAt, status: 'new', updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single();
-    if (!error && data) {
-      const leads = loadLeadsFromJson();
-      const l = leads.find(x => x.id === id);
-      if (l) { l.followUpAt = followUpAt; l.status = 'new'; saveLeadsToJson(leads); }
-      return rowToLead(data);
+    const { data: existing, error: fetchErr } = await supabase
+      .from('leads').select('*').eq('id', id).maybeSingle();
+    if (!fetchErr && existing) {
+      const newData = { ...(existing.data || {}), followUpAt, status: 'new' };
+      const { data, error } = await supabase
+        .from('leads')
+        .update({ data: newData, updated_at: updatedAt })
+        .eq('id', id)
+        .select()
+        .single();
+      if (!error && data) {
+        const leads = loadLeadsFromJson();
+        const l = leads.find(x => x.id === id);
+        if (l) { l.followUpAt = followUpAt; l.status = 'new'; saveLeadsToJson(leads); }
+        return rowToLead(data);
+      }
+      if (error) console.warn('[Supabase] snoozeLead error:', error.message);
     }
-    if (error) console.warn('[Supabase] snoozeLead error:', error.message);
   }
 
   const leads = loadLeadsFromJson();
@@ -158,13 +181,17 @@ async function updateLead(idOrName, updates) {
   );
   if (!lead) return null;
 
-  const patch = { updated_at: new Date().toISOString() };
-  if (updates.status) { lead.status = updates.status; patch.status = updates.status; }
-  if (updates.notes)  { lead.notes  = updates.notes;  patch.notes  = updates.notes; }
-  lead.updatedAt = patch.updated_at;
+  const updatedAt = new Date().toISOString();
+  if (updates.status) lead.status = updates.status;
+  if (updates.notes)  lead.notes  = updates.notes;
+  lead.updatedAt = updatedAt;
 
   if (isEnabled()) {
-    const { error } = await supabase.from('leads').update(patch).eq('id', lead.id);
+    const newData = toDataPayload(lead);
+    const { error } = await supabase
+      .from('leads')
+      .update({ data: newData, updated_at: updatedAt })
+      .eq('id', lead.id);
     if (error) console.warn('[Supabase] updateLead error:', error.message);
   }
 
@@ -174,7 +201,7 @@ async function updateLead(idOrName, updates) {
   if (jl) {
     if (updates.status) jl.status = updates.status;
     if (updates.notes)  jl.notes  = updates.notes;
-    jl.updatedAt = patch.updated_at;
+    jl.updatedAt = updatedAt;
     saveLeadsToJson(jsonLeads);
   }
   return lead;

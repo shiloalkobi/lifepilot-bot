@@ -83,14 +83,16 @@ function saveToJson(list) {
   }
 }
 
+// Unified schema row → in-memory watch (numeric id preserved).
 function rowToWatch(r) {
+  const d = r.data || {};
   return {
-    id:        r.id,
-    chatId:    r.chat_id,
-    symbol:    r.symbol,
-    threshold: r.threshold,
-    direction: r.direction || 'above',
-    triggered: !!r.triggered,
+    id:        Number(r.id),
+    chatId:    r.chat_id != null ? String(r.chat_id) : String(d.chatId || ''),
+    symbol:    d.symbol,
+    threshold: d.threshold,
+    direction: d.direction || 'above',
+    triggered: !!d.triggered,
     createdAt: r.created_at,
   };
 }
@@ -99,9 +101,10 @@ async function loadWatchlist() {
   if (isEnabled()) {
     const { data, error } = await supabase
       .from('watchlist')
-      .select('*')
-      .order('id', { ascending: true });
-    if (!error && Array.isArray(data)) return data.map(rowToWatch);
+      .select('*');
+    if (!error && Array.isArray(data)) {
+      return data.map(rowToWatch).sort((a, b) => a.id - b.id);
+    }
     if (error) console.warn('[Supabase] watchlist load error:', error.message);
   }
   return loadFromJson();
@@ -110,13 +113,18 @@ async function loadWatchlist() {
 async function upsertWatch(entry) {
   if (isEnabled()) {
     const { error } = await supabase.from('watchlist').upsert({
-      id:         entry.id,
-      chat_id:    String(entry.chatId),
-      symbol:     entry.symbol,
-      threshold:  entry.threshold,
-      direction:  entry.direction,
-      triggered:  entry.triggered,
+      id:         String(entry.id),
+      chat_id:    Number(entry.chatId) || null,
+      data: {
+        symbol:         entry.symbol,
+        threshold:      entry.threshold,
+        direction:      entry.direction,
+        triggered:      entry.triggered,
+        triggered_at:   entry.triggeredAt || null,
+        alert_price:    entry.alertPrice || null,
+      },
       created_at: entry.createdAt,
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'id' });
     if (error) console.warn('[Supabase] watchlist upsert error:', error.message);
   }
@@ -135,7 +143,7 @@ async function deleteWatchRows(predicate) {
 
   if (isEnabled()) {
     for (const r of removed) {
-      const { error } = await supabase.from('watchlist').delete().eq('id', r.id);
+      const { error } = await supabase.from('watchlist').delete().eq('id', String(r.id));
       if (error) console.warn('[Supabase] watchlist delete error:', error.message);
     }
   }
@@ -232,7 +240,12 @@ async function checkAlerts(bot, chatId) {
           `${s.name}`,
           { parse_mode: 'HTML' }
         );
-        await upsertWatch({ ...w, triggered: true });
+        await upsertWatch({
+          ...w,
+          triggered: true,
+          triggeredAt: new Date().toISOString(),
+          alertPrice: s.price,
+        });
       } else if (!triggered && w.triggered) {
         await upsertWatch({ ...w, triggered: false });
       }
