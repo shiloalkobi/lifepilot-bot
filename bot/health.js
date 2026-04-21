@@ -2,17 +2,70 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { supabase, isEnabled } = require('./supabase');
 
 const HEALTH_FILE = path.join(__dirname, '..', 'data', 'health-log.json');
 
-// ── Persistence ───────────────────────────────────────────────────────────────
-function load() {
+// ── Persistence (JSON fallback) ───────────────────────────────────────────────
+function loadFromJson() {
   try { return JSON.parse(fs.readFileSync(HEALTH_FILE, 'utf8')); } catch { return []; }
 }
 
-function save(entries) {
-  fs.mkdirSync(path.dirname(HEALTH_FILE), { recursive: true });
-  fs.writeFileSync(HEALTH_FILE, JSON.stringify(entries, null, 2), 'utf8');
+function saveToJson(entries) {
+  try {
+    fs.mkdirSync(path.dirname(HEALTH_FILE), { recursive: true });
+    fs.writeFileSync(HEALTH_FILE, JSON.stringify(entries, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[health] JSON save failed:', e.message);
+  }
+}
+
+function rowToEntry(r) {
+  return {
+    date:       r.date,
+    painLevel:  r.pain_level,
+    mood:       r.mood,
+    sleep:      r.sleep,
+    symptoms:   r.symptoms || '',
+    notes:      r.notes || '',
+    createdAt:  r.created_at,
+  };
+}
+
+// ── Unified load (Supabase → JSON fallback) ───────────────────────────────────
+async function load() {
+  if (isEnabled()) {
+    const { data, error } = await supabase
+      .from('health_logs')
+      .select('*')
+      .order('date', { ascending: true });
+    if (!error && Array.isArray(data)) return data.map(rowToEntry);
+    if (error) console.warn('[Supabase] health load error:', error.message);
+  }
+  return loadFromJson();
+}
+
+// ── Unified save (one entry, upsert by date) ──────────────────────────────────
+async function saveEntry(entry) {
+  if (isEnabled()) {
+    const { error } = await supabase.from('health_logs').upsert({
+      date:       entry.date,
+      pain_level: entry.painLevel,
+      mood:       entry.mood,
+      sleep:      entry.sleep,
+      symptoms:   entry.symptoms || '',
+      notes:      entry.notes || '',
+      created_at: entry.createdAt,
+    }, { onConflict: 'date' });
+    if (error) console.warn('[Supabase] health saveEntry error:', error.message);
+  }
+
+  // mirror to JSON
+  const entries = loadFromJson();
+  const existing = entries.findIndex(e => e.date === entry.date);
+  if (existing >= 0) entries[existing] = entry;
+  else entries.push(entry);
+  saveToJson(entries);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -75,7 +128,7 @@ function isInCheckin(chatId) {
  * Process a message during active check-in.
  * Returns { reply, done } where done=true means check-in is complete.
  */
-function processCheckinStep(chatId, text) {
+async function processCheckinStep(chatId, text) {
   const session = sessions.get(chatId);
   if (!session) return null;
 
@@ -116,12 +169,8 @@ function processCheckinStep(chatId, text) {
     data.notes = val.toLowerCase() === 'אין' ? '' : val;
     sessions.delete(chatId);
 
-    // Save entry
-    const entries = load();
-    const today   = todayIL();
-    const existing = entries.findIndex((e) => e.date === today);
     const entry = {
-      date:       today,
+      date:       todayIL(),
       painLevel:  data.painLevel,
       mood:       data.mood,
       sleep:      data.sleep,
@@ -129,10 +178,7 @@ function processCheckinStep(chatId, text) {
       notes:      data.notes,
       createdAt:  new Date().toISOString(),
     };
-
-    if (existing >= 0) entries[existing] = entry;
-    else entries.push(entry);
-    save(entries);
+    await saveEntry(entry);
 
     const reply =
       `✅ <b>דיווח בריאות נשמר!</b>\n\n` +
@@ -153,13 +199,13 @@ function cancelCheckin(chatId) {
 }
 
 // ── Query functions ───────────────────────────────────────────────────────────
-function getTodayHealth() {
-  const entries = load();
+async function getTodayHealth() {
+  const entries = await load();
   return entries.find((e) => e.date === todayIL()) || null;
 }
 
-function formatTodayStatus() {
-  const entry = getTodayHealth();
+async function formatTodayStatus() {
+  const entry = await getTodayHealth();
   if (!entry) return '📋 לא מילאת דיווח בריאות היום.\n\nשלח /health כדי להתחיל.';
 
   return (
@@ -172,8 +218,8 @@ function formatTodayStatus() {
   );
 }
 
-function getWeekSummary(days = 7) {
-  const entries = load();
+async function getWeekSummary(days = 7) {
+  const entries = await load();
   const cutoff  = dateBeforeIL(days - 1);
   const recent  = entries.filter((e) => e.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date));
   if (!recent.length) return `📊 אין נתונים ל-${days} ימים האחרונים.`;
@@ -186,7 +232,6 @@ function getWeekSummary(days = 7) {
   const avgMood  = avg(moods);
   const avgSleep = avg(sleeps);
 
-  // Trend: compare first half vs second half
   const mid    = Math.floor(recent.length / 2);
   const firstP = avg(pains.slice(0, mid || 1));
   const lastP  = avg(pains.slice(mid));
@@ -209,8 +254,8 @@ function getWeekSummary(days = 7) {
   );
 }
 
-function formatRecentLog(count = 5) {
-  const entries = load();
+async function formatRecentLog(count = 5) {
+  const entries = await load();
   const recent  = entries.slice(-count).reverse();
   if (!recent.length) return '📋 אין דיווחים עדיין.';
 
@@ -228,8 +273,8 @@ function formatRecentLog(count = 5) {
 }
 
 // ── High pain alert check ─────────────────────────────────────────────────────
-function checkHighPainAlert() {
-  const entries = load();
+async function checkHighPainAlert() {
+  const entries = await load();
   const last3   = entries.slice(-3);
   if (last3.length < 3) return null;
   const allHigh = last3.every((e) => e.painLevel >= 7);
@@ -239,12 +284,9 @@ function checkHighPainAlert() {
 }
 
 // ── Direct log (agent use — no interactive flow) ──────────────────────────────
-function logDirect({ pain, mood, sleep, symptoms, notes }) {
-  const entries = load();
-  const today   = todayIL();
-  const existing = entries.findIndex(e => e.date === today);
+async function logDirect({ pain, mood, sleep, symptoms, notes }) {
   const entry = {
-    date:       today,
+    date:       todayIL(),
     painLevel:  pain,
     mood:       mood   || null,
     sleep:      sleep  || null,
@@ -252,29 +294,27 @@ function logDirect({ pain, mood, sleep, symptoms, notes }) {
     notes:      notes    || '',
     createdAt:  new Date().toISOString(),
   };
-  if (existing >= 0) entries[existing] = entry;
-  else entries.push(entry);
-  save(entries);
+  await saveEntry(entry);
   return entry;
 }
 
 // ── Yesterday missing check (for morning briefing) ───────────────────────────
-function hadEntryYesterday() {
+async function hadEntryYesterday() {
   const yesterday = dateBeforeIL(1);
-  const entries   = load();
+  const entries   = await load();
   return entries.some((e) => e.date === yesterday);
 }
 
 // ── Yesterday health entry (for morning briefing detail) ─────────────────────
-function getYesterdayHealth() {
+async function getYesterdayHealth() {
   const yesterday = dateBeforeIL(1);
-  const entries   = load();
+  const entries   = await load();
   return entries.find((e) => e.date === yesterday) || null;
 }
 
 // ── Health pattern analysis (#24) ────────────────────────────────────────────
-function analyzeHealthPatterns(days = 30) {
-  const entries = load();
+async function analyzeHealthPatterns(days = 30) {
+  const entries = await load();
   const cutoff  = dateBeforeIL(days - 1);
   const recent  = entries.filter((e) => e.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date));
 
@@ -284,11 +324,10 @@ function analyzeHealthPatterns(days = 30) {
 
   const lines = [`📊 <b>ניתוח דפוסי בריאות — ${days} ימים</b> (${recent.length} דיווחים)\n`];
 
-  // ── Day-of-week pain averages ───────────────────────────────────────────────
   const dayNames = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
   const byDay = Array.from({ length: 7 }, () => []);
   for (const e of recent) {
-    const dow = new Date(e.date + 'T12:00:00').getDay(); // 0=Sun
+    const dow = new Date(e.date + 'T12:00:00').getDay();
     if (e.painLevel != null) byDay[dow].push(e.painLevel);
   }
   const dayAvgs = byDay.map((arr, i) => ({
@@ -307,9 +346,8 @@ function analyzeHealthPatterns(days = 30) {
     lines.push('');
   }
 
-  // ── Sleep → next-day pain correlation ─────────────────────────────────────
-  const lowSleepPain  = []; // pain on day after sleep < 6h
-  const goodSleepPain = []; // pain on day after sleep ≥ 6h
+  const lowSleepPain  = [];
+  const goodSleepPain = [];
   for (let i = 0; i < recent.length - 1; i++) {
     const sleepEntry = recent[i];
     const nextEntry  = recent[i + 1];
@@ -333,7 +371,6 @@ function analyzeHealthPatterns(days = 30) {
     lines.push('');
   }
 
-  // ── High-pain streaks ──────────────────────────────────────────────────────
   let maxStreak = 0, currentStreak = 0;
   for (const e of recent) {
     if (e.painLevel >= 7) { currentStreak++; maxStreak = Math.max(maxStreak, currentStreak); }
@@ -344,7 +381,6 @@ function analyzeHealthPatterns(days = 30) {
     lines.push('');
   }
 
-  // ── Overall trend ──────────────────────────────────────────────────────────
   const pains = recent.map(e => e.painLevel).filter(Boolean);
   if (pains.length >= 4) {
     const half = Math.floor(pains.length / 2);
@@ -361,8 +397,8 @@ function analyzeHealthPatterns(days = 30) {
 }
 
 // ── Raw weekly stats (for proactive scheduler — no formatting) ────────────────
-function getWeekRawStats(days = 7) {
-  const entries = load();
+async function getWeekRawStats(days = 7) {
+  const entries = await load();
   const cutoff  = dateBeforeIL(days - 1);
   const recent  = entries.filter((e) => e.date >= cutoff);
   if (!recent.length) return null;
@@ -394,4 +430,5 @@ module.exports = {
   hadEntryYesterday,
   getYesterdayHealth,
   analyzeHealthPatterns,
+  load,
 };

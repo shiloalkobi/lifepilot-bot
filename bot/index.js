@@ -224,12 +224,13 @@ const server = http.createServer((req, res) => {
         const today  = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 
         // Health today
-        const h = getTodayHealth();
+        const h = await getTodayHealth();
         const health = h ? { pain: h.painLevel, mood: h.mood, sleep: h.sleep } : null;
 
         // Health history — last 7 days
+        const { load: loadAllHealth } = require('./health');
         let allHealth = [];
-        try { allHealth = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'health-log.json'), 'utf8')); } catch {}
+        try { allHealth = await loadAllHealth(); } catch {}
         const healthHistory = [];
         for (let i = 6; i >= 0; i--) {
           const d = new Date();
@@ -240,7 +241,8 @@ const server = http.createServer((req, res) => {
         }
 
         // Habits
-        const habits = getHabits().map(habit => ({
+        const habitList = await getHabits();
+        const habits = habitList.map(habit => ({
           id:        habit.id,
           name:      habit.name,
           icon:      habit.icon,
@@ -249,7 +251,7 @@ const server = http.createServer((req, res) => {
         }));
 
         // Expenses (current month)
-        const exps = getMonthlyExpenses();
+        const exps = await getMonthlyExpenses();
         let total_ils = 0, total_usd = 0;
         const byCat = {};
         for (const e of exps) {
@@ -264,12 +266,12 @@ const server = http.createServer((req, res) => {
         }
 
         // Tasks
-        const openTasks = getOpenTasks();
-        const doneToday = getCompletedToday();
+        const openTasks = await getOpenTasks();
+        const doneToday = await getCompletedToday();
         const tasks     = { open: openTasks.length, completed_today: doneToday.length };
 
         // Stocks — live prices from watchlist
-        const watchlist = getWatchlistForChat(chatId);
+        const watchlist = await getWatchlistForChat(chatId);
         const stocks = [];
         for (const w of watchlist) {
           try {
@@ -280,8 +282,9 @@ const server = http.createServer((req, res) => {
 
         // Leads
         const { loadLeads, getLeadsSummary } = require('./leads');
-        const leads = loadLeads().slice(-20).reverse();
-        const leadsSummary = getLeadsSummary();
+        const allLeads = await loadLeads();
+        const leads = allLeads.slice(0, 20);
+        const leadsSummary = await getLeadsSummary();
 
         const body = JSON.stringify({
           health,
@@ -355,9 +358,9 @@ const server = http.createServer((req, res) => {
 
   // POST /api/log-habit — { id, done }
   if (req.method === 'POST' && route === '/api/log-habit') {
-    readJsonBody(req).then(b => {
+    readJsonBody(req).then(async b => {
       const { logHabit } = require('./habits');
-      const result = logHabit(Number(b.id), b.done !== false);
+      const result = await logHabit(Number(b.id), b.done !== false);
       if (!result) return apiJson(res, { ok: false, e: 'not_found' }, 404);
       apiJson(res, { ok: true, streak: result.streak });
     }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
@@ -366,9 +369,9 @@ const server = http.createServer((req, res) => {
 
   // POST /api/log-health — { pain, mood, sleep }
   if (req.method === 'POST' && route === '/api/log-health') {
-    readJsonBody(req).then(b => {
+    readJsonBody(req).then(async b => {
       const { logDirect } = require('./health');
-      logDirect({ pain: parseFloat(b.pain), mood: parseFloat(b.mood), sleep: parseFloat(b.sleep) });
+      await logDirect({ pain: parseFloat(b.pain), mood: parseFloat(b.mood), sleep: parseFloat(b.sleep) });
       apiJson(res, { ok: true });
     }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
     return;
@@ -376,9 +379,9 @@ const server = http.createServer((req, res) => {
 
   // POST /api/add-task — { text }
   if (req.method === 'POST' && route === '/api/add-task') {
-    readJsonBody(req).then(b => {
+    readJsonBody(req).then(async b => {
       const { addTask } = require('./tasks');
-      const task = addTask(String(b.text || '').trim());
+      const task = await addTask(String(b.text || '').trim());
       if (!task) return apiJson(res, { ok: false, e: 'empty_text' }, 400);
       apiJson(res, { ok: true, id: task.id });
     }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
@@ -387,9 +390,9 @@ const server = http.createServer((req, res) => {
 
   // POST /api/add-expense — { vendor, amount, currency, category }
   if (req.method === 'POST' && route === '/api/add-expense') {
-    readJsonBody(req).then(b => {
+    readJsonBody(req).then(async b => {
       const { saveInvoice } = require('./expenses');
-      const entry = saveInvoice({
+      const entry = await saveInvoice({
         vendor:   b.vendor   || 'ידני',
         amount:   parseFloat(b.amount) || 0,
         currency: b.currency || 'ILS',
@@ -403,14 +406,14 @@ const server = http.createServer((req, res) => {
 
   // POST /api/form-submit — form submissions forwarded to Telegram + saved as lead
   if (req.method === 'POST' && route === '/api/form-submit') {
-    readJsonBody(req).then(b => {
+    readJsonBody(req).then(async b => {
       const { title, data, chatId: bodyChat } = b;
       const targetChat = bodyChat || process.env.TELEGRAM_CHAT_ID || mainChatId;
       if (!targetChat) return apiJson(res, { ok: false, e: 'no_chat_id' }, 400);
 
-      // Save to leads.json
+      // Save to leads
       const { saveLead } = require('./leads');
-      const lead = saveLead(title || 'טופס', data || {});
+      const lead = await saveLead(title || 'טופס', data || {});
 
       // Build message
       let msg = `📋 <b>ליד חדש: ${title || 'טופס'}</b>\n\n`;

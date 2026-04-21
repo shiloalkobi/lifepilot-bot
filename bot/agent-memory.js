@@ -2,6 +2,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { supabase, isEnabled } = require('./supabase');
 
 const MEMORY_FILE = path.join(__dirname, '..', 'data', 'agent-memory.json');
 
@@ -26,48 +27,78 @@ const DEFAULT_MEMORY = {
   learnedFacts: [],
 };
 
-function loadMemory(chatId) {
+// ── JSON fallback ─────────────────────────────────────────────────────────────
+function loadAllFromJson() {
+  try { return JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8')); } catch { return {}; }
+}
+
+function saveAllToJson(all) {
   try {
-    const all = JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8'));
-    return all[String(chatId)] || { ...DEFAULT_MEMORY };
-  } catch {
-    return { ...DEFAULT_MEMORY };
+    fs.mkdirSync(path.dirname(MEMORY_FILE), { recursive: true });
+    fs.writeFileSync(MEMORY_FILE, JSON.stringify(all, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[memory] JSON save failed:', e.message);
   }
 }
 
-function saveMemory(chatId, memory) {
-  let all = {};
-  try { all = JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8')); } catch {}
-  all[String(chatId)] = { ...memory, lastUpdated: new Date().toISOString() };
-  fs.mkdirSync(path.dirname(MEMORY_FILE), { recursive: true });
-  fs.writeFileSync(MEMORY_FILE, JSON.stringify(all, null, 2), 'utf8');
+// ── Public API ────────────────────────────────────────────────────────────────
+async function loadMemory(chatId) {
+  if (isEnabled()) {
+    const { data, error } = await supabase
+      .from('memory')
+      .select('data')
+      .eq('chat_id', String(chatId))
+      .maybeSingle();
+    if (!error && data && data.data) return data.data;
+    if (error && error.code !== 'PGRST116') {
+      console.warn('[Supabase] loadMemory error:', error.message);
+    }
+  }
+  const all = loadAllFromJson();
+  return all[String(chatId)] || { ...DEFAULT_MEMORY };
 }
 
-function addLearnedFact(chatId, fact) {
-  const memory = loadMemory(chatId);
+async function saveMemory(chatId, memory) {
+  const withTs = { ...memory, lastUpdated: new Date().toISOString() };
+
+  if (isEnabled()) {
+    const { error } = await supabase.from('memory').upsert({
+      chat_id:    String(chatId),
+      data:       withTs,
+      updated_at: withTs.lastUpdated,
+    }, { onConflict: 'chat_id' });
+    if (error) console.warn('[Supabase] saveMemory error:', error.message);
+  }
+
+  const all = loadAllFromJson();
+  all[String(chatId)] = withTs;
+  saveAllToJson(all);
+}
+
+async function addLearnedFact(chatId, fact) {
+  const memory = await loadMemory(chatId);
   if (!Array.isArray(memory.learnedFacts)) memory.learnedFacts = [];
-  // Avoid near-duplicates
   const duplicate = memory.learnedFacts.some(f =>
     f.fact.toLowerCase().includes(fact.toLowerCase().slice(0, 20))
   );
   if (!duplicate) {
     memory.learnedFacts.push({ fact, confidence: 1.0, addedAt: new Date().toISOString() });
-    saveMemory(chatId, memory);
+    await saveMemory(chatId, memory);
   }
   return memory.learnedFacts;
 }
 
-function removeLearnedFact(chatId, index) {
-  const memory = loadMemory(chatId);
+async function removeLearnedFact(chatId, index) {
+  const memory = await loadMemory(chatId);
   if (!Array.isArray(memory.learnedFacts)) return false;
   if (index < 0 || index >= memory.learnedFacts.length) return false;
   memory.learnedFacts.splice(index, 1);
-  saveMemory(chatId, memory);
+  await saveMemory(chatId, memory);
   return true;
 }
 
-function listLearnedFacts(chatId) {
-  const memory = loadMemory(chatId);
+async function listLearnedFacts(chatId) {
+  const memory = await loadMemory(chatId);
   return memory.learnedFacts || [];
 }
 

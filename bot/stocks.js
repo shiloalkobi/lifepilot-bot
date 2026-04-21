@@ -3,6 +3,7 @@
 const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
+const { supabase, isEnabled } = require('./supabase');
 
 const WATCHLIST_FILE = path.join(__dirname, '..', 'data', 'stock-watchlist.json');
 
@@ -66,16 +67,80 @@ function formatPrice(stock) {
   );
 }
 
-// ── Watchlist persistence ─────────────────────────────────────────────────────
+// ── Watchlist persistence (JSON fallback) ─────────────────────────────────────
 
-function loadWatchlist() {
+function loadFromJson() {
   try { return JSON.parse(fs.readFileSync(WATCHLIST_FILE, 'utf8')); }
   catch { return []; }
 }
 
-function saveWatchlist(list) {
-  fs.mkdirSync(path.dirname(WATCHLIST_FILE), { recursive: true });
-  fs.writeFileSync(WATCHLIST_FILE, JSON.stringify(list, null, 2), 'utf8');
+function saveToJson(list) {
+  try {
+    fs.mkdirSync(path.dirname(WATCHLIST_FILE), { recursive: true });
+    fs.writeFileSync(WATCHLIST_FILE, JSON.stringify(list, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[stocks] JSON save failed:', e.message);
+  }
+}
+
+function rowToWatch(r) {
+  return {
+    id:        r.id,
+    chatId:    r.chat_id,
+    symbol:    r.symbol,
+    threshold: r.threshold,
+    direction: r.direction || 'above',
+    triggered: !!r.triggered,
+    createdAt: r.created_at,
+  };
+}
+
+async function loadWatchlist() {
+  if (isEnabled()) {
+    const { data, error } = await supabase
+      .from('watchlist')
+      .select('*')
+      .order('id', { ascending: true });
+    if (!error && Array.isArray(data)) return data.map(rowToWatch);
+    if (error) console.warn('[Supabase] watchlist load error:', error.message);
+  }
+  return loadFromJson();
+}
+
+async function upsertWatch(entry) {
+  if (isEnabled()) {
+    const { error } = await supabase.from('watchlist').upsert({
+      id:         entry.id,
+      chat_id:    String(entry.chatId),
+      symbol:     entry.symbol,
+      threshold:  entry.threshold,
+      direction:  entry.direction,
+      triggered:  entry.triggered,
+      created_at: entry.createdAt,
+    }, { onConflict: 'id' });
+    if (error) console.warn('[Supabase] watchlist upsert error:', error.message);
+  }
+
+  const list = loadFromJson();
+  const idx = list.findIndex(w => w.id === entry.id);
+  if (idx >= 0) list[idx] = entry;
+  else list.push(entry);
+  saveToJson(list);
+}
+
+async function deleteWatchRows(predicate) {
+  const list    = loadFromJson();
+  const keep    = list.filter(w => !predicate(w));
+  const removed = list.filter(predicate);
+
+  if (isEnabled()) {
+    for (const r of removed) {
+      const { error } = await supabase.from('watchlist').delete().eq('id', r.id);
+      if (error) console.warn('[Supabase] watchlist delete error:', error.message);
+    }
+  }
+  saveToJson(keep);
+  return removed;
 }
 
 function nextId(list) {
@@ -84,45 +149,42 @@ function nextId(list) {
 
 // ── Watchlist operations ──────────────────────────────────────────────────────
 
-/**
- * Add a stock alert.
- * @param {string} chatId
- * @param {string} symbol  e.g. "NVDA"
- * @param {number} threshold  price to alert at
- * @param {'above'|'below'} direction
- */
-function addToWatchlist(chatId, symbol, threshold, direction = 'above') {
-  const list = loadWatchlist();
-  // Remove existing entry for same symbol+chatId
-  const filtered = list.filter(w => !(w.chatId === chatId && w.symbol === symbol.toUpperCase()));
-  filtered.push({
+async function addToWatchlist(chatId, symbol, threshold, direction = 'above') {
+  // Remove any existing entry for same symbol+chatId
+  await deleteWatchRows(w =>
+    String(w.chatId) === String(chatId) && w.symbol === symbol.toUpperCase()
+  );
+
+  const list = await loadWatchlist();
+  const entry = {
     id:        nextId(list),
-    chatId,
+    chatId:    String(chatId),
     symbol:    symbol.toUpperCase(),
-    threshold: parseFloat(threshold),
+    threshold: threshold != null ? parseFloat(threshold) : null,
     direction,
     triggered: false,
     createdAt: new Date().toISOString(),
-  });
-  saveWatchlist(filtered);
-  return filtered[filtered.length - 1];
+  };
+  await upsertWatch(entry);
+  return entry;
 }
 
-function removeFromWatchlist(chatId, symbol) {
-  const list     = loadWatchlist();
-  const filtered = list.filter(w => !(w.chatId === chatId && w.symbol === symbol.toUpperCase()));
-  saveWatchlist(filtered);
-  return list.length !== filtered.length;
+async function removeFromWatchlist(chatId, symbol) {
+  const removed = await deleteWatchRows(w =>
+    String(w.chatId) === String(chatId) && w.symbol === symbol.toUpperCase()
+  );
+  return removed.length > 0;
 }
 
-function getWatchlistForChat(chatId) {
-  return loadWatchlist().filter(w => w.chatId === chatId);
+async function getWatchlistForChat(chatId) {
+  const list = await loadWatchlist();
+  return list.filter(w => String(w.chatId) === String(chatId));
 }
 
 // ── Format watchlist with live prices ────────────────────────────────────────
 
 async function formatWatchlist(chatId) {
-  const items = getWatchlistForChat(chatId);
+  const items = await getWatchlistForChat(chatId);
   if (!items.length) {
     return '📋 אין מניות במעקב.\n\nהוסף: "תעקוב אחרי NVDA ותתריע ב-150$"';
   }
@@ -149,24 +211,18 @@ async function formatWatchlist(chatId) {
 // ── Alert checker (called by cron) ───────────────────────────────────────────
 
 async function checkAlerts(bot, chatId) {
-  const list = loadWatchlist().filter(w => w.chatId === chatId);
+  const list = await getWatchlistForChat(chatId);
   if (!list.length) return;
 
-  let changed = false;
-  const all   = loadWatchlist();
-
   for (const w of list) {
-    if (w.threshold == null) continue; // tracking-only entry, no alert needed
+    if (w.threshold == null) continue;
     try {
       const s         = await fetchStockPrice(w.symbol);
       const triggered = w.direction === 'above'
         ? s.price >= w.threshold
         : s.price <= w.threshold;
 
-      const entry = all.find(x => x.id === w.id);
-      if (!entry) continue;
-
-      if (triggered && !entry.triggered) {
+      if (triggered && !w.triggered) {
         const sign = s.changePct >= 0 ? '+' : '';
         const dir  = w.direction === 'above' ? 'עלתה מעל' : 'ירדה מתחת';
         await bot.sendMessage(chatId,
@@ -176,28 +232,22 @@ async function checkAlerts(bot, chatId) {
           `${s.name}`,
           { parse_mode: 'HTML' }
         );
-        entry.triggered = true;
-        changed = true;
-      } else if (!triggered && entry.triggered) {
-        // Reset trigger so it can fire again when threshold is crossed again
-        entry.triggered = false;
-        changed = true;
+        await upsertWatch({ ...w, triggered: true });
+      } else if (!triggered && w.triggered) {
+        await upsertWatch({ ...w, triggered: false });
       }
     } catch (e) {
       console.warn(`[Stocks] checkAlerts ${w.symbol}:`, e.message);
     }
   }
-
-  if (changed) saveWatchlist(all);
 }
 
 // ── Default watchlist initializer ─────────────────────────────────────────────
 
-function initDefaultWatchlist(chatId) {
-  const existing = getWatchlistForChat(chatId);
-  if (existing.length) return; // already has entries
+async function initDefaultWatchlist(chatId) {
+  const existing = await getWatchlistForChat(chatId);
+  if (existing.length) return;
 
-  // Defaults: tracking only (no alert threshold) — survives Render deploys
   const defaults = [
     { symbol: 'NVDA'    },
     { symbol: 'AAPL'    },
@@ -207,19 +257,19 @@ function initDefaultWatchlist(chatId) {
     { symbol: 'BTC-USD' },
   ];
 
-  const list = loadWatchlist();
   for (const d of defaults) {
-    list.push({
+    const list = await loadWatchlist();
+    const entry = {
       id:        nextId(list),
-      chatId,
+      chatId:    String(chatId),
       symbol:    d.symbol,
-      threshold: null,        // no price alert — tracking only
+      threshold: null,
       direction: 'above',
       triggered: false,
       createdAt: new Date().toISOString(),
-    });
+    };
+    await upsertWatch(entry);
   }
-  saveWatchlist(list);
 }
 
 module.exports = {

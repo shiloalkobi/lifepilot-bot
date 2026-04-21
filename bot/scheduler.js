@@ -114,7 +114,7 @@ async function buildMorningMessage() {
   ];
 
   // Tasks section
-  const openTasks = getOpenTasks();
+  const openTasks = await getOpenTasks();
   const taskCount = openTasks.length;
   if (taskCount === 0) {
     lines.push('📋 <b>משימות היום:</b> ✅ אין משימות פתוחות');
@@ -132,7 +132,7 @@ async function buildMorningMessage() {
   }
 
   // Yesterday health section
-  const yHealth = getYesterdayHealth();
+  const yHealth = await getYesterdayHealth();
   if (yHealth) {
     lines.push('💊 <b>בריאות אתמול:</b>');
     lines.push(
@@ -140,14 +140,14 @@ async function buildMorningMessage() {
       (yHealth.symptoms ? `\n📝 ${yHealth.symptoms}` : '')
     );
     lines.push('');
-  } else if (!hadEntryYesterday()) {
+  } else if (!(await hadEntryYesterday())) {
     lines.push('📝 <b>תזכורת:</b> לא מילאת דיווח בריאות אתמול. /health');
     lines.push('');
   }
 
   // Habits section
   try {
-    const habitSummary = getTodayHabitSummary();
+    const habitSummary = await getTodayHabitSummary();
     if (habitSummary && habitSummary.total > 0) {
       lines.push(`🏃 <b>הרגלים:</b> ${habitSummary.done}/${habitSummary.total} בוצעו`);
       if (habitSummary.pending.length > 0) {

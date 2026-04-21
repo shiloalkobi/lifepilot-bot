@@ -121,9 +121,9 @@ function startBot(token, webhookUrl = null) {
   });
 
   // ── Task Management Commands ────────────────────────────────────────────────
-  bot.onText(/^\/task (.+)/, (msg, match) => {
+  bot.onText(/^\/task (.+)/, async (msg, match) => {
     try {
-      const task = addTask(match[1].trim());
+      const task = await addTask(match[1].trim());
       if (!task) return bot.sendMessage(msg.chat.id, '⚠️ טקסט המשימה ריק.');
       const emoji = task.priority === 'high' ? '📌' : '🔲';
       const note  = task.priority === 'high' ? ' <b>[דחוף]</b>' : '';
@@ -136,18 +136,18 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
-  bot.onText(/^\/tasks$/, (msg) => {
+  bot.onText(/^\/tasks$/, async (msg) => {
     try {
-      bot.sendMessage(msg.chat.id, formatOpenTasks(), { parse_mode: 'HTML' });
+      bot.sendMessage(msg.chat.id, await formatOpenTasks(), { parse_mode: 'HTML' });
     } catch (err) {
       console.error('[/tasks]', err.message);
       bot.sendMessage(msg.chat.id, '⚠️ שגיאה בטעינת המשימות.');
     }
   });
 
-  bot.onText(/^\/done (\d+)$/, (msg, match) => {
+  bot.onText(/^\/done (\d+)$/, async (msg, match) => {
     try {
-      const task = markDone(parseInt(match[1]));
+      const task = await markDone(parseInt(match[1]));
       if (!task) return bot.sendMessage(msg.chat.id, '⚠️ מספר משימה לא נמצא.');
       bot.sendMessage(msg.chat.id,
         `✅ <b>בוצע!</b>\n${task.text}`,
@@ -158,9 +158,9 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
-  bot.onText(/^\/undone (\d+)$/, (msg, match) => {
+  bot.onText(/^\/undone (\d+)$/, async (msg, match) => {
     try {
-      const task = markUndone(parseInt(match[1]));
+      const task = await markUndone(parseInt(match[1]));
       if (!task) return bot.sendMessage(msg.chat.id, '⚠️ מספר משימה לא נמצא.');
       bot.sendMessage(msg.chat.id,
         `🔲 <b>נפתח מחדש:</b>\n${task.text}`,
@@ -171,9 +171,9 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
-  bot.onText(/^\/deltask (\d+)$/, (msg, match) => {
+  bot.onText(/^\/deltask (\d+)$/, async (msg, match) => {
     try {
-      const task = deleteTask(parseInt(match[1]));
+      const task = await deleteTask(parseInt(match[1]));
       if (!task) return bot.sendMessage(msg.chat.id, '⚠️ מספר משימה לא נמצא.');
       bot.sendMessage(msg.chat.id, `🗑️ נמחק: ${task.text}`);
     } catch (err) {
@@ -182,9 +182,9 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
-  bot.onText(/^\/cleartasks$/, (msg) => {
+  bot.onText(/^\/cleartasks$/, async (msg) => {
     try {
-      const count = clearCompleted();
+      const count = await clearCompleted();
       bot.sendMessage(msg.chat.id,
         count > 0 ? `🧹 נמחקו ${count} משימות שהושלמו.` : '📋 אין משימות שהושלמו למחיקה.');
     } catch (err) {
@@ -291,20 +291,20 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
-  bot.onText(/^\/health status$/, (msg) => {
-    bot.sendMessage(msg.chat.id, formatHealthToday(), { parse_mode: 'HTML' });
+  bot.onText(/^\/health status$/, async (msg) => {
+    bot.sendMessage(msg.chat.id, await formatHealthToday(), { parse_mode: 'HTML' });
   });
 
-  bot.onText(/^\/health week$/, (msg) => {
-    bot.sendMessage(msg.chat.id, getWeekSummary(7), { parse_mode: 'HTML' });
+  bot.onText(/^\/health week$/, async (msg) => {
+    bot.sendMessage(msg.chat.id, await getWeekSummary(7), { parse_mode: 'HTML' });
   });
 
-  bot.onText(/^\/health month$/, (msg) => {
-    bot.sendMessage(msg.chat.id, getWeekSummary(30), { parse_mode: 'HTML' });
+  bot.onText(/^\/health month$/, async (msg) => {
+    bot.sendMessage(msg.chat.id, await getWeekSummary(30), { parse_mode: 'HTML' });
   });
 
-  bot.onText(/^\/health log$/, (msg) => {
-    bot.sendMessage(msg.chat.id, formatRecentLog(5), { parse_mode: 'HTML' });
+  bot.onText(/^\/health log$/, async (msg) => {
+    bot.sendMessage(msg.chat.id, await formatRecentLog(5), { parse_mode: 'HTML' });
   });
 
   // ── English Practice Commands ───────────────────────────────────────────────
@@ -653,7 +653,7 @@ function startBot(token, webhookUrl = null) {
             ].filter(Boolean).join('\n');
             const content = `קבלה${s.store ? ' — ' + s.store : ''}${s.amount ? ' — ' + s.amount : ''}${s.date ? ' (' + s.date + ')' : ''}\n${ocr.extractedText}${userNote}`;
             const note = await addNote(content);
-            const expense = saveExpense({ store: s.store, amount: s.amount, date: s.date, extractedText: ocr.extractedText, noteId: note.id });
+            const expense = await saveExpense({ store: s.store, amount: s.amount, date: s.date, extractedText: ocr.extractedText, noteId: note.id });
             reply = `🧾 <b>קבלה נשמרה #${note.id} (הוצאה #${expense.id})</b>\n${lines || ocr.extractedText.substring(0, 200)}`;
 
           } else if (ocr.type === 'business_card') {
@@ -819,13 +819,13 @@ function startBot(token, webhookUrl = null) {
     // ── Health check-in intercept ────────────────────────────────────────────
     if (isInCheckin(chatId)) {
       try {
-        const result = processCheckinStep(chatId, msg.text);
+        const result = await processCheckinStep(chatId, msg.text);
         if (!result) return;
         await bot.sendMessage(chatId, result.reply, { parse_mode: 'HTML' });
         // After saving, check for high-pain alert
         if (result.done) {
           const { checkHighPainAlert } = require('./health');
-          const alert = checkHighPainAlert();
+          const alert = await checkHighPainAlert();
           if (alert) setTimeout(() => bot.sendMessage(chatId, alert, { parse_mode: 'HTML' }), 1000);
         }
       } catch (err) {
@@ -888,7 +888,7 @@ function startBot(token, webhookUrl = null) {
 
     if (cbData.startsWith('lead_done_')) {
       const id = cbData.replace('lead_done_', '');
-      updateLeadStatus(id, 'closed');
+      await updateLeadStatus(id, 'closed');
       bot.answerCallbackQuery(query.id, { text: '✅ הליד סומן כטופל!' });
       bot.editMessageReplyMarkup(
         { inline_keyboard: [[{ text: '✅ טופל', callback_data: 'noop' }]] },
@@ -899,7 +899,7 @@ function startBot(token, webhookUrl = null) {
 
     if (cbData.startsWith('lead_snooze_')) {
       const id = cbData.replace('lead_snooze_', '');
-      snoozeLead(id, 24);
+      await snoozeLead(id, 24);
       bot.answerCallbackQuery(query.id, { text: '⏰ תזכורת נדחתה ל-24 שעות' });
       bot.editMessageReplyMarkup(
         { inline_keyboard: [[
@@ -914,7 +914,8 @@ function startBot(token, webhookUrl = null) {
 
     if (cbData.startsWith('lead_details_')) {
       const id   = cbData.replace('lead_details_', '');
-      const lead = loadLeads().find(l => l.id === id);
+      const allLeads = await loadLeads();
+      const lead = allLeads.find(l => l.id === id);
       if (lead) {
         const name  = lead.data?.['שם'] || lead.data?.name || '—';
         const statusLabel = { new: '🆕 חדש', closed: '✅ טופל', reminded: '⏰ הופנה' }[lead.status] || lead.status;

@@ -6,6 +6,7 @@
  */
 
 const path = require('path');
+const fs   = require('fs');
 const { load: loadHealthLog } = require('./health');
 const { getExpenses }         = require('./expenses');
 const { getHabits }           = require('./habits');
@@ -27,11 +28,9 @@ function loadHealth() {
   try { return require('./health').getWeekRawStats ? require('./health') : null; } catch { return null; }
 }
 
-function getHealthEntries(days = 7) {
+async function getHealthEntries(days = 7) {
   try {
-    const fs   = require('fs');
-    const fp   = path.join(__dirname, '..', 'data', 'health-log.json');
-    const all  = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    const all = await loadHealthLog();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - (days - 1));
     const cutStr = cutoff.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
@@ -41,8 +40,8 @@ function getHealthEntries(days = 7) {
 
 // ── Pain Chart ────────────────────────────────────────────────────────────────
 
-function buildPainChartUrl(days = 7) {
-  const entries = getHealthEntries(days);
+async function buildPainChartUrl(days = 7) {
+  const entries = await getHealthEntries(days);
   if (!entries.length) return null;
 
   const labels     = entries.map(e => e.date.slice(5)); // MM-DD
@@ -97,9 +96,10 @@ function buildPainChartUrl(days = 7) {
 
 // ── Expense Chart ─────────────────────────────────────────────────────────────
 
-function buildExpenseChartUrl(month = null) {
+async function buildExpenseChartUrl(month = null) {
   const targetMonth = month || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }).slice(0, 7);
-  const all = getExpenses().filter(e => (e.date || '').startsWith(targetMonth) || (e.month || '') === targetMonth);
+  const exps = await getExpenses();
+  const all = exps.filter(e => (e.date || '').startsWith(targetMonth) || (e.month || '') === targetMonth);
 
   if (!all.length) return null;
 
@@ -139,8 +139,8 @@ function buildExpenseChartUrl(month = null) {
 
 // ── Habit Streak Chart ────────────────────────────────────────────────────────
 
-function buildHabitChartUrl() {
-  const habits = getHabits();
+async function buildHabitChartUrl() {
+  const habits = await getHabits();
   if (!habits.length) return null;
 
   const labels = habits.map(h => `${h.icon} ${h.name}`);

@@ -2,17 +2,75 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { supabase, isEnabled } = require('./supabase');
 
 const HABITS_FILE = path.join(__dirname, '..', 'data', 'habits.json');
 
-// ── Persistence ───────────────────────────────────────────────────────────────
-function load() {
+// ── JSON fallback ─────────────────────────────────────────────────────────────
+function loadFromJson() {
   try { return JSON.parse(fs.readFileSync(HABITS_FILE, 'utf8')); } catch { return []; }
 }
 
-function save(habits) {
-  fs.mkdirSync(path.dirname(HABITS_FILE), { recursive: true });
-  fs.writeFileSync(HABITS_FILE, JSON.stringify(habits, null, 2), 'utf8');
+function saveToJson(habits) {
+  try {
+    fs.mkdirSync(path.dirname(HABITS_FILE), { recursive: true });
+    fs.writeFileSync(HABITS_FILE, JSON.stringify(habits, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[habits] JSON save failed:', e.message);
+  }
+}
+
+function rowToHabit(r) {
+  return {
+    id:        r.id,
+    name:      r.name,
+    icon:      r.icon || '✅',
+    frequency: r.frequency || 'daily',
+    createdAt: r.created_at,
+    logs:      Array.isArray(r.logs) ? r.logs : [],
+  };
+}
+
+async function load() {
+  if (isEnabled()) {
+    const { data, error } = await supabase
+      .from('habits')
+      .select('*')
+      .order('id', { ascending: true });
+    if (!error && Array.isArray(data)) return data.map(rowToHabit);
+    if (error) console.warn('[Supabase] habits load error:', error.message);
+  }
+  return loadFromJson();
+}
+
+async function upsertHabit(habit) {
+  if (isEnabled()) {
+    const { error } = await supabase.from('habits').upsert({
+      id:         habit.id,
+      name:       habit.name,
+      icon:       habit.icon,
+      frequency:  habit.frequency,
+      created_at: habit.createdAt,
+      logs:       habit.logs || [],
+    }, { onConflict: 'id' });
+    if (error) console.warn('[Supabase] habits upsert error:', error.message);
+  }
+
+  const habits = loadFromJson();
+  const idx = habits.findIndex(h => h.id === habit.id);
+  if (idx >= 0) habits[idx] = habit;
+  else habits.push(habit);
+  saveToJson(habits);
+}
+
+async function deleteHabitRow(id) {
+  if (isEnabled()) {
+    const { error } = await supabase.from('habits').delete().eq('id', id);
+    if (error) console.warn('[Supabase] habits delete error:', error.message);
+  }
+  const habits = loadFromJson();
+  const filtered = habits.filter(h => h.id !== id);
+  saveToJson(filtered);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -24,7 +82,6 @@ function nextId(habits) {
   return habits.length ? Math.max(...habits.map(h => h.id)) + 1 : 1;
 }
 
-// Calculate current streak (consecutive days logged as done up to today)
 function calcStreak(habit) {
   const today   = todayIL();
   const doneSet = new Set((habit.logs || []).filter(l => l.done).map(l => l.date));
@@ -38,7 +95,6 @@ function calcStreak(habit) {
       streak++;
       d.setDate(d.getDate() - 1);
     } else {
-      // Allow today to be missing (not yet logged) — only break if it's a past day
       if (dateStr === today) { d.setDate(d.getDate() - 1); continue; }
       break;
     }
@@ -47,8 +103,8 @@ function calcStreak(habit) {
 }
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
-function addHabit(name, icon = '✅', frequency = 'daily') {
-  const habits = load();
+async function addHabit(name, icon = '✅', frequency = 'daily') {
+  const habits = await load();
   const habit = {
     id:        nextId(habits),
     name,
@@ -57,44 +113,45 @@ function addHabit(name, icon = '✅', frequency = 'daily') {
     createdAt: new Date().toISOString(),
     logs:      [],
   };
-  habits.push(habit);
-  save(habits);
+  await upsertHabit(habit);
   return habit;
 }
 
-function deleteHabit(id) {
-  const habits = load();
-  const idx    = habits.findIndex(h => h.id === id);
-  if (idx === -1) return null;
-  const [removed] = habits.splice(idx, 1);
-  save(habits);
-  return removed;
+async function deleteHabit(id) {
+  const habits = await load();
+  const found  = habits.find(h => h.id === id);
+  if (!found) return null;
+  await deleteHabitRow(id);
+  return found;
 }
 
-function logHabit(id, done = true, date = null) {
-  const habits = load();
+async function logHabit(id, done = true, date = null) {
+  const habits = await load();
   const habit  = habits.find(h => h.id === id);
   if (!habit) return null;
 
   const logDate = date || todayIL();
-  const existing = (habit.logs || []).findIndex(l => l.date === logDate);
+  const logs = Array.isArray(habit.logs) ? [...habit.logs] : [];
+  const existing = logs.findIndex(l => l.date === logDate);
   const entry = { date: logDate, done, loggedAt: new Date().toISOString() };
 
-  if (existing >= 0) habit.logs[existing] = entry;
-  else habit.logs.push(entry);
+  if (existing >= 0) logs[existing] = entry;
+  else logs.push(entry);
 
-  save(habits);
+  habit.logs = logs;
+  await upsertHabit(habit);
   return { habit, streak: calcStreak(habit) };
 }
 
-function getHabits() {
-  return load().map(h => ({ ...h, streak: calcStreak(h) }));
+async function getHabits() {
+  const habits = await load();
+  return habits.map(h => ({ ...h, streak: calcStreak(h) }));
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
-function formatHabits() {
+async function formatHabits() {
   const today  = todayIL();
-  const habits = load();
+  const habits = await load();
   if (!habits.length) return '📋 אין הרגלים מוגדרים עדיין.\n\nהוסף הרגל: "תוסיף הרגל: שתיית מים"';
 
   const lines = ['📋 <b>הרגלים שלי</b>\n'];
@@ -114,9 +171,9 @@ function formatHabits() {
   return lines.join('\n');
 }
 
-function getTodayHabitSummary() {
+async function getTodayHabitSummary() {
   const today  = todayIL();
-  const habits = load();
+  const habits = await load();
   if (!habits.length) return null;
 
   const done    = habits.filter(h => (h.logs || []).find(l => l.date === today && l.done)).length;

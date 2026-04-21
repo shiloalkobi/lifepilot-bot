@@ -3,19 +3,49 @@
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
+const { supabase, isEnabled } = require('./supabase');
 
 const FILE = path.join(__dirname, '..', 'data', 'expenses.json');
 
-function load() {
+function loadFromJson() {
+  try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return []; }
+}
+
+function saveToJson(data) {
   try {
-    return JSON.parse(fs.readFileSync(FILE, 'utf8'));
-  } catch {
-    return [];
+    fs.mkdirSync(path.dirname(FILE), { recursive: true });
+    fs.writeFileSync(FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[expenses] JSON save failed:', e.message);
   }
 }
 
-function save(data) {
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2), 'utf8');
+function rowToExpense(r) {
+  return {
+    id:          r.id,
+    date:        r.date,
+    vendor:      r.vendor,
+    amount:      r.amount,
+    currency:    r.currency || 'ILS',
+    category:    r.category || 'other',
+    source:      r.source   || 'manual',
+    emailId:     r.email_id || null,
+    description: r.description || null,
+    month:       r.month,
+    savedAt:     r.saved_at,
+  };
+}
+
+async function load() {
+  if (isEnabled()) {
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('*')
+      .order('id', { ascending: true });
+    if (!error && Array.isArray(data)) return data.map(rowToExpense);
+    if (error) console.warn('[Supabase] expenses load error:', error.message);
+  }
+  return loadFromJson();
 }
 
 function currentMonth() {
@@ -26,10 +56,10 @@ function currentMonth() {
 /**
  * Save a full invoice/expense record.
  */
-function saveInvoice(fields) {
-  const expenses = load();
+async function saveInvoice(fields) {
+  const existing = await load();
   const entry = {
-    id:          expenses.length ? Math.max(...expenses.map(e => e.id)) + 1 : 1,
+    id:          existing.length ? Math.max(...existing.map(e => e.id)) + 1 : 1,
     date:        fields.date         || new Date().toISOString().split('T')[0],
     vendor:      fields.vendor       || fields.store || null,
     amount:      fields.amount != null ? parseFloat(String(fields.amount).replace(/[^0-9.]/g, '')) || null : null,
@@ -41,15 +71,33 @@ function saveInvoice(fields) {
     month:       fields.month        || (fields.date ? fields.date.slice(0, 7) : currentMonth()),
     savedAt:     new Date().toISOString(),
   };
+
+  if (isEnabled()) {
+    const { error } = await supabase.from('expenses').insert({
+      id:          entry.id,
+      date:        entry.date,
+      vendor:      entry.vendor,
+      amount:      entry.amount,
+      currency:    entry.currency,
+      category:    entry.category,
+      source:      entry.source,
+      email_id:    entry.emailId,
+      description: entry.description,
+      month:       entry.month,
+      saved_at:    entry.savedAt,
+    });
+    if (error) console.warn('[Supabase] saveInvoice error:', error.message);
+  }
+
+  // mirror to JSON
+  const expenses = loadFromJson();
   expenses.push(entry);
-  save(expenses);
+  saveToJson(expenses);
+
   return entry;
 }
 
-/**
- * Backward-compatible wrapper used by telegram.js OCR path.
- */
-function saveExpense(fields) {
+async function saveExpense(fields) {
   return saveInvoice({
     vendor:      fields.store,
     amount:      fields.amount,
@@ -59,31 +107,23 @@ function saveExpense(fields) {
   });
 }
 
-/**
- * Return all saved expenses, newest first.
- */
-function getExpenses() {
-  return load().reverse();
+async function getExpenses() {
+  const rows = await load();
+  return rows.reverse();
 }
 
-/**
- * Return expenses for a given month (YYYY-MM). Defaults to current month.
- */
-function getMonthlyExpenses(month) {
+async function getMonthlyExpenses(month) {
   const m = month || currentMonth();
-  return load().filter(e => (e.month || '').startsWith(m));
+  const rows = await load();
+  return rows.filter(e => (e.month || '').startsWith(m));
 }
 
-/**
- * Return a formatted Telegram summary for a month.
- */
-function getExpenseSummary(month) {
+async function getExpenseSummary(month) {
   const m     = month || currentMonth();
-  const items = getMonthlyExpenses(m);
+  const items = await getMonthlyExpenses(m);
 
   if (!items.length) return `📊 אין הוצאות רשומות לחודש ${m}`;
 
-  // Group by currency (only items with amounts)
   const totals = {};
   const byCat  = {};
   let unknownCount = 0;
@@ -110,7 +150,6 @@ function getExpenseSummary(month) {
     return `${catEmoji[cat] || '📌'} ${cat}: ${vals}`;
   }).join('\n');
 
-  // List items without amounts separately
   const noAmountItems = items.filter(e => !e.amount || e.amount <= 0);
   if (noAmountItems.length) {
     const noAmtList = noAmountItems.slice(0, 8).map(e => `• ${e.vendor || '?'} (סכום לא ידוע)`).join('\n');
@@ -126,12 +165,9 @@ function getExpenseSummary(month) {
     `📧 ממייל: ${srcCount.email} | 🖼️ מתמונה: ${srcCount.photo} | ✏️ ידני: ${srcCount.manual}`;
 }
 
-/**
- * Generate a CSV file for a month, write to /tmp, return file path.
- */
-function exportToCSV(month) {
+async function exportToCSV(month) {
   const m     = month || currentMonth();
-  const items = getMonthlyExpenses(m);
+  const items = await getMonthlyExpenses(m);
 
   const header = 'id,date,vendor,amount,currency,category,source,description';
   const rows   = items.map(e => [

@@ -29,18 +29,15 @@ function todayHebrew(offsetDays = 0) {
 
 // ── Collect all data ──────────────────────────────────────────────────────────
 
-function collectData(offsetDays = 0) {
+async function collectData(offsetDays = 0) {
   const isToday = offsetDays === 0;
 
   // Tasks (always "today" relative to now — past day offset not supported in task store)
-  const completedTasks = isToday ? getCompletedToday() : [];
-  const openTasks      = getOpenTasks();
+  const completedTasks = isToday ? await getCompletedToday() : [];
+  const openTasks      = await getOpenTasks();
 
   // Health
-  const health = (() => {
-    if (!isToday) return null;
-    return getTodayHealth(); // returns null if no check-in
-  })();
+  const health = isToday ? await getTodayHealth() : null;
 
   // Medications
   const meds = (() => {
@@ -109,7 +106,7 @@ async function generateInsight(data) {
 
 async function buildSummaryMessage(offsetDays = 0) {
   const dateStr = todayHebrew(offsetDays);
-  const data    = collectData(offsetDays);
+  const data    = await collectData(offsetDays);
   const { completedTasks, openTasks, health, meds, english, pomo } = data;
 
   const lines = [`📊 <b>סיכום יומי — ${dateStr}</b>\n`];

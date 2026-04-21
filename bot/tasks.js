@@ -2,21 +2,74 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { supabase, isEnabled } = require('./supabase');
 
 const TASKS_FILE = path.join(__dirname, '..', 'data', 'tasks.json');
 
-// ── Persistence ───────────────────────────────────────────────────────────────
-function loadTasks() {
+// ── JSON fallback ─────────────────────────────────────────────────────────────
+function loadFromJson() {
+  try { return JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8')); } catch { return []; }
+}
+
+function saveToJson(tasks) {
   try {
-    return JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
-  } catch {
-    return [];
+    fs.mkdirSync(path.dirname(TASKS_FILE), { recursive: true });
+    fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[tasks] JSON save failed:', e.message);
   }
 }
 
-function saveTasks(tasks) {
-  fs.mkdirSync(path.dirname(TASKS_FILE), { recursive: true });
-  fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2), 'utf8');
+function rowToTask(r) {
+  return {
+    id:        r.id,
+    text:      r.text,
+    done:      !!r.done,
+    priority:  r.priority || 'medium',
+    createdAt: r.created_at,
+    doneAt:    r.done_at || null,
+  };
+}
+
+async function loadTasks() {
+  if (isEnabled()) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .order('id', { ascending: true });
+    if (!error && Array.isArray(data)) return data.map(rowToTask);
+    if (error) console.warn('[Supabase] tasks load error:', error.message);
+  }
+  return loadFromJson();
+}
+
+async function upsertTask(task) {
+  if (isEnabled()) {
+    const { error } = await supabase.from('tasks').upsert({
+      id:         task.id,
+      text:       task.text,
+      done:       task.done,
+      priority:   task.priority,
+      created_at: task.createdAt,
+      done_at:    task.doneAt,
+    }, { onConflict: 'id' });
+    if (error) console.warn('[Supabase] tasks upsert error:', error.message);
+  }
+
+  const tasks = loadFromJson();
+  const idx = tasks.findIndex(t => t.id === task.id);
+  if (idx >= 0) tasks[idx] = task;
+  else tasks.push(task);
+  saveToJson(tasks);
+}
+
+async function deleteTaskRow(id) {
+  if (isEnabled()) {
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) console.warn('[Supabase] tasks delete error:', error.message);
+  }
+  const tasks = loadFromJson();
+  saveToJson(tasks.filter(t => t.id !== id));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -31,8 +84,8 @@ function nextId(tasks) {
 }
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
-function addTask(text) {
-  const tasks = loadTasks();
+async function addTask(text) {
+  const tasks = await loadTasks();
   const isHigh = text.startsWith('!');
   const cleanText = isHigh ? text.slice(1).trim() : text.trim();
   if (!cleanText) return null;
@@ -45,61 +98,57 @@ function addTask(text) {
     createdAt: new Date().toISOString(),
     doneAt: null,
   };
-  tasks.push(task);
-  saveTasks(tasks);
+  await upsertTask(task);
   return task;
 }
 
-function markDone(index) {
-  const tasks = loadTasks();
+async function markDone(index) {
+  const tasks = await loadTasks();
   const open = sortByPriority(tasks.filter((t) => !t.done));
   const task = open[index - 1];
   if (!task) return null;
 
-  const real = tasks.find((t) => t.id === task.id);
-  real.done  = true;
-  real.doneAt = new Date().toISOString();
-  saveTasks(tasks);
-  return real;
+  task.done = true;
+  task.doneAt = new Date().toISOString();
+  await upsertTask(task);
+  return task;
 }
 
-function markUndone(index) {
-  const tasks = loadTasks();
+async function markUndone(index) {
+  const tasks = await loadTasks();
   const done = tasks.filter((t) => t.done);
   const task = done[index - 1];
   if (!task) return null;
 
-  const real = tasks.find((t) => t.id === task.id);
-  real.done  = false;
-  real.doneAt = null;
-  saveTasks(tasks);
-  return real;
-}
-
-function deleteTask(index) {
-  const tasks = loadTasks();
-  const open = sortByPriority(tasks.filter((t) => !t.done));
-  const task = open[index - 1];
-  if (!task) return null;
-
-  const filtered = tasks.filter((t) => t.id !== task.id);
-  saveTasks(filtered);
+  task.done = false;
+  task.doneAt = null;
+  await upsertTask(task);
   return task;
 }
 
-function clearCompleted() {
-  const tasks = loadTasks();
-  const remaining = tasks.filter((t) => !t.done);
-  const removed = tasks.length - remaining.length;
-  saveTasks(remaining);
-  return removed;
+async function deleteTask(index) {
+  const tasks = await loadTasks();
+  const open = sortByPriority(tasks.filter((t) => !t.done));
+  const task = open[index - 1];
+  if (!task) return null;
+  await deleteTaskRow(task.id);
+  return task;
+}
+
+async function clearCompleted() {
+  const tasks = await loadTasks();
+  const completed = tasks.filter(t => t.done);
+  for (const t of completed) {
+    await deleteTaskRow(t.id);
+  }
+  return completed.length;
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 const PRIORITY_EMOJI = { high: '📌', medium: '🔲', low: '⬜' };
 
-function formatOpenTasks() {
-  const tasks = loadTasks();
+async function formatOpenTasks() {
+  const tasks = await loadTasks();
   const open  = sortByPriority(tasks.filter((t) => !t.done));
 
   if (open.length === 0) return '✅ אין משימות פתוחות. יאללה לנוח! 🎉';
@@ -114,13 +163,13 @@ function formatOpenTasks() {
 }
 
 // ── Exports for F-12 daily summary ───────────────────────────────────────────
-function getOpenTasks() {
-  const tasks = loadTasks();
+async function getOpenTasks() {
+  const tasks = await loadTasks();
   return sortByPriority(tasks.filter((t) => !t.done));
 }
 
-function getCompletedToday() {
-  const tasks  = loadTasks();
+async function getCompletedToday() {
+  const tasks  = await loadTasks();
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   return tasks.filter((t) => t.done && t.doneAt && new Date(t.doneAt) >= todayStart);

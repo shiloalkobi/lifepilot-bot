@@ -156,10 +156,10 @@ function getDayHebrew() {
 }
 
 // ── Current context snapshot ──────────────────────────────────────────────────
-function buildCurrentContext(chatId) {
+async function buildCurrentContext(chatId) {
   try {
-    const health  = getTodayHealth();
-    const tasks     = getOpenTasks()      ?? [];
+    const health  = await getTodayHealth();
+    const tasks     = (await getOpenTasks()) ?? [];
     const medStatus = getTodayMedStatus() ?? {};
     const pomo      = getTodayPomoStats();
     const pending   = listPending(chatId) ?? [];
@@ -186,7 +186,7 @@ function buildCurrentContext(chatId) {
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
-function buildSystemPrompt(memory, chatId) {
+async function buildSystemPrompt(memory, chatId) {
   const memBlock = formatMemoryBlock(memory);
   const nowDisplay = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
 
@@ -203,7 +203,7 @@ function buildSystemPrompt(memory, chatId) {
   // Pain context
   let painCtx = '';
   try {
-    const h = getTodayHealth();
+    const h = await getTodayHealth();
     if (h && h.painLevel >= 7) painCtx = `⚠️ כאב גבוה היום (${h.painLevel}/10) — היה קצר, עדין ואמפתי`;
   } catch {}
 
@@ -247,10 +247,10 @@ DEFAULTS (use when info missing — NEVER ask clarifying questions for these too
 }
 
 // ── Save recent topic to memory ───────────────────────────────────────────────
-function saveRecentTopic(chatId, text) {
+async function saveRecentTopic(chatId, text) {
   try {
     const { loadMemory, saveMemory } = require('./agent-memory');
-    const memory = loadMemory(chatId);
+    const memory = await loadMemory(chatId);
     if (!memory.context) memory.context = {};
     if (!Array.isArray(memory.context.recentTopics)) memory.context.recentTopics = [];
     // Extract a short topic label (first 5 words, no commands)
@@ -261,7 +261,7 @@ function saveRecentTopic(chatId, text) {
       ...memory.context.recentTopics.filter(t => t !== topic).slice(-4),
       topic,
     ];
-    saveMemory(chatId, memory);
+    await saveMemory(chatId, memory);
   } catch {} // never crash the main flow
 }
 
@@ -485,31 +485,31 @@ async function executeTool(name, args, ctx) {
       // ── Tasks ──────────────────────────────────────────────────────────────
       case 'add_task': {
         const text = args.priority === 'high' ? `!${args.text}` : args.text;
-        const task = addTask(text);
+        const task = await addTask(text);
         if (!task) return 'שגיאה: לא הצלחתי להוסיף משימה';
         return `נוסף: #${task.id} "${task.text}" [${task.priority}]`;
       }
       case 'get_tasks': {
-        const tasks = getOpenTasks();
+        const tasks = await getOpenTasks();
         if (!tasks.length) return 'אין משימות פתוחות';
         return tasks.map((t, i) =>
           `${i + 1}. [${t.priority}] ${t.text}`
         ).join('\n');
       }
       case 'complete_task': {
-        const task = markDone(args.task_index);
+        const task = await markDone(args.task_index);
         if (!task) return `שגיאה: משימה ${args.task_index} לא נמצאה`;
         return `בוצע: "${task.text}"`;
       }
       case 'delete_task': {
-        const task = deleteTask(args.task_index);
+        const task = await deleteTask(args.task_index);
         if (!task) return `שגיאה: משימה ${args.task_index} לא נמצאה`;
         return `נמחק: "${task.text}"`;
       }
 
       // ── Health ─────────────────────────────────────────────────────────────
       case 'log_health': {
-        const entry = logDirect({
+        const entry = await logDirect({
           pain:     args.pain,
           mood:     args.mood     || null,
           sleep:    args.sleep    || null,
@@ -522,7 +522,7 @@ async function executeTool(name, args, ctx) {
           (entry.symptoms ? `, תסמינים: ${entry.symptoms}` : '');
       }
       case 'get_health_today': {
-        const h = getTodayHealth();
+        const h = await getTodayHealth();
         if (!h) return 'לא נרשם דיווח בריאות היום';
         return `כאב: ${h.painLevel}/10, מצב רוח: ${h.mood}/10, שינה: ${h.sleep}ש'` +
           (h.symptoms ? `, תסמינים: ${h.symptoms}` : '') +
@@ -530,7 +530,7 @@ async function executeTool(name, args, ctx) {
       }
       case 'get_health_summary': {
         const days = Number(args.days) || 7;
-        return getWeekSummary(days);
+        return await getWeekSummary(days);
       }
 
       // ── Medications ────────────────────────────────────────────────────────
@@ -629,7 +629,7 @@ async function executeTool(name, args, ctx) {
 
       // ── Context ────────────────────────────────────────────────────────────
       case 'get_current_context': {
-        return buildCurrentContext(chatId);
+        return await buildCurrentContext(chatId);
       }
 
       // ── Calendar ───────────────────────────────────────────────────────────
@@ -650,7 +650,7 @@ async function executeTool(name, args, ctx) {
 
       // ── Expenses ───────────────────────────────────────────────────────────
       case 'get_expenses': {
-        const exps = getExpenses();
+        const exps = await getExpenses();
         if (!exps.length) return 'אין קבלות שמורות עדיין';
         return exps.slice(0, 20).map(e =>
           `#${e.id}: ${e.vendor || e.store || '?'} | ${e.amount || '?'} ${e.currency || 'ILS'} | ${e.date || '?'}`
@@ -658,11 +658,11 @@ async function executeTool(name, args, ctx) {
       }
 
       case 'get_monthly_expenses': {
-        return getExpenseSummary(args.month || null);
+        return await getExpenseSummary(args.month || null);
       }
 
       case 'export_expenses_csv': {
-        const csvPath = exportToCSV(args.month || null);
+        const csvPath = await exportToCSV(args.month || null);
         const { existsSync } = require('fs');
         console.log('[CSV] file path:', csvPath, 'exists:', existsSync(csvPath));
         return `__FILE__:${csvPath}`;
@@ -671,7 +671,7 @@ async function executeTool(name, args, ctx) {
       case 'scan_invoice_emails': {
         const invoices = await scanEmailsForInvoices(10);
         if (!invoices.length) return 'לא נמצאו חשבוניות/קבלות ב-30 ימים האחרונים.';
-        const existing = getExpenses();
+        const existing = await getExpenses();
         const existingIds = new Set(existing.map(e => e.emailId).filter(Boolean));
         let saved = 0;
         for (const inv of invoices) {
@@ -679,7 +679,7 @@ async function executeTool(name, args, ctx) {
           const month = inv.date ? (() => {
             try { const d = new Date(inv.date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; } catch { return null; }
           })() : null;
-          saveInvoice({
+          await saveInvoice({
             vendor: inv.vendor, source: 'email', emailId: inv.emailId,
             description: inv.subject, month,
             date: inv.date ? new Date(inv.date).toISOString().split('T')[0] : null,
@@ -695,7 +695,7 @@ async function executeTool(name, args, ctx) {
       }
 
       case 'add_manual_expense': {
-        const entry = saveInvoice({
+        const entry = await saveInvoice({
           vendor:      args.vendor,
           amount:      args.amount,
           currency:    args.currency || 'ILS',
@@ -720,19 +720,19 @@ async function executeTool(name, args, ctx) {
 
       // ── Charts (#34) ──────────────────────────────────────────────────────
       case 'get_pain_chart': {
-        const url = buildPainChartUrl(Number(args.days) || 7);
+        const url = await buildPainChartUrl(Number(args.days) || 7);
         if (!url) return 'אין מספיק נתוני בריאות לגרף. תיעד לפחות 2 ימים.';
         await bot.sendPhoto(chatId, url, { caption: `📊 גרף כאב — ${Number(args.days) || 7} ימים` });
         return '__CHART_SENT__';
       }
       case 'get_expense_chart': {
-        const url = buildExpenseChartUrl(args.month || null);
+        const url = await buildExpenseChartUrl(args.month || null);
         if (!url) return 'אין הוצאות לתקופה זו.';
         await bot.sendPhoto(chatId, url, { caption: `📊 גרף הוצאות` });
         return '__CHART_SENT__';
       }
       case 'get_habit_chart': {
-        const url = buildHabitChartUrl();
+        const url = await buildHabitChartUrl();
         if (!url) return 'אין הרגלים להציג. הוסף הרגל תחילה.';
         await bot.sendPhoto(chatId, url, { caption: '📊 רצף הרגלים' });
         return '__CHART_SENT__';
@@ -744,7 +744,7 @@ async function executeTool(name, args, ctx) {
         return formatPrice(s);
       }
       case 'watch_stock': {
-        const w = addToWatchlist(chatId, args.symbol, args.threshold, args.direction || 'above');
+        const w = await addToWatchlist(chatId, args.symbol, args.threshold, args.direction || 'above');
         const dir = (args.direction || 'above') === 'above' ? 'מעל' : 'מתחת ל';
         return `✅ עוקב אחרי ${w.symbol} — התראה כש${dir} $${w.threshold}`;
       }
@@ -752,47 +752,47 @@ async function executeTool(name, args, ctx) {
         return await formatWatchlist(chatId);
       }
       case 'remove_stock': {
-        const ok = removeFromWatchlist(chatId, args.symbol);
+        const ok = await removeFromWatchlist(chatId, args.symbol);
         return ok ? `✅ ${args.symbol.toUpperCase()} הוסר מהווצ'ליסט` : `${args.symbol.toUpperCase()} לא נמצא בווצ'ליסט`;
       }
 
       // ── Health Patterns (#24) ──────────────────────────────────────────────
       case 'analyze_health_patterns': {
         const days = Number(args.days) || 30;
-        return analyzeHealthPatterns(days);
+        return await analyzeHealthPatterns(days);
       }
 
       // ── Smart Memory (#23) ─────────────────────────────────────────────────
       case 'remember_fact': {
-        const facts = addLearnedFact(chatId, args.fact);
+        const facts = await addLearnedFact(chatId, args.fact);
         return `✅ נשמר בזיכרון: "${args.fact}" (סה"כ ${facts.length} עובדות)`;
       }
       case 'forget_fact': {
-        const ok = removeLearnedFact(chatId, Number(args.index));
+        const ok = await removeLearnedFact(chatId, Number(args.index));
         return ok ? `✅ עובדה #${args.index} נמחקה מהזיכרון` : `שגיאה: אינדקס ${args.index} לא קיים`;
       }
       case 'get_memory': {
-        const facts = listLearnedFacts(chatId);
+        const facts = await listLearnedFacts(chatId);
         if (!facts.length) return 'אין עובדות שמורות בזיכרון עדיין.';
         return '🧠 <b>זיכרון אישי:</b>\n' + facts.map((f, i) => `${i}. ${f.fact}`).join('\n');
       }
 
       // ── Habit Tracker (#35) ────────────────────────────────────────────────
       case 'add_habit': {
-        const habit = addHabit(args.name, args.icon, args.frequency);
+        const habit = await addHabit(args.name, args.icon, args.frequency);
         return `✅ הרגל נוסף: ${habit.icon} "${habit.name}" (ID: ${habit.id}, ${habit.frequency})`;
       }
       case 'log_habit': {
-        const result = logHabit(Number(args.id), args.done !== false);
+        const result = await logHabit(Number(args.id), args.done !== false);
         if (!result) return `שגיאה: הרגל ${args.id} לא נמצא`;
         const { habit, streak } = result;
         return `${args.done !== false ? '✅' : '❌'} ${habit.icon} "${habit.name}" — ${streak > 0 ? `🔥 רצף ${streak} ימים` : 'נרשם'}`;
       }
       case 'get_habits': {
-        return formatHabits();
+        return await formatHabits();
       }
       case 'delete_habit': {
-        const removed = deleteHabit(Number(args.id));
+        const removed = await deleteHabit(Number(args.id));
         if (!removed) return `שגיאה: הרגל ${args.id} לא נמצא`;
         return `🗑️ הרגל "${removed.name}" נמחק`;
       }
@@ -824,21 +824,21 @@ async function executeTool(name, args, ctx) {
 
       // ── Password Manager (#40) ────────────────────────────────────────────
       case 'save_password': {
-        savePassword(args.service, args.username || '', args.password);
+        await savePassword(args.service, args.username || '', args.password);
         return `🔐 סיסמה נשמרה: <b>${args.service}</b>${args.username ? ` (${args.username})` : ''}`;
       }
       case 'get_password': {
-        const entry = getPassword(args.service);
+        const entry = await getPassword(args.service);
         if (!entry) return `❌ לא נמצאה סיסמה עבור "${args.service}"`;
         return `🔑 <b>${entry.service}</b>${entry.username ? `\n👤 ${entry.username}` : ''}\n🔒 <code>${entry.password}</code>`;
       }
       case 'list_passwords': {
-        const list = listPasswords();
+        const list = await listPasswords();
         if (!list.length) return '🔐 אין סיסמאות שמורות.';
         return '🔐 <b>סיסמאות שמורות:</b>\n' + list.map((e, i) => `${i+1}. ${e.service}${e.username ? ` — ${e.username}` : ''}`).join('\n');
       }
       case 'delete_password': {
-        const ok = deletePassword(args.service);
+        const ok = await deletePassword(args.service);
         return ok ? `🗑️ סיסמת <b>${args.service}</b> נמחקה` : `❌ לא נמצאה סיסמה עבור "${args.service}"`;
       }
 
@@ -1432,7 +1432,7 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
       case 'get_leads': {
         const { loadLeads } = require('./leads');
         const filterStatus = args.status || 'all';
-        const allLeads = loadLeads();
+        const allLeads = await loadLeads();
         const filtered = (filterStatus === 'all' ? allLeads : allLeads.filter(l => l.status === filterStatus))
           .slice(-20).reverse(); // newest first
         if (!filtered.length) return `📋 אין לידים${filterStatus !== 'all' ? ` בסטטוס "${filterStatus}"` : ''}.`;
@@ -1452,7 +1452,7 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
 
       case 'update_lead': {
         const { updateLead } = require('./leads');
-        const result = updateLead(args.name_or_id, { status: args.status, notes: args.notes });
+        const result = await updateLead(args.name_or_id, { status: args.status, notes: args.notes });
         if (!result) return `❌ לא נמצא ליד עבור "${args.name_or_id}"`;
         const name = result.data?.['שם'] || result.data?.name || result.id;
         let msg = `✅ <b>${name}</b> עודכן\n`;
@@ -1463,7 +1463,7 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
 
       case 'search_leads': {
         const { searchLeads } = require('./leads');
-        const results = searchLeads(args.query || '');
+        const results = await searchLeads(args.query || '');
         if (!results.length) return `🔍 לא נמצאו לידים עבור "${args.query}"`;
         const statusEmoji = { new: '🆕', closed: '✅', reminded: '⏰', contacted: '📞' };
         return `🔍 <b>תוצאות: ${results.length}</b>\n\n` + results.map(l => {
@@ -1478,7 +1478,7 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
 
       case 'leads_summary': {
         const { getLeadsSummary } = require('./leads');
-        const s = getLeadsSummary();
+        const s = await getLeadsSummary();
         return `📊 <b>סיכום לידים</b>\n\n` +
           `סה"כ: ${s.total}\n` +
           `🆕 חדשים: ${s.new}\n` +
@@ -1989,12 +1989,12 @@ async function handleMessage(bot, chatId, text) {
 
   addMessage(chatId, 'user', text);
   const messages = getHistory(chatId);
-  const memory   = loadMemory(chatId);
+  const memory   = await loadMemory(chatId);
   const tools    = selectTools(text);
 
   // Build message array for Groq
   const chatMessages = [
-    { role: 'system', content: buildSystemPrompt(memory, chatId) },
+    { role: 'system', content: await buildSystemPrompt(memory, chatId) },
     ...toOpenAIHistory(messages),
     { role: 'user', content: text },
   ];

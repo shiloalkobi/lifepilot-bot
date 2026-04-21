@@ -35,7 +35,7 @@ function startProactiveScheduler(bot, chatId) {
         : '';
 
       // Get open tasks count
-      const openTasks = getOpenTasks() || [];
+      const openTasks = (await getOpenTasks()) || [];
       const taskLine  = openTasks.length > 0
         ? `📋 ${openTasks.length} משימות פתוחות השבוע`
         : '✅ כל המשימות הושלמו השבוע!';
@@ -67,7 +67,7 @@ function startProactiveScheduler(bot, chatId) {
   // ── DAILY 21:00 IL — Health reminder if not logged ─────────────────────────
   cron.schedule('0 21 * * *', async () => {
     try {
-      const health = getTodayHealth();
+      const health = await getTodayHealth();
       if (health) return; // already logged today
       await bot.sendMessage(chatId,
         'היי שילה 🌙 עוד לא תיעדת את הבריאות שלך היום.\nאיך אתה מרגיש? (כאב / מצב רוח / שינה)'
@@ -85,11 +85,11 @@ function startProactiveScheduler(bot, chatId) {
       const dateStr = `${dy}/${mo}/${yr}`;
 
       // Tasks
-      const openTasks = getOpenTasks() || [];
+      const openTasks = (await getOpenTasks()) || [];
       const taskCount = openTasks.length;
 
       // Health raw stats (no LLM)
-      const stats = getWeekRawStats(7);
+      const stats = await getWeekRawStats(7);
 
       // Rule-based insight (no LLM)
       let insight = 'המשך כך! שמור על שגרת הטיפול השבועית.';
@@ -132,7 +132,7 @@ function startProactiveScheduler(bot, chatId) {
   }, { timezone: 'Asia/Jerusalem' });
 
   // ── Stock alerts every 30 min (US market hours: 16:30–23:00 IL = Sun–Thu) ──
-  initDefaultWatchlist(chatId);
+  initDefaultWatchlist(chatId).catch(e => console.warn('[Proactive] initDefaultWatchlist:', e.message));
   cron.schedule('*/30 * * * *', async () => {
     try {
       const now  = new Date();
@@ -149,7 +149,7 @@ function startProactiveScheduler(bot, chatId) {
   cron.schedule('*/30 * * * *', async () => {
     try {
       const { getOverdueLeads, updateLeadStatus } = require('./leads');
-      const overdue = getOverdueLeads();
+      const overdue = await getOverdueLeads();
       for (const lead of overdue) {
         const name    = lead.data?.['שם'] || lead.data?.name || 'לא ידוע';
         const hoursAgo = Math.round((Date.now() - new Date(lead.createdAt).getTime()) / 3600000);
@@ -167,7 +167,7 @@ function startProactiveScheduler(bot, chatId) {
           }
         );
         // Mark as reminded so we don't spam
-        updateLeadStatus(lead.id, 'reminded');
+        await updateLeadStatus(lead.id, 'reminded');
       }
     } catch (e) { console.warn('[Proactive] lead reminder error:', e.message); }
   }, { timezone: 'Asia/Jerusalem' });
