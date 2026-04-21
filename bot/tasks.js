@@ -87,8 +87,17 @@ function sortByPriority(tasks) {
   return [...tasks].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
 }
 
-function nextId(tasks) {
-  return tasks.length === 0 ? 1 : Math.max(...tasks.map((t) => t.id)) + 1;
+// Supabase-first nextId: query ids directly so we never collide when local
+// JSON is empty (fresh deploy) but the table already has rows.
+async function nextId() {
+  if (isEnabled()) {
+    const { data, error } = await supabase.from('tasks').select('id');
+    if (!error && Array.isArray(data) && data.length) {
+      return Math.max(...data.map(r => Number(r.id) || 0)) + 1;
+    }
+  }
+  const local = loadFromJson();
+  return local.length ? Math.max(...local.map(t => Number(t.id) || 0)) + 1 : 1;
 }
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -104,7 +113,7 @@ async function addTask(text) {
   if (dup) return { ...dup, isDuplicate: true };
 
   const task = {
-    id: nextId(tasks),
+    id: await nextId(),
     text: cleanText,
     done: false,
     priority: isHigh ? 'high' : 'medium',
@@ -197,4 +206,5 @@ module.exports = {
   formatOpenTasks,
   getOpenTasks,
   getCompletedToday,
+  loadTasks,
 };

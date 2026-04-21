@@ -85,8 +85,17 @@ function todayIL() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 }
 
-function nextId(habits) {
-  return habits.length ? Math.max(...habits.map(h => h.id)) + 1 : 1;
+// Query Supabase directly for max id to avoid collisions when local JSON is
+// empty (e.g. after a Render redeploy) but Supabase has existing rows.
+async function nextId() {
+  if (isEnabled()) {
+    const { data, error } = await supabase.from('habits').select('id');
+    if (!error && Array.isArray(data) && data.length) {
+      return Math.max(...data.map(r => Number(r.id) || 0)) + 1;
+    }
+  }
+  const local = loadFromJson();
+  return local.length ? Math.max(...local.map(h => Number(h.id) || 0)) + 1 : 1;
 }
 
 function calcStreak(habit) {
@@ -119,7 +128,7 @@ async function addHabit(name, icon = '✅', frequency = 'daily') {
   if (dup) return { ...dup, isDuplicate: true };
 
   const habit = {
-    id:        nextId(habits),
+    id:        await nextId(),
     name,
     icon:      icon || '✅',
     frequency: frequency || 'daily',

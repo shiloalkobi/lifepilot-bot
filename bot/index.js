@@ -214,11 +214,13 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && route === '/api/dashboard') {
     (async () => {
       try {
-        const { getTodayHealth }        = require('./health');
+        const { getTodayHealth, load: loadAllHealth } = require('./health');
         const { getHabits }             = require('./habits');
-        const { getMonthlyExpenses }    = require('./expenses');
+        const { getMonthlyExpenses, getExpenses } = require('./expenses');
         const { getOpenTasks, getCompletedToday } = require('./tasks');
+        const { loadTasks } = require('./tasks');
         const { getWatchlistForChat, fetchStockPrice } = require('./stocks');
+        const { isEnabled: supabaseEnabled } = require('./supabase');
 
         const chatId = process.env.TELEGRAM_CHAT_ID || mainChatId || '';
         const today  = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
@@ -227,8 +229,7 @@ const server = http.createServer((req, res) => {
         const h = await getTodayHealth();
         const health = h ? { pain: h.painLevel, mood: h.mood, sleep: h.sleep } : null;
 
-        // Health history — last 7 days
-        const { load: loadAllHealth } = require('./health');
+        // Health history — last 30 days (pain chart) + 7-day summary
         let allHealth = [];
         try { allHealth = await loadAllHealth(); } catch {}
         const healthHistory = [];
@@ -239,15 +240,38 @@ const server = http.createServer((req, res) => {
           const e  = allHealth.find(x => x.date === ds);
           healthHistory.push({ date: ds, pain: e?.painLevel ?? null, mood: e?.mood ?? null });
         }
+        const pain30 = [];
+        for (let i = 29; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const ds = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+          const e  = allHealth.find(x => x.date === ds);
+          pain30.push({ date: ds, pain: e?.painLevel ?? null, sleep: e?.sleep ?? null, mood: e?.mood ?? null });
+        }
+        const sleepVals = pain30.map(x => x.sleep).filter(v => typeof v === 'number');
+        const avgSleep  = sleepVals.length ? (sleepVals.reduce((a, b) => a + b, 0) / sleepVals.length) : null;
+        const moodVals  = pain30.map(x => x.mood).filter(v => typeof v === 'number');
+        const avgMood   = moodVals.length ? (moodVals.reduce((a, b) => a + b, 0) / moodVals.length) : null;
 
-        // Habits
+        // Habits — include weekly log so UI can render 7-day dots.
         const habitList = await getHabits();
+        const weekDates = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          weekDates.push(d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }));
+        }
         const habits = habitList.map(habit => ({
           id:        habit.id,
           name:      habit.name,
           icon:      habit.icon,
+          frequency: habit.frequency,
           streak:    habit.streak,
           doneToday: !!(habit.logs || []).find(l => l.date === today && l.done),
+          week:      weekDates.map(ds => ({
+            date: ds,
+            done: !!(habit.logs || []).find(l => l.date === ds && l.done),
+          })),
         }));
 
         // Expenses (current month)
@@ -264,11 +288,29 @@ const server = http.createServer((req, res) => {
             byCat[cat] = (byCat[cat] || 0) + e.amount;
           }
         }
+        const recentExpenses = (await getExpenses()).slice(0, 10).map(e => ({
+          id: e.id, vendor: e.vendor, amount: e.amount, currency: e.currency,
+          category: e.category, date: e.date,
+        }));
 
-        // Tasks
-        const openTasks = await getOpenTasks();
-        const doneToday = await getCompletedToday();
-        const tasks     = { open: openTasks.length, completed_today: doneToday.length };
+        // Tasks — full lists for the Tasks tab
+        const allTasks   = await loadTasks();
+        const openTasks  = await getOpenTasks();
+        const doneToday  = await getCompletedToday();
+        const byPriority = {
+          high:   openTasks.filter(t => t.priority === 'high').length,
+          medium: openTasks.filter(t => t.priority === 'medium').length,
+          low:    openTasks.filter(t => t.priority === 'low').length,
+        };
+        const tasksFull = {
+          open: openTasks.map(t => ({ id: t.id, text: t.text, priority: t.priority, createdAt: t.createdAt })),
+          done: allTasks.filter(t => t.done).slice(-20).reverse().map(t => ({
+            id: t.id, text: t.text, priority: t.priority, doneAt: t.doneAt,
+          })),
+          openCount:     openTasks.length,
+          doneToday:     doneToday.length,
+          byPriority,
+        };
 
         // Stocks — live prices from watchlist
         const watchlist = await getWatchlistForChat(chatId);
@@ -276,8 +318,17 @@ const server = http.createServer((req, res) => {
         for (const w of watchlist) {
           try {
             const s = await fetchStockPrice(w.symbol);
-            stocks.push({ symbol: s.symbol, name: s.name, price: s.price, changePct: s.changePct, currency: s.currency });
-          } catch { stocks.push({ symbol: w.symbol, name: w.symbol, price: null, changePct: 0, currency: 'USD' }); }
+            stocks.push({
+              symbol: s.symbol, name: s.name, price: s.price, changePct: s.changePct,
+              currency: s.currency, threshold: w.threshold, direction: w.direction,
+              triggered: !!w.triggered,
+            });
+          } catch {
+            stocks.push({
+              symbol: w.symbol, name: w.symbol, price: null, changePct: 0, currency: 'USD',
+              threshold: w.threshold, direction: w.direction, triggered: !!w.triggered,
+            });
+          }
         }
 
         // Leads
@@ -287,6 +338,7 @@ const server = http.createServer((req, res) => {
         const leadsSummary = await getLeadsSummary();
 
         const body = JSON.stringify({
+          // Legacy shape kept for backwards compatibility with the old HTML
           health,
           healthHistory,
           habits,
@@ -295,8 +347,16 @@ const server = http.createServer((req, res) => {
             total_usd: Math.round(total_usd * 100) / 100,
             count: exps.length,
             byCat,
+            recent: recentExpenses,
           },
-          tasks,
+          tasks: {
+            open: tasksFull.openCount,
+            completed_today: tasksFull.doneToday,
+            byPriority: tasksFull.byPriority,
+            openList: tasksFull.open,
+            doneList: tasksFull.done,
+          },
+          openTasks: tasksFull.open.slice(0, 8),
           stocks,
           leads: leads.map(l => ({
             id: l.id,
@@ -309,7 +369,10 @@ const server = http.createServer((req, res) => {
             notes: l.notes || '',
           })),
           leadsSummary,
-          openTasks: openTasks.slice(0, 8).map(t => ({ id: t.id, text: t.text, priority: t.priority })),
+          pain30,
+          avgSleep: avgSleep != null ? Math.round(avgSleep * 10) / 10 : null,
+          avgMood:  avgMood  != null ? Math.round(avgMood  * 10) / 10 : null,
+          supabase: supabaseEnabled(),
           timestamp: new Date().toISOString(),
         });
         res.writeHead(200, {
@@ -383,7 +446,50 @@ const server = http.createServer((req, res) => {
       const { addTask } = require('./tasks');
       const task = await addTask(String(b.text || '').trim());
       if (!task) return apiJson(res, { ok: false, e: 'empty_text' }, 400);
+      if (task.isDuplicate) return apiJson(res, { ok: false, e: 'duplicate', id: task.id }, 409);
       apiJson(res, { ok: true, id: task.id });
+    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    return;
+  }
+
+  // POST /api/complete-task — { id } toggles task done by numeric id
+  if (req.method === 'POST' && route === '/api/complete-task') {
+    readJsonBody(req).then(async b => {
+      const { loadTasks, markDone, markUndone, getOpenTasks } = require('./tasks');
+      const id = Number(b.id);
+      if (!id) return apiJson(res, { ok: false, e: 'missing_id' }, 400);
+      const all = await loadTasks();
+      const t = all.find(x => x.id === id);
+      if (!t) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+
+      if (t.done) {
+        const done = all.filter(x => x.done);
+        const idx = done.findIndex(x => x.id === id) + 1;
+        await markUndone(idx);
+      } else {
+        const open = (await getOpenTasks());
+        const idx = open.findIndex(x => x.id === id) + 1;
+        await markDone(idx);
+      }
+      apiJson(res, { ok: true });
+    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    return;
+  }
+
+  // POST /api/delete-task — { id }
+  if (req.method === 'POST' && route === '/api/delete-task') {
+    readJsonBody(req).then(async b => {
+      const { loadTasks, deleteTask: delTask, getOpenTasks } = require('./tasks');
+      const id = Number(b.id);
+      if (!id) return apiJson(res, { ok: false, e: 'missing_id' }, 400);
+      const all = await loadTasks();
+      const t = all.find(x => x.id === id);
+      if (!t) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+      const open = await getOpenTasks();
+      const idx = open.findIndex(x => x.id === id) + 1;
+      if (idx === 0) return apiJson(res, { ok: false, e: 'not_open' }, 400);
+      await delTask(idx);
+      apiJson(res, { ok: true });
     }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
     return;
   }

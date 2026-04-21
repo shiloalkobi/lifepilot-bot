@@ -151,8 +151,15 @@ async function deleteWatchRows(predicate) {
   return removed;
 }
 
-function nextId(list) {
-  return list.length ? Math.max(...list.map(w => w.id)) + 1 : 1;
+async function nextId() {
+  if (isEnabled()) {
+    const { data, error } = await supabase.from('watchlist').select('id');
+    if (!error && Array.isArray(data) && data.length) {
+      return Math.max(...data.map(r => Number(r.id) || 0)) + 1;
+    }
+  }
+  const local = loadFromJson();
+  return local.length ? Math.max(...local.map(w => Number(w.id) || 0)) + 1 : 1;
 }
 
 // ── Watchlist operations ──────────────────────────────────────────────────────
@@ -165,7 +172,7 @@ async function addToWatchlist(chatId, symbol, threshold, direction = 'above') {
 
   const list = await loadWatchlist();
   const entry = {
-    id:        nextId(list),
+    id:        await nextId(),
     chatId:    String(chatId),
     symbol:    symbol.toUpperCase(),
     threshold: threshold != null ? parseFloat(threshold) : null,
@@ -273,7 +280,7 @@ async function initDefaultWatchlist(chatId) {
   for (const d of defaults) {
     const list = await loadWatchlist();
     const entry = {
-      id:        nextId(list),
+      id:        await nextId(),
       chatId:    String(chatId),
       symbol:    d.symbol,
       threshold: null,

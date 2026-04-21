@@ -2,470 +2,201 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>shilobilo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>שילובילו — לוח בקרה</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Heebo', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#EEF2FF',
+              100: '#E0E7FF',
+              500: '#6366F1',
+              600: '#4F46E5',
+              700: '#4338CA',
+            },
+          },
+        },
+      },
+    };
+  </script>
+
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { font-family: 'Heebo', system-ui, sans-serif; }
+    * { -webkit-tap-highlight-color: transparent; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      min-height: 100vh;
-      direction: rtl;
-      padding-bottom: 72px; /* space for tab bar */
-    }
+    /* Card hover lift */
+    .card-lift { transition: transform .18s ease, box-shadow .18s ease; }
+    .card-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
 
-    /* ── Header ───────────────────────────────────────────────────────── */
-    .header {
-      background: linear-gradient(135deg, #1a56db 0%, #059669 100%);
-      padding: 14px 16px 10px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    /* Tab button underline animation */
+    .tab-btn { position: relative; transition: color .18s ease; }
+    .tab-btn::after {
+      content: ''; position: absolute; bottom: -1px; left: 12%; right: 12%;
+      height: 2px; background: currentColor; transform: scaleX(0);
+      transition: transform .22s ease; border-radius: 2px;
     }
-    .header h1 { font-size: 1.15rem; font-weight: 700; }
-    .header .ts { font-size: 0.7rem; opacity: 0.8; }
+    .tab-btn.active::after { transform: scaleX(1); }
 
-    /* ── Tabs content ─────────────────────────────────────────────────── */
-    .tab { display: none; padding: 12px 12px 4px; }
-    .tab.active { display: block; }
+    /* Fade-in on load */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-up { animation: fadeUp .35s ease both; }
 
-    /* ── Cards ────────────────────────────────────────────────────────── */
-    .card {
-      background: #1e293b;
-      border-radius: 14px;
-      padding: 13px 14px;
-      border: 1px solid #334155;
-      margin-bottom: 10px;
-    }
-    .card-title {
-      font-size: 0.68rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: #94a3b8;
-      margin-bottom: 8px;
-    }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    .card-val { font-size: 1.8rem; font-weight: 700; line-height: 1; }
-    .card-sub { font-size: 0.73rem; color: #64748b; margin-top: 3px; }
+    /* Staggered cards */
+    .stagger > * { animation: fadeUp .4s ease both; }
+    .stagger > *:nth-child(1) { animation-delay: .02s; }
+    .stagger > *:nth-child(2) { animation-delay: .08s; }
+    .stagger > *:nth-child(3) { animation-delay: .14s; }
+    .stagger > *:nth-child(4) { animation-delay: .20s; }
+    .stagger > *:nth-child(5) { animation-delay: .26s; }
+    .stagger > *:nth-child(6) { animation-delay: .32s; }
 
-    /* ── Meter bars ───────────────────────────────────────────────────── */
-    .meter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-    .meter-lbl { font-size: 0.75rem; color: #94a3b8; width: 72px; flex-shrink: 0; }
-    .meter-bar { flex: 1; height: 7px; background: #334155; border-radius: 4px; overflow: hidden; }
-    .meter-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
-    .meter-num { font-size: 0.72rem; color: #cbd5e1; width: 26px; text-align: left; }
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: .5rem;
+    }
+    .dark .skeleton { background: linear-gradient(90deg, #374151 25%, #4B5563 50%, #374151 75%); background-size: 200% 100%; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-    /* ── Quick action buttons ─────────────────────────────────────────── */
-    .quick-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-    .q-btn {
-      flex: 1 1 0;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 9px 6px;
-      font-size: 0.75rem;
-      color: #e2e8f0;
-      cursor: pointer;
-      text-align: center;
-      transition: background 0.15s;
-    }
-    .q-btn:active { background: #2d3f55; }
+    /* Smooth scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+    .dark ::-webkit-scrollbar-thumb { background: #475569; }
 
-    /* ── Task list ────────────────────────────────────────────────────── */
-    .task-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 9px;
-      padding: 7px 0;
-      border-bottom: 1px solid #1e293b;
-      font-size: 0.82rem;
-    }
-    .task-item:last-child { border-bottom: none; }
-    .task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
-    .dot-high { background: #ef4444; }
-    .dot-med  { background: #f59e0b; }
-    .dot-low  { background: #475569; }
-
-    /* ── Habit cards ──────────────────────────────────────────────────── */
-    .habit-card {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 11px 13px;
-      margin-bottom: 8px;
-    }
-    .habit-icon { font-size: 1.4rem; }
-    .habit-info { flex: 1; }
-    .habit-name { font-size: 0.88rem; font-weight: 600; }
-    .habit-streak { font-size: 0.72rem; color: #f59e0b; margin-top: 2px; }
-    .habit-btn {
-      padding: 7px 14px;
-      border-radius: 8px;
-      border: none;
-      font-size: 0.78rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
-    .habit-btn:active { opacity: 0.7; }
-    .habit-done { background: #064e3b; color: #34d399; }
-    .habit-todo { background: #1a56db; color: #fff; }
-
-    /* ── Sliders (health form) ────────────────────────────────────────── */
-    .slider-row { margin-bottom: 14px; }
-    .slider-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
-    .slider-label { font-size: 0.82rem; color: #94a3b8; }
-    .slider-val { font-size: 0.88rem; font-weight: 700; }
-    input[type=range] {
-      width: 100%;
-      -webkit-appearance: none;
-      height: 6px;
-      border-radius: 3px;
-      outline: none;
-      cursor: pointer;
-    }
+    /* Slider (range) */
+    input[type=range] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 3px; outline: none; }
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: #1a56db;
-      cursor: pointer;
+      -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+      background: #4F46E5; cursor: pointer; border: 2px solid #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,.2);
     }
-    .slider-pain   { background: linear-gradient(90deg, #34d399, #fbbf24, #ef4444); }
-    .slider-mood   { background: linear-gradient(90deg, #ef4444, #fbbf24, #34d399); }
-    .slider-sleep  { background: linear-gradient(90deg, #6366f1, #818cf8); }
+    .slider-pain  { background: linear-gradient(90deg, #34d399, #fbbf24, #ef4444); }
+    .slider-mood  { background: linear-gradient(90deg, #ef4444, #fbbf24, #34d399); }
+    .slider-sleep { background: linear-gradient(90deg, #818cf8, #4F46E5); }
 
-    /* ── Expense form ─────────────────────────────────────────────────── */
-    .form-row { display: flex; gap: 8px; margin-bottom: 8px; }
-    .inp {
-      flex: 1;
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 9px 10px;
-      color: #e2e8f0;
-      font-size: 0.82rem;
-      outline: none;
-    }
-    .inp:focus { border-color: #1a56db; }
-    .inp-sm { max-width: 90px; }
-    select.inp { cursor: pointer; }
-    .btn-primary {
-      background: #1a56db;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 9px 18px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .btn-primary:active { opacity: 0.8; }
-    .btn-primary.green { background: #059669; }
-
-    /* ── Stock cards ──────────────────────────────────────────────────── */
-    .stock-card {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 11px 14px;
-      margin-bottom: 8px;
-    }
-    .stock-sym { font-weight: 700; font-size: 0.9rem; }
-    .stock-name { font-size: 0.68rem; color: #64748b; margin-top: 2px; }
-    .stock-right { text-align: left; }
-    .stock-price { font-size: 0.92rem; font-weight: 600; }
-    .stock-chg {
-      display: inline-block;
-      font-size: 0.72rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 6px;
-      margin-top: 3px;
-    }
-    .up-bg   { background: #064e3b; color: #34d399; }
-    .down-bg { background: #450a0a; color: #f87171; }
-
-    /* ── Bottom tab bar ───────────────────────────────────────────────── */
-    .tab-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: #1e293b;
-      border-top: 1px solid #334155;
-      display: flex;
-      z-index: 100;
-    }
-    .tab-btn {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 8px 4px;
-      background: none;
-      border: none;
-      color: #64748b;
-      font-size: 0.6rem;
-      cursor: pointer;
-      transition: color 0.15s;
-      gap: 2px;
-    }
-    .tab-btn .icon { font-size: 1.2rem; }
-    .tab-btn.active { color: #1a56db; }
-
-    /* ── FAB ──────────────────────────────────────────────────────────── */
-    .fab {
-      position: fixed;
-      bottom: 82px;
-      left: 16px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #1a56db, #059669);
-      color: #fff;
-      font-size: 1.6rem;
-      border: none;
-      cursor: pointer;
-      box-shadow: 0 4px 14px rgba(26,86,219,0.4);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 200;
-      transition: transform 0.2s;
-    }
-    .fab.open { transform: rotate(45deg); }
-
-    .fab-menu {
-      position: fixed;
-      bottom: 142px;
-      left: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      z-index: 200;
-      opacity: 0;
-      pointer-events: none;
-      transform: translateY(10px);
-      transition: opacity 0.2s, transform 0.2s;
-    }
-    .fab-menu.open { opacity: 1; pointer-events: auto; transform: translateY(0); }
-    .fab-item {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 9px 14px;
-      color: #e2e8f0;
-      font-size: 0.82rem;
-      cursor: pointer;
-      white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-    .fab-item:active { background: #2d3f55; }
-
-    /* ── Toast ────────────────────────────────────────────────────────── */
-    .toast {
-      position: fixed;
-      bottom: 80px;
-      left: 50%;
-      transform: translateX(-50%) translateY(20px);
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 9px 18px;
-      font-size: 0.82rem;
-      color: #e2e8f0;
-      z-index: 300;
-      opacity: 0;
-      transition: opacity 0.2s, transform 0.2s;
-      pointer-events: none;
-      white-space: nowrap;
-    }
-    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    .toast.err  { border-color: #ef4444; color: #f87171; }
-
-    /* ── Section title ────────────────────────────────────────────────── */
-    .sec-title {
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: #64748b;
-      margin: 12px 0 6px;
-    }
-
-    /* ── Loading skeleton ─────────────────────────────────────────────── */
-    .loading-msg {
-      text-align: center;
-      color: #64748b;
-      padding: 40px 16px;
-      font-size: 0.9rem;
-    }
-
-    /* ── Canvas containers ────────────────────────────────────────────── */
-    .chart-wrap { position: relative; width: 100%; max-height: 180px; }
+    /* Hide scrollbar for horizontal tabs */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
 </head>
-<body>
 
-<!-- Header -->
-<div class="header">
-  <h1>🚀 shilobilo</h1>
-  <span class="ts" id="ts">טוען...</span>
-</div>
+<body class="bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 min-h-screen">
 
-<!-- ── HOME TAB ─────────────────────────────────────────────────────────── -->
-<div id="tab-home" class="tab active">
-  <div id="home-content"><div class="loading-msg">טוען נתונים...</div></div>
-</div>
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-gray-200 dark:border-slate-800">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">🚀</span>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold leading-tight">שילובילו — לוח בקרה</h1>
+          <div class="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500 dark:text-slate-400">
+            <span id="supabase-dot" class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+            <span id="supabase-label">מתחבר...</span>
+            <span>·</span>
+            <span id="ts">—</span>
+          </div>
+        </div>
+      </div>
+      <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition" title="מצב בהיר/כהה">
+        <span class="dark:hidden">🌙</span>
+        <span class="hidden dark:inline">☀️</span>
+      </button>
+    </div>
 
-<!-- ── HABITS TAB ──────────────────────────────────────────────────────── -->
-<div id="tab-habits" class="tab">
-  <div id="habits-content"><div class="loading-msg">טוען...</div></div>
-</div>
+    <!-- Tabs -->
+    <nav class="max-w-6xl mx-auto px-2 overflow-x-auto no-scrollbar">
+      <div class="flex gap-1 text-sm font-medium" role="tablist">
+        <button class="tab-btn active px-4 py-3 whitespace-nowrap text-brand-600 dark:text-brand-500" data-tab-button="overview">📊 סקירה</button>
+        <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="tasks">📋 משימות</button>
+        <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="habits">✅ הרגלים</button>
+        <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="leads">💼 לידים</button>
+        <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="expenses">💰 הוצאות</button>
+        <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="health">🏥 בריאות</button>
+        <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="stocks">📈 מניות</button>
+      </div>
+    </nav>
+  </header>
 
-<!-- ── HEALTH TAB ──────────────────────────────────────────────────────── -->
-<div id="tab-health" class="tab">
-  <div id="health-content"><div class="loading-msg">טוען...</div></div>
-</div>
+  <!-- Main content -->
+  <main class="max-w-6xl mx-auto px-4 py-6 pb-24">
+    <section data-tab="overview"><div id="overview-content" class="fade-up"><div class="grid grid-cols-2 md:grid-cols-4 gap-3"><div class="skeleton h-24"></div><div class="skeleton h-24"></div><div class="skeleton h-24"></div><div class="skeleton h-24"></div></div></div></section>
+    <section data-tab="tasks" class="hidden"><div id="tasks-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
+    <section data-tab="habits" class="hidden"><div id="habits-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
+    <section data-tab="leads" class="hidden"><div id="leads-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
+    <section data-tab="expenses" class="hidden"><div id="expenses-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
+    <section data-tab="health" class="hidden"><div id="health-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
+    <section data-tab="stocks" class="hidden"><div id="stocks-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
+  </main>
 
-<!-- ── EXPENSES TAB ────────────────────────────────────────────────────── -->
-<div id="tab-expenses" class="tab">
-  <div id="expenses-content"><div class="loading-msg">טוען...</div></div>
-</div>
-
-<!-- ── STOCKS TAB ──────────────────────────────────────────────────────── -->
-<div id="tab-stocks" class="tab">
-  <div id="stocks-content"><div class="loading-msg">טוען...</div></div>
-</div>
-
-<!-- ── LEADS TAB ───────────────────────────────────────────────────────── -->
-<div id="tab-leads" class="tab">
-  <div id="leads-content"><div class="loading-msg">טוען...</div></div>
-</div>
-
-<!-- Bottom nav -->
-<nav class="tab-bar">
-  <button class="tab-btn active" data-tab="home" onclick="setTab('home')">
-    <span class="icon">🏠</span><span>ראשי</span>
-  </button>
-  <button class="tab-btn" data-tab="habits" onclick="setTab('habits')">
-    <span class="icon">💪</span><span>הרגלים</span>
-  </button>
-  <button class="tab-btn" data-tab="health" onclick="setTab('health')">
-    <span class="icon">🩺</span><span>בריאות</span>
-  </button>
-  <button class="tab-btn" data-tab="expenses" onclick="setTab('expenses')">
-    <span class="icon">💰</span><span>הוצאות</span>
-  </button>
-  <button class="tab-btn" data-tab="stocks" onclick="setTab('stocks')">
-    <span class="icon">📈</span><span>מניות</span>
-  </button>
-  <button class="tab-btn" data-tab="leads" onclick="setTab('leads')">
-    <span class="icon">💼</span><span>לידים</span>
-  </button>
-</nav>
-
-<!-- FAB -->
-<button class="fab" id="fab" onclick="toggleFab()">+</button>
-<div class="fab-menu" id="fab-menu">
-  <button class="fab-item" onclick="fabTask()">➕ משימה חדשה</button>
-  <button class="fab-item" onclick="fabExpense()">💰 הוצאה מהירה</button>
-  <button class="fab-item" onclick="fabHealth()">🩺 תיעוד בריאות</button>
-</div>
-
-<!-- Toast -->
-<div class="toast" id="toast"></div>
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-6 right-1/2 translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition-all duration-200
+                        bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium z-50">
+  </div>
 
 <script>
 'use strict';
 
-// ── Telegram WebApp ────────────────────────────────────────────────────────────
+// ── Telegram WebApp boot ─────────────────────────────────────────────────────
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-// ── State ──────────────────────────────────────────────────────────────────────
-let D = null; // dashboard data
-let activeTab = 'home';
+// ── State ────────────────────────────────────────────────────────────────────
+let D = null;
+let activeTab = 'overview';
 const charts = {};
+const TABS = ['overview','tasks','habits','leads','expenses','health','stocks'];
 
-// ── Utility ───────────────────────────────────────────────────────────────────
+// ── Theme ────────────────────────────────────────────────────────────────────
+(function initTheme() {
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const dark = saved ? saved === 'dark' : prefersDark;
+  document.documentElement.classList.toggle('dark', dark);
+})();
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.classList.toggle('dark');
+  localStorage.setItem('theme', root.classList.contains('dark') ? 'dark' : 'light');
+  // Re-render current tab so chart colors update
+  renderActive();
+});
+
+// ── Utilities ────────────────────────────────────────────────────────────────
 function fmt(n, d = 0) {
-  if (n == null) return '—';
+  if (n == null || isNaN(n)) return '—';
   return (+n).toLocaleString('he-IL', { maximumFractionDigits: d });
 }
-
-function painColor(v) {
-  if (v <= 3) return '#34d399';
-  if (v <= 6) return '#fbbf24';
-  return '#ef4444';
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-function moodColor(v) {
-  if (v >= 7) return '#34d399';
-  if (v >= 4) return '#fbbf24';
-  return '#ef4444';
-}
-function sleepColor(v) { return v >= 7 ? '#818cf8' : v >= 5 ? '#a78bfa' : '#6366f1'; }
-
-function dotCls(p) { return p === 'high' ? 'dot-high' : p === 'low' ? 'dot-low' : 'dot-med'; }
-
-// ── Toast ──────────────────────────────────────────────────────────────────────
 function toast(msg, isErr = false) {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  el.className = 'toast show' + (isErr ? ' err' : '');
+  el.className = (isErr
+    ? 'fixed bottom-6 right-1/2 translate-x-1/2 translate-y-0 opacity-100 bg-red-600 text-white'
+    : 'fixed bottom-6 right-1/2 translate-x-1/2 translate-y-0 opacity-100 bg-slate-900 dark:bg-white text-white dark:text-slate-900')
+    + ' pointer-events-none transition-all duration-200 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium z-50';
   clearTimeout(el._t);
-  el._t = setTimeout(() => { el.className = 'toast'; }, 2200);
+  el._t = setTimeout(() => {
+    el.className = 'fixed bottom-6 right-1/2 translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition-all duration-200 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium z-50';
+  }, 2000);
 }
 
-// ── FAB ────────────────────────────────────────────────────────────────────────
-function toggleFab() {
-  const open = document.getElementById('fab-menu').classList.toggle('open');
-  document.getElementById('fab').classList.toggle('open', open);
-}
-function closeFab() {
-  document.getElementById('fab-menu').classList.remove('open');
-  document.getElementById('fab').classList.remove('open');
-}
-
-function fabTask() {
-  closeFab();
-  const text = prompt('משימה חדשה:');
-  if (!text || !text.trim()) return;
-  api('/api/add-task', { text: text.trim() }).then(r => {
-    if (r.ok) { toast('✅ משימה נוספה!'); reload(); }
-    else toast('שגיאה: ' + r.e, true);
-  });
-}
-
-function fabExpense() {
-  closeFab();
-  setTab('expenses');
-  setTimeout(() => {
-    const el = document.getElementById('exp-vendor');
-    if (el) el.focus();
-  }, 100);
-}
-
-function fabHealth() {
-  closeFab();
-  setTab('health');
-}
-
-// ── API ────────────────────────────────────────────────────────────────────────
 async function api(path, body) {
   const opts = body
     ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
@@ -474,187 +205,367 @@ async function api(path, body) {
   return r.json();
 }
 
-// ── Charts ─────────────────────────────────────────────────────────────────────
-function destroyChart(id) {
-  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
-}
-
+// ── Charts helpers ───────────────────────────────────────────────────────────
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 function mkChart(id, cfg) {
   destroyChart(id);
   const el = document.getElementById(id);
   if (!el) return;
   charts[id] = new Chart(el, cfg);
 }
-
-const CHART_DEFAULTS = {
-  grid: { color: '#1e293b' },
-  ticks: { color: '#64748b' },
-  legend: { color: '#94a3b8' },
-};
-
-// ── Tab switching ──────────────────────────────────────────────────────────────
-function setTab(name) {
-  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
-  activeTab = name;
-  if (!D) return;
-  // Render on-demand
-  if (name === 'habits')   renderHabits();
-  if (name === 'health')   renderHealth();
-  if (name === 'expenses') renderExpenses();
-  if (name === 'stocks')   renderStocks();
-  if (name === 'leads')    renderLeads();
+function chartColors() {
+  const dark = document.documentElement.classList.contains('dark');
+  return {
+    grid:  dark ? '#1e293b' : '#e5e7eb',
+    tick:  dark ? '#94a3b8' : '#64748b',
+    label: dark ? '#e2e8f0' : '#374151',
+  };
 }
 
-// ── HOME TAB ───────────────────────────────────────────────────────────────────
-function renderHome() {
-  if (!D) return;
-  const h = D.health;
+// ── Tab switching (hash-based, data-attribute driven) ───────────────────────
+function showTab(name) {
+  if (!TABS.includes(name)) name = 'overview';
+  activeTab = name;
 
-  let healthCards = '';
-  if (h) {
-    healthCards = `
-      <div class="card">
-        <div class="card-title">🩺 בריאות היום</div>
-        <div class="meter-row">
-          <span class="meter-lbl">כאב</span>
-          <div class="meter-bar"><div class="meter-fill" style="width:${h.pain*10}%;background:${painColor(h.pain)}"></div></div>
-          <span class="meter-num">${h.pain}</span>
-        </div>
-        <div class="meter-row">
-          <span class="meter-lbl">מצב רוח</span>
-          <div class="meter-bar"><div class="meter-fill" style="width:${h.mood*10}%;background:${moodColor(h.mood)}"></div></div>
-          <span class="meter-num">${h.mood}</span>
-        </div>
-        <div class="meter-row">
-          <span class="meter-lbl">שינה</span>
-          <div class="meter-bar"><div class="meter-fill" style="width:${Math.min(h.sleep/12*100,100)}%;background:${sleepColor(h.sleep)}"></div></div>
-          <span class="meter-num">${h.sleep}ש'</span>
-        </div>
-      </div>`;
-  } else {
-    healthCards = `
-      <div class="card" onclick="setTab('health')" style="cursor:pointer">
-        <div class="card-title">🩺 בריאות היום</div>
-        <div style="color:#64748b;font-size:0.82rem;padding:8px 0">לא דווח היום — לחץ לתיעוד</div>
-      </div>`;
+  document.querySelectorAll('[data-tab]').forEach(el => {
+    el.classList.toggle('hidden', el.dataset.tab !== name);
+  });
+  document.querySelectorAll('[data-tab-button]').forEach(btn => {
+    const on = btn.dataset.tabButton === name;
+    btn.classList.toggle('active', on);
+    btn.classList.toggle('text-brand-600', on);
+    btn.classList.toggle('dark:text-brand-500', on);
+    btn.classList.toggle('text-gray-500', !on);
+    btn.classList.toggle('dark:text-slate-400', !on);
+  });
+
+  if (window.location.hash.slice(1) !== name) {
+    history.replaceState(null, '', '#' + name);
   }
 
-  const tasksDone  = D.tasks.completed_today;
-  const tasksOpen  = D.tasks.open;
-  const expILS     = D.expenses.total_ils;
-  const expCount   = D.expenses.count;
+  renderActive();
+}
 
-  const taskList = D.openTasks.length
-    ? D.openTasks.map(t => `
-        <div class="task-item">
-          <div class="task-dot ${dotCls(t.priority)}"></div>
-          <span>${t.text}</span>
-        </div>`).join('')
-    : '<div style="color:#475569;font-size:0.8rem;padding:8px 0">אין משימות פתוחות 🎉</div>';
+function renderActive() {
+  if (!D) return;
+  const r = {
+    overview: renderOverview,
+    tasks:    renderTasks,
+    habits:   renderHabits,
+    leads:    renderLeads,
+    expenses: renderExpenses,
+    health:   renderHealth,
+    stocks:   renderStocks,
+  }[activeTab];
+  if (r) r();
+}
 
-  const habitsDone = D.habits.filter(h => h.doneToday).length;
-  const habitsTotal = D.habits.length;
+document.querySelectorAll('[data-tab-button]').forEach(btn => {
+  btn.addEventListener('click', () => showTab(btn.dataset.tabButton));
+});
+window.addEventListener('hashchange', () => {
+  const t = window.location.hash.slice(1);
+  if (t && TABS.includes(t)) showTab(t);
+});
 
-  document.getElementById('home-content').innerHTML = `
-    ${healthCards}
-
-    <div class="grid2">
-      <div class="card" onclick="setTab('habits')" style="cursor:pointer">
-        <div class="card-title">💪 הרגלים</div>
-        <div class="card-val" style="color:#818cf8">${habitsDone}/${habitsTotal}</div>
-        <div class="card-sub">בוצעו היום</div>
+// ── Overview ─────────────────────────────────────────────────────────────────
+function renderOverview() {
+  const s = D.leadsSummary || {};
+  const statCard = (emoji, label, value, sub, color) => `
+    <div class="card-lift bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm cursor-pointer"
+         onclick="showTab('${sub.tabId}')">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">${esc(label)}</span>
+        <span class="text-xl">${emoji}</span>
       </div>
-      <div class="card" onclick="setTab('expenses')" style="cursor:pointer">
-        <div class="card-title">💰 הוצאות</div>
-        <div class="card-val" style="color:#34d399;font-size:1.3rem">₪${fmt(expILS)}</div>
-        <div class="card-sub">${expCount} רשומות החודש</div>
-      </div>
-    </div>
+      <div class="text-2xl font-bold ${color}">${value}</div>
+      <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">${esc(sub.text)}</div>
+    </div>`;
 
-    <div class="grid2">
-      <div class="card" onclick="setTab('habits')" style="cursor:pointer">
-        <div class="card-title">✅ משימות פתוחות</div>
-        <div class="card-val" style="color:#60a5fa">${tasksOpen}</div>
-        <div class="card-sub">הושלמו היום: ${tasksDone}</div>
-      </div>
-      <div class="card" onclick="setTab('stocks')" style="cursor:pointer">
-        <div class="card-title">📈 מניות</div>
-        <div class="card-val" style="color:#f59e0b">${D.stocks.length}</div>
-        <div class="card-sub">במעקב</div>
-      </div>
-    </div>
+  const totals = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 stagger">
+      ${statCard('💼', 'לידים', fmt(s.total || 0), { tabId: 'leads', text: `השבוע: ${s.thisWeek||0} · חדשים: ${s.new||0}` }, 'text-brand-600 dark:text-brand-500')}
+      ${statCard('📋', 'משימות פתוחות', fmt(D.tasks.open || 0), { tabId: 'tasks', text: `הושלמו היום: ${D.tasks.completed_today||0}` }, 'text-blue-600 dark:text-blue-400')}
+      ${statCard('✅', 'הרגלים', `${D.habits.filter(h => h.doneToday).length}/${D.habits.length}`, { tabId: 'habits', text: 'בוצעו היום' }, 'text-emerald-600 dark:text-emerald-400')}
+      ${statCard('💰', 'הוצאות החודש', '₪' + fmt(D.expenses.total_ils || 0), { tabId: 'expenses', text: `${D.expenses.count||0} רשומות` }, 'text-amber-600 dark:text-amber-400')}
+    </div>`;
 
-    <div class="sec-title">פעולות מהירות</div>
-    <div class="quick-row">
-      <button class="q-btn" onclick="fabTask()">➕ משימה</button>
-      <button class="q-btn" onclick="setTab('health')">🩺 בריאות</button>
-      <button class="q-btn" onclick="setTab('stocks')">📈 מניות</button>
-    </div>
+  // Health today summary (if any)
+  const h = D.health;
+  const healthBlock = h
+    ? `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+         <div class="flex items-center justify-between mb-3">
+           <span class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">🏥 בריאות היום</span>
+           <button onclick="showTab('health')" class="text-xs text-brand-600 dark:text-brand-500 hover:underline">פרטים ←</button>
+         </div>
+         ${meterRow('כאב', h.pain, 10, painColor(h.pain))}
+         ${meterRow('מצב רוח', h.mood, 10, moodColor(h.mood))}
+         ${meterRow('שינה', h.sleep, 12, '#6366F1', h.sleep + 'ש')}
+       </div>`
+    : `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm cursor-pointer card-lift"
+            onclick="showTab('health')">
+         <div class="flex items-center justify-between">
+           <span class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">🏥 בריאות היום</span>
+           <span class="text-xs text-brand-600 dark:text-brand-500">דווח ←</span>
+         </div>
+         <div class="text-sm text-gray-500 dark:text-slate-400 mt-2">לא דווח היום — לחץ לתיעוד</div>
+       </div>`;
 
-    <div class="card">
-      <div class="card-title">📋 משימות פתוחות</div>
-      ${taskList}
+  // Quick actions
+  const quick = `
+    <div class="flex flex-wrap gap-2">
+      <button onclick="quickTask()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium transition">➕ הוסף משימה</button>
+      <button onclick="showTab('habits')" class="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg text-sm font-medium transition">✅ נהל הרגלים</button>
+      <button onclick="showTab('expenses')" class="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg text-sm font-medium transition">💰 הוסף הוצאה</button>
+      <button onclick="showTab('health')" class="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg text-sm font-medium transition">🏥 דווח בריאות</button>
+    </div>`;
+
+  // Recent activity feed
+  const activity = buildActivityFeed();
+  const recentBlock = `
+    <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+      <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">🕐 פעילות אחרונה</div>
+      ${activity.length
+        ? `<ul class="divide-y divide-gray-100 dark:divide-slate-800">${activity.map(a => `
+            <li class="py-2 flex items-start gap-3 text-sm">
+              <span class="text-lg">${a.icon}</span>
+              <div class="flex-1 min-w-0">
+                <div class="truncate">${esc(a.title)}</div>
+                <div class="text-xs text-gray-500 dark:text-slate-400">${esc(a.subtitle)}</div>
+              </div>
+            </li>`).join('')}</ul>`
+        : '<div class="text-sm text-gray-500 dark:text-slate-400">אין פעילות עדיין</div>'}
+    </div>`;
+
+  document.getElementById('overview-content').innerHTML = `
+    ${totals}
+    <div class="grid md:grid-cols-2 gap-3 mt-4">
+      ${healthBlock}
+      ${recentBlock}
     </div>
+    <div class="mt-4">${quick}</div>
   `;
 }
 
-// ── HABITS TAB ─────────────────────────────────────────────────────────────────
-function renderHabits() {
-  if (!D) return;
-  const habits = D.habits;
+function buildActivityFeed() {
+  const out = [];
+  (D.tasks.openList || []).slice(0, 3).forEach(t => {
+    out.push({ icon: '📋', title: t.text, subtitle: 'משימה פתוחה · ' + (t.priority === 'high' ? 'דחוף' : t.priority) });
+  });
+  (D.expenses.recent || []).slice(0, 3).forEach(e => {
+    out.push({ icon: '💰', title: `${e.vendor || '—'} · ${e.currency === 'USD' ? '$' : '₪'}${fmt(e.amount)}`, subtitle: `${e.category || 'אחר'} · ${e.date || ''}` });
+  });
+  (D.leads || []).slice(0, 3).forEach(l => {
+    out.push({ icon: '💼', title: l.name, subtitle: `${l.title} · ${new Date(l.createdAt).toLocaleDateString('he-IL')}` });
+  });
+  return out.slice(0, 10);
+}
 
-  const cards = habits.length
-    ? habits.map(h => `
-        <div class="habit-card">
-          <span class="habit-icon">${h.icon}</span>
-          <div class="habit-info">
-            <div class="habit-name">${h.name}</div>
-            <div class="habit-streak">${h.streak > 0 ? `🔥 ${h.streak} ימים רצוף` : 'התחל היום!'}</div>
-          </div>
-          <button class="habit-btn ${h.doneToday ? 'habit-done' : 'habit-todo'}"
-                  onclick="logHabit(${h.id}, ${!h.doneToday})">
-            ${h.doneToday ? '✅ בוצע' : 'בצעתי'}
+function meterRow(label, value, max, color, valText) {
+  if (value == null) return '';
+  const pct = Math.min(100, (value / max) * 100);
+  return `
+    <div class="flex items-center gap-3 mb-2 last:mb-0">
+      <span class="text-xs text-gray-500 dark:text-slate-400 w-20 flex-shrink-0">${esc(label)}</span>
+      <div class="flex-1 h-2 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all" style="width: ${pct}%; background: ${color};"></div>
+      </div>
+      <span class="text-xs font-semibold text-gray-700 dark:text-slate-200 w-8 text-left">${esc(valText || value)}</span>
+    </div>`;
+}
+
+function painColor(v) { return v <= 3 ? '#10b981' : v <= 6 ? '#f59e0b' : '#ef4444'; }
+function moodColor(v) { return v >= 7 ? '#10b981' : v >= 4 ? '#f59e0b' : '#ef4444'; }
+
+// ── Tasks tab ────────────────────────────────────────────────────────────────
+let tasksFilter = 'open';
+function renderTasks() {
+  const open = D.tasks.openList || [];
+  const done = D.tasks.doneList || [];
+  const bp = D.tasks.byPriority || { high: 0, medium: 0, low: 0 };
+
+  const filterBtn = (key, label, count) => `
+    <button onclick="setTasksFilter('${key}')"
+      class="px-3 py-1.5 rounded-lg text-sm font-medium transition
+             ${tasksFilter === key
+               ? 'bg-brand-600 text-white'
+               : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700'}">
+      ${esc(label)} <span class="text-xs opacity-75">(${count})</span>
+    </button>`;
+
+  const priorityBadge = p => {
+    const map = {
+      high:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+      medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+      low:    'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-400',
+    };
+    const lbl = { high: 'דחוף', medium: 'רגיל', low: 'נמוך' };
+    return `<span class="inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full ${map[p] || map.medium}">${lbl[p] || p}</span>`;
+  };
+
+  const items = tasksFilter === 'done' ? done
+              : tasksFilter === 'all'  ? [...open, ...done.map(t => ({ ...t, done: true }))]
+              : open;
+
+  const listHtml = items.length
+    ? items.map(t => `
+        <div class="flex items-center gap-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl px-4 py-3 card-lift">
+          <button onclick="toggleTask(${t.id})"
+                  class="flex-shrink-0 w-5 h-5 rounded-md border-2 transition flex items-center justify-center
+                         ${t.done
+                           ? 'bg-brand-600 border-brand-600 text-white'
+                           : 'border-gray-300 dark:border-slate-600 hover:border-brand-500'}">
+            ${t.done ? '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>' : ''}
           </button>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm ${t.done ? 'line-through text-gray-400 dark:text-slate-500' : 'text-gray-900 dark:text-slate-100'}">${esc(t.text)}</div>
+            <div class="flex items-center gap-2 mt-1">
+              ${priorityBadge(t.priority)}
+              <span class="text-[10px] text-gray-500 dark:text-slate-500">#${t.id}</span>
+            </div>
+          </div>
+          ${!t.done ? `<button onclick="confirmDeleteTask(${t.id})" class="text-gray-400 hover:text-red-500 transition p-1" title="מחק">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
+          </button>` : ''}
         </div>`).join('')
-    : '<div class="loading-msg">אין הרגלים. הוסף דרך הבוט!</div>';
+    : '<div class="text-center text-gray-500 dark:text-slate-400 py-12 text-sm">אין משימות להצגה 🎉</div>';
 
-  const hasStreaks = habits.some(h => h.streak > 0);
-  const chartSection = habits.length
-    ? `<div class="card">
-         <div class="card-title">🔥 סטריקים</div>
-         <div class="chart-wrap"><canvas id="streaks-chart"></canvas></div>
-       </div>`
-    : '';
+  // Add task form
+  const addForm = `
+    <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+      <div class="flex gap-2">
+        <input id="new-task-input" placeholder="משימה חדשה (התחל ב-! לדחיפות גבוהה)"
+               class="flex-1 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-brand-500 dark:focus:border-brand-500 transition"
+               onkeydown="if(event.key==='Enter')submitNewTask()"/>
+        <button onclick="submitNewTask()" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium transition">הוסף</button>
+      </div>
+    </div>`;
 
-  document.getElementById('habits-content').innerHTML = cards + chartSection;
+  document.getElementById('tasks-content').innerHTML = `
+    <div class="grid grid-cols-3 gap-3 mb-4 stagger">
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">דחוף</div>
+        <div class="text-xl font-bold text-red-600 dark:text-red-400">${bp.high}</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">רגיל</div>
+        <div class="text-xl font-bold text-amber-600 dark:text-amber-400">${bp.medium}</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">נמוך</div>
+        <div class="text-xl font-bold text-gray-600 dark:text-slate-400">${bp.low}</div>
+      </div>
+    </div>
+    ${addForm}
+    <div class="flex gap-2 mt-4 mb-3 overflow-x-auto no-scrollbar">
+      ${filterBtn('open', 'פתוחות', open.length)}
+      ${filterBtn('done', 'הושלמו', done.length)}
+      ${filterBtn('all',  'הכל',   open.length + done.length)}
+    </div>
+    <div class="space-y-2">${listHtml}</div>
+  `;
+}
+function setTasksFilter(f) { tasksFilter = f; renderTasks(); }
 
-  if (habits.length && hasStreaks) {
-    setTimeout(() => {
-      mkChart('streaks-chart', {
-        type: 'bar',
-        data: {
-          labels: habits.map(h => h.icon + ' ' + h.name.slice(0, 8)),
-          datasets: [{
-            data: habits.map(h => h.streak),
-            backgroundColor: habits.map(h => h.doneToday ? '#059669' : '#1a56db'),
-            borderRadius: 6,
-          }]
-        },
-        options: {
-          responsive: true,
-          indexAxis: 'y',
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { ticks: { color: '#64748b' }, grid: CHART_DEFAULTS.grid },
-            y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } },
-          }
-        }
-      });
-    }, 30);
+async function submitNewTask() {
+  const inp = document.getElementById('new-task-input');
+  const text = (inp.value || '').trim();
+  if (!text) { toast('יש להזין טקסט', true); return; }
+  const r = await api('/api/add-task', { text });
+  if (r.ok) {
+    inp.value = '';
+    toast('✅ משימה נוספה');
+    await reload();
+    renderTasks();
+  } else if (r.e === 'duplicate') {
+    toast('⚠️ המשימה כבר קיימת', true);
+  } else {
+    toast('שגיאה: ' + (r.e || ''), true);
   }
+}
+
+async function toggleTask(id) {
+  const r = await api('/api/complete-task', { id });
+  if (r.ok) {
+    toast('✓ עודכן');
+    await reload();
+    renderTasks();
+  } else {
+    toast('שגיאה', true);
+  }
+}
+
+async function confirmDeleteTask(id) {
+  if (!confirm('למחוק את המשימה?')) return;
+  const r = await api('/api/delete-task', { id });
+  if (r.ok) {
+    toast('🗑️ נמחק');
+    await reload();
+    renderTasks();
+  } else {
+    toast('שגיאה: ' + (r.e || ''), true);
+  }
+}
+
+function quickTask() {
+  showTab('tasks');
+  setTimeout(() => document.getElementById('new-task-input')?.focus(), 80);
+}
+
+// ── Habits tab ───────────────────────────────────────────────────────────────
+function renderHabits() {
+  const habits = D.habits || [];
+  if (!habits.length) {
+    document.getElementById('habits-content').innerHTML = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3">✅</div>
+        <div class="text-lg font-semibold mb-1">אין הרגלים עדיין</div>
+        <div class="text-sm text-gray-500 dark:text-slate-400">הוסף דרך הבוט — למשל "תוסיף הרגל: שתיית מים"</div>
+      </div>`;
+    return;
+  }
+
+  const weekdayShort = ['א','ב','ג','ד','ה','ו','ש'];
+  const cards = habits.map(h => {
+    const dots = (h.week || []).map(w => {
+      const d = new Date(w.date + 'T00:00:00');
+      const isToday = w.date === new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+      const label = weekdayShort[d.getDay()];
+      return `
+        <div class="flex flex-col items-center gap-1">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold transition
+                      ${w.done ? 'bg-brand-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-500'}
+                      ${isToday ? 'ring-2 ring-brand-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-950' : ''}">
+            ${w.done ? '✓' : ''}
+          </div>
+          <span class="text-[10px] text-gray-500 dark:text-slate-500">${label}</span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="card-lift bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">${esc(h.icon)}</span>
+            <div>
+              <div class="font-semibold">${esc(h.name)}</div>
+              <div class="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">${h.streak > 0 ? '🔥 ' + h.streak + ' ימים רצוף' : 'התחל היום!'}</div>
+            </div>
+          </div>
+          <button onclick="logHabit(${h.id}, ${!h.doneToday})"
+                  class="px-4 py-2 rounded-lg text-sm font-semibold transition
+                         ${h.doneToday
+                           ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                           : 'bg-brand-600 hover:bg-brand-700 text-white'}">
+            ${h.doneToday ? '✅ בוצע' : 'סמן'}
+          </button>
+        </div>
+        <div class="flex justify-between gap-1 pt-3 border-t border-gray-100 dark:border-slate-800">${dots}</div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('habits-content').innerHTML = `
+    <div class="grid sm:grid-cols-2 gap-3 stagger">${cards}</div>`;
 }
 
 async function logHabit(id, done) {
@@ -662,203 +573,140 @@ async function logHabit(id, done) {
   if (r.ok) {
     toast(done ? `✅ בוצע! 🔥 ${r.streak} ימים` : 'בוטל');
     await reload();
-    if (activeTab === 'habits') renderHabits();
+    renderHabits();
   } else {
     toast('שגיאה', true);
   }
 }
 
-// ── HEALTH TAB ─────────────────────────────────────────────────────────────────
-function renderHealth() {
-  if (!D) return;
-  const h = D.health;
+// ── Leads tab ────────────────────────────────────────────────────────────────
+let leadsFilter = 'all';
+function renderLeads() {
+  const leads = D.leads || [];
+  const s = D.leadsSummary || {};
 
-  const sliderForm = (painVal, moodVal, sleepVal) => `
-    <div class="slider-row">
-      <div class="slider-header">
-        <span class="slider-label">🩺 כאב</span>
-        <span class="slider-val" id="pain-val">${painVal}</span>
-      </div>
-      <input class="slider-pain" type="range" min="1" max="10" value="${painVal}" id="pain-s"
-             oninput="document.getElementById('pain-val').textContent=this.value">
-    </div>
-    <div class="slider-row">
-      <div class="slider-header">
-        <span class="slider-label">😊 מצב רוח</span>
-        <span class="slider-val" id="mood-val">${moodVal}</span>
-      </div>
-      <input class="slider-mood" type="range" min="1" max="10" value="${moodVal}" id="mood-s"
-             oninput="document.getElementById('mood-val').textContent=this.value">
-    </div>
-    <div class="slider-row">
-      <div class="slider-header">
-        <span class="slider-label">💤 שינה (שעות)</span>
-        <span class="slider-val" id="sleep-val">${sleepVal}</span>
-      </div>
-      <input class="slider-sleep" type="range" min="0" max="12" step="0.5" value="${sleepVal}" id="sleep-s"
-             oninput="document.getElementById('sleep-val').textContent=this.value">
-    </div>
-    <button class="btn-primary green" style="width:100%;margin-top:4px" onclick="submitHealth()">💾 שמור דיווח</button>`;
+  const statusEmoji = { new: '🆕', closed: '✅', reminded: '⏰', contacted: '📞' };
+  const statusLabel = { new: 'חדש', closed: 'טופל', reminded: 'הופנה', contacted: 'בטיפול' };
+  const statusBg    = {
+    new:       'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    closed:    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    reminded:  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    contacted: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  };
 
-  const todaySection = h
-    ? `<div class="card">
-         <div class="card-title">📋 דיווח היום</div>
-         <div class="meter-row">
-           <span class="meter-lbl">כאב</span>
-           <div class="meter-bar"><div class="meter-fill" style="width:${h.pain*10}%;background:${painColor(h.pain)}"></div></div>
-           <span class="meter-num">${h.pain}/10</span>
-         </div>
-         <div class="meter-row">
-           <span class="meter-lbl">מצב רוח</span>
-           <div class="meter-bar"><div class="meter-fill" style="width:${h.mood*10}%;background:${moodColor(h.mood)}"></div></div>
-           <span class="meter-num">${h.mood}/10</span>
-         </div>
-         <div class="meter-row">
-           <span class="meter-lbl">שינה</span>
-           <div class="meter-bar"><div class="meter-fill" style="width:${Math.min(h.sleep/12*100,100)}%;background:${sleepColor(h.sleep)}"></div></div>
-           <span class="meter-num">${h.sleep}ש'</span>
-         </div>
-         <button class="btn-primary" style="width:100%;margin-top:10px;background:#334155;color:#94a3b8"
-                 onclick="document.getElementById('health-update-form').style.display=document.getElementById('health-update-form').style.display==='none'?'block':'none'">
-           ✏️ עדכן דיווח
-         </button>
-       </div>
-       <div id="health-update-form" style="display:none">
-         <div class="card">
-           <div class="card-title">✏️ עדכון דיווח</div>
-           ${sliderForm(h.pain, h.mood, h.sleep ?? 7)}
-         </div>
-       </div>`
-    : `<div class="card">
-         <div class="card-title">🩺 דיווח בריאות יומי</div>
-         ${sliderForm(5, 5, 7)}
-       </div>`;
+  const filtered = leadsFilter === 'all' ? leads : leads.filter(l => l.status === leadsFilter);
 
-  const hasHistory = D.healthHistory.some(x => x.pain != null);
-  const chartSection = `
-    <div class="card">
-      <div class="card-title">📈 7 ימים אחרונים</div>
-      ${hasHistory
-        ? '<div class="chart-wrap"><canvas id="health-chart"></canvas></div>'
-        : '<div style="color:#475569;font-size:0.8rem;padding:8px 0">אין נתונים עדיין</div>'}
+  const summary = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 stagger">
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">סה"כ</div>
+        <div class="text-2xl font-bold text-brand-600 dark:text-brand-500">${s.total||0}</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">השבוע</div>
+        <div class="text-2xl font-bold text-amber-600 dark:text-amber-400">${s.thisWeek||0}</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">נסגרו</div>
+        <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">${s.closed||0}</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">אחוז המרה</div>
+        <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">${s.convRate||0}%</div>
+      </div>
     </div>`;
 
-  document.getElementById('health-content').innerHTML = todaySection + chartSection;
+  const chip = (key, label) => `
+    <button onclick="setLeadsFilter('${key}')"
+            class="px-3 py-1.5 rounded-full text-xs font-medium transition
+                   ${leadsFilter === key
+                     ? 'bg-brand-600 text-white'
+                     : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700'}">
+      ${esc(label)}
+    </button>`;
 
-  if (hasHistory) {
-    setTimeout(() => {
-      const labels = D.healthHistory.map(d => d.date.slice(5).replace('-', '/'));
-      mkChart('health-chart', {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'כאב',
-              data: D.healthHistory.map(d => d.pain),
-              borderColor: '#ef4444',
-              backgroundColor: 'rgba(239,68,68,0.08)',
-              tension: 0.35,
-              spanGaps: true,
-              pointBackgroundColor: '#ef4444',
-              pointRadius: 4,
-            },
-            {
-              label: 'מצב רוח',
-              data: D.healthHistory.map(d => d.mood),
-              borderColor: '#34d399',
-              backgroundColor: 'rgba(52,211,153,0.08)',
-              tension: 0.35,
-              spanGaps: true,
-              pointBackgroundColor: '#34d399',
-              pointRadius: 4,
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } }
-          },
-          scales: {
-            y: { min: 0, max: 10, ticks: { color: '#64748b', stepSize: 2 }, grid: CHART_DEFAULTS.grid },
-            x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
-          }
-        }
-      });
-    }, 30);
-  }
+  const list = filtered.length
+    ? filtered.map(l => `
+        <div class="card-lift bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+          <div class="flex items-start justify-between mb-2">
+            <div class="min-w-0 flex-1">
+              <div class="font-semibold truncate">${esc(l.name)}</div>
+              <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">${esc(l.title)} · ${new Date(l.createdAt).toLocaleDateString('he-IL')}</div>
+            </div>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full ${statusBg[l.status] || 'bg-gray-100 dark:bg-slate-800'}">
+              ${statusEmoji[l.status] || '•'} ${statusLabel[l.status] || l.status}
+            </span>
+          </div>
+          ${(l.email || l.phone) ? `<div class="text-xs text-gray-500 dark:text-slate-400">
+            ${l.email ? '📧 ' + esc(l.email) : ''}${l.email && l.phone ? ' · ' : ''}${l.phone ? '📱 ' + esc(l.phone) : ''}
+          </div>` : ''}
+          ${l.notes ? `<div class="text-xs text-gray-600 dark:text-slate-300 mt-2 bg-gray-50 dark:bg-slate-800 rounded px-2 py-1">📝 ${esc(l.notes)}</div>` : ''}
+        </div>`).join('')
+    : '<div class="text-center text-gray-500 dark:text-slate-400 py-10 text-sm">אין לידים להצגה</div>';
+
+  document.getElementById('leads-content').innerHTML = `
+    ${summary}
+    <div class="flex flex-wrap gap-2 mb-4">
+      ${chip('all', 'הכל')}
+      ${chip('new', '🆕 חדשים')}
+      ${chip('contacted', '📞 בטיפול')}
+      ${chip('closed', '✅ טופלו')}
+    </div>
+    <div class="space-y-2 stagger">${list}</div>`;
 }
+function setLeadsFilter(f) { leadsFilter = f; renderLeads(); }
 
-async function submitHealth() {
-  const pain  = +document.getElementById('pain-s').value;
-  const mood  = +document.getElementById('mood-s').value;
-  const sleep = +document.getElementById('sleep-s').value;
-  const r = await api('/api/log-health', { pain, mood, sleep });
-  if (r.ok) {
-    toast('✅ דיווח בריאות נשמר!');
-    await reload();
-    renderHealth();
-  } else {
-    toast('שגיאה בשמירה', true);
-  }
-}
-
-// ── EXPENSES TAB ────────────────────────────────────────────────────────────────
+// ── Expenses tab ─────────────────────────────────────────────────────────────
 function renderExpenses() {
-  if (!D) return;
-  const exp = D.expenses;
+  const exp = D.expenses || {};
   const byCat = exp.byCat || {};
-  const cats  = Object.keys(byCat);
+  const cats = Object.keys(byCat);
+  const catEmoji  = { tech: '💻', food: '🍔', health: '💊', office: '📦', other: '📌' };
+  const catColors = ['#6366F1','#F59E0B','#10B981','#8B5CF6','#6B7280','#EC4899'];
 
-  const catEmoji = { tech:'💻', food:'🍔', health:'💊', office:'📦', other:'📌' };
-  const catColors = ['#3b82f6','#f59e0b','#10b981','#8b5cf6','#6b7280','#ec4899'];
+  const totals = `
+    <div class="grid grid-cols-2 gap-3 mb-4 stagger">
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+        <div class="text-xs text-gray-500 dark:text-slate-400">₪ ILS החודש</div>
+        <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">₪${fmt(exp.total_ils || 0)}</div>
+        <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">${exp.count || 0} רשומות</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+        <div class="text-xs text-gray-500 dark:text-slate-400">$ USD החודש</div>
+        <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">$${fmt(exp.total_usd || 0)}</div>
+      </div>
+    </div>`;
 
   const catList = cats.length
-    ? cats.map((c, i) => `
-        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:0.8rem;border-bottom:1px solid #1e293b">
-          <span>${catEmoji[c] || '📌'} ${c}</span>
-          <span style="color:#94a3b8">₪${fmt(byCat[c])}</span>
-        </div>`).join('')
-    : '<div style="color:#475569;font-size:0.8rem;padding:8px 0">אין הוצאות החודש</div>';
+    ? `<ul class="divide-y divide-gray-100 dark:divide-slate-800">${cats.map((c, i) => `
+        <li class="flex items-center justify-between py-2.5">
+          <span class="flex items-center gap-2 text-sm">${catEmoji[c] || '📌'} ${esc(c)}</span>
+          <span class="text-sm font-semibold">₪${fmt(byCat[c])}</span>
+        </li>`).join('')}</ul>`
+    : '<div class="text-sm text-gray-500 dark:text-slate-400 py-4 text-center">אין הוצאות החודש</div>';
 
-  const hasChart = cats.length > 0;
+  const chartBlock = cats.length
+    ? `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+         <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">📊 לפי קטגוריה</div>
+         <div class="h-48"><canvas id="expenses-chart"></canvas></div>
+         <div class="mt-3">${catList}</div>
+       </div>`
+    : `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+         <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">📊 קטגוריות</div>
+         ${catList}
+       </div>`;
 
-  document.getElementById('expenses-content').innerHTML = `
-    <div class="grid2">
-      <div class="card">
-        <div class="card-title">💰 ILS החודש</div>
-        <div class="card-val" style="color:#34d399;font-size:1.5rem">₪${fmt(exp.total_ils)}</div>
-        <div class="card-sub">${exp.count} רשומות</div>
-      </div>
-      ${exp.total_usd > 0 ? `
-      <div class="card">
-        <div class="card-title">💵 USD החודש</div>
-        <div class="card-val" style="color:#60a5fa;font-size:1.5rem">$${fmt(exp.total_usd)}</div>
-      </div>` : '<div></div>'}
-    </div>
-
-    ${hasChart ? `
-    <div class="card">
-      <div class="card-title">📊 לפי קטגוריה</div>
-      <div class="chart-wrap" style="max-height:160px">
-        <canvas id="expenses-chart"></canvas>
-      </div>
-      <div style="margin-top:10px">${catList}</div>
-    </div>` : `<div class="card"><div class="card-title">📊 קטגוריות</div>${catList}</div>`}
-
-    <div class="card">
-      <div class="card-title">➕ הוצאה חדשה</div>
-      <div class="form-row">
-        <input class="inp" id="exp-vendor" placeholder="ספק/חנות" />
-      </div>
-      <div class="form-row">
-        <input class="inp inp-sm" id="exp-amount" type="number" placeholder="סכום" />
-        <select class="inp inp-sm" id="exp-currency">
+  const addForm = `
+    <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 mt-4">
+      <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">➕ הוצאה חדשה</div>
+      <input id="exp-vendor" placeholder="ספק / חנות" class="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm mb-2 focus:border-brand-500 outline-none"/>
+      <div class="grid grid-cols-3 gap-2 mb-2">
+        <input id="exp-amount" type="number" placeholder="סכום" class="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-brand-500 outline-none"/>
+        <select id="exp-currency" class="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-brand-500 outline-none">
           <option value="ILS">₪ ILS</option>
           <option value="USD">$ USD</option>
         </select>
-        <select class="inp" id="exp-cat">
+        <select id="exp-cat" class="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-brand-500 outline-none">
           <option value="other">📌 אחר</option>
           <option value="food">🍔 אוכל</option>
           <option value="tech">💻 טכנולוגיה</option>
@@ -866,12 +714,29 @@ function renderExpenses() {
           <option value="office">📦 משרד</option>
         </select>
       </div>
-      <button class="btn-primary" style="width:100%" onclick="submitExpense()">💾 הוסף הוצאה</button>
-    </div>
-  `;
+      <button onclick="submitExpense()" class="w-full px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-semibold transition">💾 הוסף הוצאה</button>
+    </div>`;
 
-  if (hasChart) {
+  const recent = (exp.recent || []).slice(0, 10);
+  const recentBlock = recent.length ? `
+    <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 mt-4">
+      <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">🕐 הוצאות אחרונות</div>
+      <ul class="divide-y divide-gray-100 dark:divide-slate-800">${recent.map(e => `
+        <li class="flex items-center justify-between py-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm truncate">${catEmoji[e.category] || '📌'} ${esc(e.vendor || '—')}</div>
+            <div class="text-[10px] text-gray-500 dark:text-slate-400">${esc(e.date || '')}</div>
+          </div>
+          <div class="text-sm font-semibold">${e.currency === 'USD' ? '$' : '₪'}${fmt(e.amount)}</div>
+        </li>`).join('')}</ul>
+    </div>` : '';
+
+  document.getElementById('expenses-content').innerHTML =
+    totals + chartBlock + addForm + recentBlock;
+
+  if (cats.length) {
     setTimeout(() => {
+      const cc = chartColors();
       mkChart('expenses-chart', {
         type: 'doughnut',
         data: {
@@ -880,14 +745,11 @@ function renderExpenses() {
             data: cats.map(c => byCat[c]),
             backgroundColor: cats.map((_, i) => catColors[i % catColors.length]),
             borderWidth: 0,
-            hoverOffset: 4,
           }]
         },
         options: {
-          responsive: true,
-          plugins: {
-            legend: { position: 'right', labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } }
-          }
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { color: cc.label, boxWidth: 12, font: { size: 11 } } } },
         }
       });
     }, 30);
@@ -899,16 +761,12 @@ async function submitExpense() {
   const amount   = parseFloat(document.getElementById('exp-amount').value);
   const currency = document.getElementById('exp-currency').value;
   const category = document.getElementById('exp-cat').value;
-
-  if (!vendor || !amount || isNaN(amount)) {
-    toast('נדרש ספק וסכום', true);
-    return;
-  }
+  if (!vendor || !amount || isNaN(amount)) { toast('נדרש ספק וסכום', true); return; }
   const r = await api('/api/add-expense', { vendor, amount, currency, category });
   if (r.ok) {
-    toast('✅ הוצאה נשמרה!');
+    toast('✅ הוצאה נשמרה');
     document.getElementById('exp-vendor').value = '';
-    document.getElementById('exp-amount').value  = '';
+    document.getElementById('exp-amount').value = '';
     await reload();
     renderExpenses();
   } else {
@@ -916,120 +774,195 @@ async function submitExpense() {
   }
 }
 
-// ── STOCKS TAB ──────────────────────────────────────────────────────────────────
-function renderStocks() {
-  if (!D) return;
-  const stocks = D.stocks;
+// ── Health tab ───────────────────────────────────────────────────────────────
+function renderHealth() {
+  const h = D.health;
+  const pain30 = D.pain30 || [];
+  const hasHistory = pain30.some(x => x.pain != null);
 
-  const cards = stocks.length
-    ? stocks.map(s => {
-        const up   = s.changePct >= 0;
-        const sign = up ? '+' : '';
-        const price = s.price != null ? `${s.currency === 'USD' ? '$' : ''}${fmt(s.price, 2)}` : '—';
-        return `
-          <div class="stock-card">
-            <div>
-              <div class="stock-sym">${s.symbol}</div>
-              <div class="stock-name">${(s.name || '').slice(0, 22)}</div>
-            </div>
-            <div class="stock-right">
-              <div class="stock-price">${price}</div>
-              <span class="stock-chg ${up ? 'up-bg' : 'down-bg'}">${sign}${fmt(s.changePct, 2)}%</span>
-            </div>
-          </div>`;
-      }).join('')
-    : '<div class="loading-msg">אין מניות במעקב</div>';
-
-  document.getElementById('stocks-content').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span style="font-size:0.72rem;color:#64748b">מחירים חיים · מתרענן כל 30 שניות</span>
+  const sliderForm = (p, m, s) => `
+    <div class="mb-4">
+      <div class="flex justify-between text-xs mb-1"><span class="text-gray-600 dark:text-slate-400">🩺 כאב</span><span class="font-bold" id="pain-val">${p}</span></div>
+      <input class="slider-pain" type="range" min="1" max="10" value="${p}" id="pain-s" oninput="document.getElementById('pain-val').textContent=this.value">
     </div>
-    ${cards}
-  `;
-}
-
-// ── LEADS TAB ───────────────────────────────────────────────────────────────────
-function renderLeads() {
-  if (!D) return;
-  const leads = D.leads || [];
-  const s = D.leadsSummary || {};
-
-  const statusEmoji = { new:'🆕', closed:'✅', reminded:'⏰', contacted:'📞' };
-  const statusLabel = { new:'חדש', closed:'טופל', reminded:'הופנה', contacted:'בטיפול' };
-  const statusColor = { new:'#3b82f6', closed:'#059669', reminded:'#f59e0b', contacted:'#8b5cf6' };
-
-  const summaryHtml = `
-    <div class="grid2">
-      <div class="card">
-        <div class="card-title">📊 סה"כ לידים</div>
-        <div class="card-val" style="color:#60a5fa">${s.total||0}</div>
-        <div class="card-sub">השבוע: ${s.thisWeek||0}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">📈 אחוז המרה</div>
-        <div class="card-val" style="color:#34d399">${s.convRate||0}%</div>
-        <div class="card-sub">נסגרו: ${s.closed||0}</div>
-      </div>
+    <div class="mb-4">
+      <div class="flex justify-between text-xs mb-1"><span class="text-gray-600 dark:text-slate-400">😊 מצב רוח</span><span class="font-bold" id="mood-val">${m}</span></div>
+      <input class="slider-mood" type="range" min="1" max="10" value="${m}" id="mood-s" oninput="document.getElementById('mood-val').textContent=this.value">
     </div>
-    <div class="grid2" style="margin-top:0">
-      <div class="card">
-        <div class="card-title">🆕 חדשים</div>
-        <div class="card-val" style="color:#f59e0b">${s.new||0}</div>
+    <div class="mb-4">
+      <div class="flex justify-between text-xs mb-1"><span class="text-gray-600 dark:text-slate-400">💤 שינה (שעות)</span><span class="font-bold" id="sleep-val">${s}</span></div>
+      <input class="slider-sleep" type="range" min="0" max="12" step="0.5" value="${s}" id="sleep-s" oninput="document.getElementById('sleep-val').textContent=this.value">
+    </div>
+    <button onclick="submitHealth()" class="w-full px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-semibold transition">💾 שמור דיווח</button>`;
+
+  const todayCard = h
+    ? `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+         <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">📋 דיווח היום</div>
+         ${meterRow('כאב', h.pain, 10, painColor(h.pain))}
+         ${meterRow('מצב רוח', h.mood, 10, moodColor(h.mood))}
+         ${meterRow('שינה', h.sleep, 12, '#6366F1', h.sleep + 'ש')}
+         <button onclick="toggleHealthForm()" class="mt-3 w-full px-4 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg text-sm transition">✏️ עדכן דיווח</button>
+       </div>
+       <div id="health-update-form" class="hidden mt-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+         <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">✏️ עדכון</div>
+         ${sliderForm(h.pain, h.mood, h.sleep ?? 7)}
+       </div>`
+    : `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
+         <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">🩺 דיווח בריאות יומי</div>
+         ${sliderForm(5, 5, 7)}
+       </div>`;
+
+  const stats = `
+    <div class="grid grid-cols-2 gap-3 mb-4 stagger">
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">ממוצע שינה (30י')</div>
+        <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">${D.avgSleep != null ? fmt(D.avgSleep, 1) + ' ש' : '—'}</div>
       </div>
-      <div class="card">
-        <div class="card-title">📞 טופלו</div>
-        <div class="card-val" style="color:#a78bfa">${s.closed||0}</div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 dark:text-slate-400">ממוצע מצב רוח</div>
+        <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">${D.avgMood != null ? fmt(D.avgMood, 1) + '/10' : '—'}</div>
       </div>
     </div>`;
 
-  const leadsHtml = leads.length
-    ? leads.map(l => `
-      <div class="card" style="margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-weight:700;font-size:1rem">${l.name}</span>
-          <span style="background:${statusColor[l.status]||'#475569'};color:white;
-                       padding:2px 8px;border-radius:12px;font-size:0.72rem">
-            ${statusEmoji[l.status]||'•'} ${statusLabel[l.status]||l.status}
-          </span>
-        </div>
-        <div style="font-size:0.82rem;color:#64748b">
-          ${l.email ? '📧 ' + l.email : ''}
-          ${l.phone ? ' | 📱 ' + l.phone : ''}
-        </div>
-        <div style="font-size:0.75rem;color:#475569;margin-top:4px">
-          ${l.title} · ${new Date(l.createdAt).toLocaleDateString('he-IL')}
-        </div>
-        ${l.notes ? '<div style="font-size:0.8rem;color:#94a3b8;margin-top:4px">📝 ' + l.notes + '</div>' : ''}
-      </div>`).join('')
-    : '<div class="loading-msg">אין לידים עדיין 🎯<br>צור טופס ושתף עם לקוחות</div>';
+  const chartBlock = hasHistory
+    ? `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 mt-4">
+         <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-3">📈 כאב ו-30 ימים</div>
+         <div class="h-52"><canvas id="pain-chart"></canvas></div>
+       </div>`
+    : '';
 
-  document.getElementById('leads-content').innerHTML = summaryHtml +
-    '<div class="sec-title">רשימת לידים</div>' + leadsHtml;
+  document.getElementById('health-content').innerHTML = stats + todayCard + chartBlock;
+
+  if (hasHistory) {
+    setTimeout(() => {
+      const cc = chartColors();
+      const labels = pain30.map(d => d.date.slice(5).replace('-', '/'));
+      mkChart('pain-chart', {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'כאב',
+            data: pain30.map(d => d.pain),
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239,68,68,0.12)',
+            tension: 0.35, spanGaps: true, pointRadius: 3, fill: true,
+          }, {
+            label: 'מצב רוח',
+            data: pain30.map(d => d.mood),
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.08)',
+            tension: 0.35, spanGaps: true, pointRadius: 2,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: cc.label, boxWidth: 12, font: { size: 11 } } } },
+          scales: {
+            y: { min: 0, max: 10, ticks: { color: cc.tick, stepSize: 2 }, grid: { color: cc.grid } },
+            x: { ticks: { color: cc.tick, font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } },
+          }
+        }
+      });
+    }, 30);
+  }
+}
+function toggleHealthForm() {
+  document.getElementById('health-update-form')?.classList.toggle('hidden');
+}
+async function submitHealth() {
+  const pain  = +document.getElementById('pain-s').value;
+  const mood  = +document.getElementById('mood-s').value;
+  const sleep = +document.getElementById('sleep-s').value;
+  const r = await api('/api/log-health', { pain, mood, sleep });
+  if (r.ok) { toast('✅ דיווח נשמר'); await reload(); renderHealth(); }
+  else      { toast('שגיאה', true); }
 }
 
-// ── DATA LOAD ───────────────────────────────────────────────────────────────────
+// ── Stocks tab ───────────────────────────────────────────────────────────────
+function renderStocks() {
+  const stocks = D.stocks || [];
+  if (!stocks.length) {
+    document.getElementById('stocks-content').innerHTML = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3">📈</div>
+        <div class="text-sm text-gray-500 dark:text-slate-400">אין מניות במעקב. הוסף דרך הבוט: "תעקוב אחרי NVDA ב-150$"</div>
+      </div>`;
+    return;
+  }
+  const triggered = stocks.filter(s => s.triggered);
+  const trigBanner = triggered.length
+    ? `<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mb-3 text-sm text-red-700 dark:text-red-400">
+         🚨 ${triggered.length} התראות פעילות: ${triggered.map(s => esc(s.symbol)).join(', ')}
+       </div>`
+    : '';
+
+  const rows = stocks.map(s => {
+    const up   = (s.changePct || 0) >= 0;
+    const sign = up ? '+' : '';
+    const price = s.price != null ? `${s.currency === 'USD' ? '$' : ''}${fmt(s.price, 2)}` : '—';
+    return `
+      <div class="card-lift bg-white dark:bg-slate-900 border ${s.triggered ? 'border-red-300 dark:border-red-800' : 'border-gray-200 dark:border-slate-800'} rounded-xl p-4 shadow-sm flex items-center justify-between">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-base">${esc(s.symbol)}</span>
+            ${s.triggered ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold">🚨 התראה</span>' : ''}
+          </div>
+          <div class="text-xs text-gray-500 dark:text-slate-400 truncate">${esc((s.name || '').slice(0, 30))}</div>
+          ${s.threshold != null
+            ? `<div class="text-[10px] text-gray-500 dark:text-slate-400 mt-1">${s.direction === 'above' ? '↑' : '↓'} התראה ב-$${fmt(s.threshold)}</div>`
+            : ''}
+        </div>
+        <div class="text-left">
+          <div class="text-base font-bold">${price}</div>
+          <span class="inline-block text-xs font-bold px-2 py-0.5 rounded mt-1 ${up ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}">
+            ${sign}${fmt(s.changePct, 2)}%
+          </span>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('stocks-content').innerHTML = `
+    ${trigBanner}
+    <div class="text-[10px] text-gray-500 dark:text-slate-400 mb-3">מחירים חיים · מתרענן כל 30 שניות</div>
+    <div class="space-y-2 stagger">${rows}</div>`;
+}
+
+// ── Data load + boot ─────────────────────────────────────────────────────────
 async function reload() {
   try {
     D = await api('/api/dashboard');
-    const ts = new Date(D.timestamp).toLocaleTimeString('he-IL', {
-      hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem'
-    });
-    document.getElementById('ts').textContent = 'עודכן: ' + ts;
-
-    renderHome();
-    if (activeTab === 'habits')   renderHabits();
-    if (activeTab === 'health')   renderHealth();
-    if (activeTab === 'expenses') renderExpenses();
-    if (activeTab === 'stocks')   renderStocks();
-    if (activeTab === 'leads')    renderLeads();
+    if (D.error) throw new Error(D.error);
+    const ts = new Date(D.timestamp).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
+    document.getElementById('ts').textContent = 'עודכן ' + ts;
+    const on = !!D.supabase;
+    document.getElementById('supabase-dot').className = 'inline-block w-1.5 h-1.5 rounded-full ' + (on ? 'bg-emerald-500' : 'bg-gray-400');
+    document.getElementById('supabase-label').textContent = on ? 'מחובר' : 'JSON בלבד';
+    renderActive();
   } catch (e) {
-    document.getElementById('ts').textContent = '⚠️ שגיאה';
+    document.getElementById('supabase-label').textContent = '⚠️ שגיאה: ' + e.message;
   }
 }
 
-// ── Boot ─────────────────────────────────────────────────────────────────────
+// Boot
+const initialTab = window.location.hash.slice(1);
+if (TABS.includes(initialTab)) activeTab = initialTab;
+showTab(activeTab);
 reload();
 setInterval(reload, 30000);
+
+// Expose for inline onclick
+window.showTab = showTab;
+window.setTasksFilter = setTasksFilter;
+window.setLeadsFilter = setLeadsFilter;
+window.toggleTask = toggleTask;
+window.confirmDeleteTask = confirmDeleteTask;
+window.submitNewTask = submitNewTask;
+window.quickTask = quickTask;
+window.logHabit = logHabit;
+window.submitExpense = submitExpense;
+window.toggleHealthForm = toggleHealthForm;
+window.submitHealth = submitHealth;
 </script>
 </body>
 </html>

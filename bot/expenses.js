@@ -56,10 +56,20 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+async function nextId() {
+  if (isEnabled()) {
+    const { data, error } = await supabase.from('expenses').select('id');
+    if (!error && Array.isArray(data) && data.length) {
+      return Math.max(...data.map(r => Number(r.id) || 0)) + 1;
+    }
+  }
+  const local = loadFromJson();
+  return local.length ? Math.max(...local.map(e => Number(e.id) || 0)) + 1 : 1;
+}
+
 async function saveInvoice(fields) {
-  const existing = await load();
   const entry = {
-    id:          existing.length ? Math.max(...existing.map(e => e.id)) + 1 : 1,
+    id:          await nextId(),
     date:        fields.date         || new Date().toISOString().split('T')[0],
     vendor:      fields.vendor       || fields.store || null,
     amount:      fields.amount != null ? parseFloat(String(fields.amount).replace(/[^0-9.]/g, '')) || null : null,
