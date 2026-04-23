@@ -110,10 +110,20 @@
           </div>
         </div>
       </div>
-      <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition" title="מצב בהיר/כהה">
-        <span class="dark:hidden">🌙</span>
-        <span class="hidden dark:inline">☀️</span>
-      </button>
+      <div class="flex items-center gap-1">
+        <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition" title="מצב בהיר/כהה">
+          <span class="dark:hidden">🌙</span>
+          <span class="hidden dark:inline">☀️</span>
+        </button>
+        <button onclick="logout()"
+                class="p-2 rounded-lg hover:bg-red-500/10 text-red-500 dark:text-red-400 transition"
+                title="יציאה מהדשבורד">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Tabs -->
@@ -199,11 +209,24 @@ function toast(msg, isErr = false) {
 
 async function api(path, body) {
   const opts = body
-    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    : {};
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) }
+    : { credentials: 'same-origin' };
   const r = await fetch(path, opts);
+  if (r.status === 401) {
+    window.location.href = '/dashboard';
+    return null;
+  }
   return r.json();
 }
+
+async function logout() {
+  if (!confirm('להתנתק מהדשבורד?')) return;
+  try {
+    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch {}
+  window.location.href = '/dashboard';
+}
+window.logout = logout;
 
 // ── Charts helpers ───────────────────────────────────────────────────────────
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }

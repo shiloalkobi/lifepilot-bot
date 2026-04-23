@@ -219,6 +219,7 @@ async function buildSystemPrompt(memory, chatId) {
 CRPS רגל שמאל (DRG) — כאב כרוני
 ${painCtx ? painCtx + '\n' : ''}${topicsCtx ? topicsCtx + '\n' : ''}${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 CRITICAL TOOL ROUTING — HIGHEST PRIORITY (NEVER respond with text for these):
+• "דשבורד" / "dashboard" / "כניסה" / "login" / "קישור לדשבורד" / "תביא לי דשבורד" → MUST call get_dashboard_access immediately
 • "תכתוב פוסט" / "פוסט אינסטגרם" / "פוסט לפייסבוק" / "תכתוב תוכן" → MUST call write_content immediately
 • "תבנה דף נחיתה" / "דף נחיתה ל" / "landing page" → MUST call generate_landing_page immediately
 • "תבנה טופס" / "צור טופס" / "טופס יצירת קשר" → MUST call generate_form immediately
@@ -370,6 +371,8 @@ const TOOL_DECLARATIONS = [
   { name: 'leads_summary',  description: 'סיכום סטטיסטי של לידים: כמה חדשים, נסגרו, השבוע, אחוז המרה.', parameters: { type: 'object', properties: {}, required: [] } },
   // Landing Page Generator (#27)
   { name: 'generate_landing_page', description: 'ALWAYS call when asked for a landing page. צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] }, template: { type: 'string', enum: ['minimal','bold','elegant','tech','corporate','random'], description: 'סגנון עיצוב — random לאקראי' } }, required: ['business_name'] } },
+  // Dashboard Access (Security Level 2+)
+  { name: 'get_dashboard_access', description: 'ALWAYS call when user asks for dashboard/login/כניסה. Generates secure 24h token. Owner only.', parameters: { type: 'object', properties: {}, required: [] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -385,6 +388,7 @@ const CORE_TOOL_NAMES = new Set([
   'get_news',
   'get_stock_price', 'get_watchlist',
   'list_passwords',
+  'get_dashboard_access',
 ]);
 
 const EXTENDED_KEYWORDS = [
@@ -1911,6 +1915,32 @@ footer{background:#001a33}`,
         fs.writeFileSync(landingPath, landingHtml, 'utf8');
         const landingUrl = `https://lifepilot-bot.onrender.com/forms/landing-${landingId}.html`;
         return `🌐 <b>דף הנחיתה מוכן!</b>\n<a href="${landingUrl}">${landingUrl}</a>\n\n<i>הגשות טופס יצירת קשר יגיעו ישירות לטלגרם שלך</i>`;
+      }
+
+      // ── Dashboard Access (Security Level 2+) ──────────────────────────────
+      case 'get_dashboard_access': {
+        const { createToken: createAuthToken, isOwner: isAuthOwner } = require('./auth');
+
+        if (!isAuthOwner(chatId)) {
+          return '❌ מצטער, אין לך הרשאה לגשת לדשבורד.';
+        }
+
+        const baseUrl = process.env.BASE_URL
+                     || process.env.RENDER_EXTERNAL_URL
+                     || 'https://lifepilot-bot.onrender.com';
+
+        try {
+          const dashToken = await createAuthToken(chatId, 'Telegram', null);
+          const dashUrl   = `${baseUrl}/dashboard?token=${dashToken}`;
+          return `🔐 <b>קישור מאובטח לדשבורד</b>\n\n` +
+                 `<a href="${dashUrl}">👉 לחץ כאן לפתיחה</a>\n\n` +
+                 `⏱️ תקף ל-24 שעות (מתחדש אוטומטית בכל שימוש)\n` +
+                 `🔒 הקישור אישי — אל תשתף!\n` +
+                 `🛡️ רק אתה יכול להשתמש בו`;
+        } catch (e) {
+          console.error('[Auth] Failed to create token:', e.message);
+          return '❌ שגיאה ביצירת קישור. נסה שוב בעוד רגע.';
+        }
       }
 
       default:

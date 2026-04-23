@@ -16,6 +16,10 @@ const { startScheduler }            = require('./scheduler');
 const { scheduleMedications }       = require('./medications');
 const { startReminderScheduler }    = require('./reminders');
 const { startSiteMonitor }          = require('./sites');
+const {
+  createToken, verifyToken, deleteToken,
+  isOwner, extractToken, requireAuth,
+} = require('./auth');
 
 const token       = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey      = process.env.GROQ_API_KEY;
@@ -25,6 +29,12 @@ const cronSecret  = process.env.CRON_SECRET; // protect /cron/* endpoints
 
 if (!token) { console.error('❌ Missing TELEGRAM_BOT_TOKEN'); process.exit(1); }
 if (!apiKey) { console.error('❌ Missing GROQ_API_KEY');        process.exit(1); }
+
+if (!process.env.TELEGRAM_CHAT_ID) {
+  console.error('⚠️  TELEGRAM_CHAT_ID not set — dashboard auth disabled!');
+} else {
+  console.log(`[Auth] Owner chat ID: ${process.env.TELEGRAM_CHAT_ID}`);
+}
 
 // ── Webhook vs polling ────────────────────────────────────────────────────────
 const webhookUrl = renderUrl ? `${renderUrl}/bot${token}` : null;
@@ -197,22 +207,47 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Dashboard HTML
+  // Dashboard HTML — protected
   if (req.method === 'GET' && route === '/dashboard') {
-    try {
-      const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
-      const buf  = Buffer.from(html, 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': buf.length });
-      res.end(buf);
-    } catch (e) {
-      res.writeHead(500); res.end('Error: ' + e.message);
-    }
-    return;
+    return requireAuth(req, res, async () => {
+      const queryToken = urlObj.searchParams.get('token');
+
+      // If token came via query string, set cookie and redirect to clean URL
+      if (queryToken) {
+        const isProd = process.env.NODE_ENV === 'production'
+                    || process.env.RENDER === 'true'
+                    || !!renderUrl;
+        const cookieFlags = [
+          `dashboard_token=${queryToken}`,
+          `Max-Age=${24 * 60 * 60}`,
+          'Path=/',
+          'HttpOnly',
+          'SameSite=Strict',
+        ];
+        if (isProd) cookieFlags.push('Secure');
+
+        res.setHeader('Set-Cookie', cookieFlags.join('; '));
+        res.statusCode = 302;
+        res.setHeader('Location', '/dashboard');
+        res.end();
+        return;
+      }
+
+      // Serve dashboard HTML
+      try {
+        const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+        const buf  = Buffer.from(html, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': buf.length });
+        res.end(buf);
+      } catch (e) {
+        res.writeHead(500); res.end('Error: ' + e.message);
+      }
+    }, true); // onDenyHtml = true
   }
 
-  // Dashboard API — returns JSON for the dashboard page
+  // Dashboard API — returns JSON for the dashboard page (protected)
   if (req.method === 'GET' && route === '/api/dashboard') {
-    (async () => {
+    return requireAuth(req, res, async () => {
       try {
         const { getTodayHealth, load: loadAllHealth } = require('./health');
         const { getHabits }             = require('./habits');
@@ -386,8 +421,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(body);
       }
-    })();
-    return;
+    });
   }
 
   // ── Dashboard POST API endpoints ──────────────────────────────────────────────
@@ -419,94 +453,112 @@ const server = http.createServer((req, res) => {
     r.end(body);
   }
 
-  // POST /api/log-habit — { id, done }
+  // POST /api/log-habit — { id, done } (protected)
   if (req.method === 'POST' && route === '/api/log-habit') {
-    readJsonBody(req).then(async b => {
-      const { logHabit } = require('./habits');
-      const result = await logHabit(Number(b.id), b.done !== false);
-      if (!result) return apiJson(res, { ok: false, e: 'not_found' }, 404);
-      apiJson(res, { ok: true, streak: result.streak });
-    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
-    return;
+    return requireAuth(req, res, async () => {
+      readJsonBody(req).then(async b => {
+        const { logHabit } = require('./habits');
+        const result = await logHabit(Number(b.id), b.done !== false);
+        if (!result) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+        apiJson(res, { ok: true, streak: result.streak });
+      }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    });
   }
 
-  // POST /api/log-health — { pain, mood, sleep }
+  // POST /api/log-health — { pain, mood, sleep } (protected)
   if (req.method === 'POST' && route === '/api/log-health') {
-    readJsonBody(req).then(async b => {
-      const { logDirect } = require('./health');
-      await logDirect({ pain: parseFloat(b.pain), mood: parseFloat(b.mood), sleep: parseFloat(b.sleep) });
-      apiJson(res, { ok: true });
-    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
-    return;
+    return requireAuth(req, res, async () => {
+      readJsonBody(req).then(async b => {
+        const { logDirect } = require('./health');
+        await logDirect({ pain: parseFloat(b.pain), mood: parseFloat(b.mood), sleep: parseFloat(b.sleep) });
+        apiJson(res, { ok: true });
+      }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    });
   }
 
-  // POST /api/add-task — { text }
+  // POST /api/add-task — { text } (protected)
   if (req.method === 'POST' && route === '/api/add-task') {
-    readJsonBody(req).then(async b => {
-      const { addTask } = require('./tasks');
-      const task = await addTask(String(b.text || '').trim());
-      if (!task) return apiJson(res, { ok: false, e: 'empty_text' }, 400);
-      if (task.isDuplicate) return apiJson(res, { ok: false, e: 'duplicate', id: task.id }, 409);
-      apiJson(res, { ok: true, id: task.id });
-    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
-    return;
+    return requireAuth(req, res, async () => {
+      readJsonBody(req).then(async b => {
+        const { addTask } = require('./tasks');
+        const task = await addTask(String(b.text || '').trim());
+        if (!task) return apiJson(res, { ok: false, e: 'empty_text' }, 400);
+        if (task.isDuplicate) return apiJson(res, { ok: false, e: 'duplicate', id: task.id }, 409);
+        apiJson(res, { ok: true, id: task.id });
+      }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    });
   }
 
-  // POST /api/complete-task — { id } toggles task done by numeric id
+  // POST /api/complete-task — { id } toggles task done by numeric id (protected)
   if (req.method === 'POST' && route === '/api/complete-task') {
-    readJsonBody(req).then(async b => {
-      const { loadTasks, markDone, markUndone, getOpenTasks } = require('./tasks');
-      const id = Number(b.id);
-      if (!id) return apiJson(res, { ok: false, e: 'missing_id' }, 400);
-      const all = await loadTasks();
-      const t = all.find(x => x.id === id);
-      if (!t) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+    return requireAuth(req, res, async () => {
+      readJsonBody(req).then(async b => {
+        const { loadTasks, markDone, markUndone, getOpenTasks } = require('./tasks');
+        const id = Number(b.id);
+        if (!id) return apiJson(res, { ok: false, e: 'missing_id' }, 400);
+        const all = await loadTasks();
+        const t = all.find(x => x.id === id);
+        if (!t) return apiJson(res, { ok: false, e: 'not_found' }, 404);
 
-      if (t.done) {
-        const done = all.filter(x => x.done);
-        const idx = done.findIndex(x => x.id === id) + 1;
-        await markUndone(idx);
-      } else {
-        const open = (await getOpenTasks());
-        const idx = open.findIndex(x => x.id === id) + 1;
-        await markDone(idx);
-      }
-      apiJson(res, { ok: true });
-    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
-    return;
+        if (t.done) {
+          const done = all.filter(x => x.done);
+          const idx = done.findIndex(x => x.id === id) + 1;
+          await markUndone(idx);
+        } else {
+          const open = (await getOpenTasks());
+          const idx = open.findIndex(x => x.id === id) + 1;
+          await markDone(idx);
+        }
+        apiJson(res, { ok: true });
+      }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    });
   }
 
-  // POST /api/delete-task — { id }
+  // POST /api/delete-task — { id } (protected)
   if (req.method === 'POST' && route === '/api/delete-task') {
-    readJsonBody(req).then(async b => {
-      const { loadTasks, deleteTask: delTask, getOpenTasks } = require('./tasks');
-      const id = Number(b.id);
-      if (!id) return apiJson(res, { ok: false, e: 'missing_id' }, 400);
-      const all = await loadTasks();
-      const t = all.find(x => x.id === id);
-      if (!t) return apiJson(res, { ok: false, e: 'not_found' }, 404);
-      const open = await getOpenTasks();
-      const idx = open.findIndex(x => x.id === id) + 1;
-      if (idx === 0) return apiJson(res, { ok: false, e: 'not_open' }, 400);
-      await delTask(idx);
-      apiJson(res, { ok: true });
-    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
-    return;
+    return requireAuth(req, res, async () => {
+      readJsonBody(req).then(async b => {
+        const { loadTasks, deleteTask: delTask, getOpenTasks } = require('./tasks');
+        const id = Number(b.id);
+        if (!id) return apiJson(res, { ok: false, e: 'missing_id' }, 400);
+        const all = await loadTasks();
+        const t = all.find(x => x.id === id);
+        if (!t) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+        const open = await getOpenTasks();
+        const idx = open.findIndex(x => x.id === id) + 1;
+        if (idx === 0) return apiJson(res, { ok: false, e: 'not_open' }, 400);
+        await delTask(idx);
+        apiJson(res, { ok: true });
+      }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    });
   }
 
-  // POST /api/add-expense — { vendor, amount, currency, category }
+  // POST /api/add-expense — { vendor, amount, currency, category } (protected)
   if (req.method === 'POST' && route === '/api/add-expense') {
-    readJsonBody(req).then(async b => {
-      const { saveInvoice } = require('./expenses');
-      const entry = await saveInvoice({
-        vendor:   b.vendor   || 'ידני',
-        amount:   parseFloat(b.amount) || 0,
-        currency: b.currency || 'ILS',
-        category: b.category || 'other',
-        source:   'dashboard',
-      });
-      apiJson(res, { ok: true, id: entry.id });
-    }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    return requireAuth(req, res, async () => {
+      readJsonBody(req).then(async b => {
+        const { saveInvoice } = require('./expenses');
+        const entry = await saveInvoice({
+          vendor:   b.vendor   || 'ידני',
+          amount:   parseFloat(b.amount) || 0,
+          currency: b.currency || 'ILS',
+          category: b.category || 'other',
+          source:   'dashboard',
+        });
+        apiJson(res, { ok: true, id: entry.id });
+      }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
+    });
+  }
+
+  // POST /api/logout — clears token from DB + cookie (protected)
+  if (req.method === 'POST' && route === '/api/logout') {
+    (async () => {
+      const tok = extractToken(req);
+      if (tok) await deleteToken(tok);
+      res.setHeader('Set-Cookie',
+        'dashboard_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict');
+      apiJson(res, { ok: true });
+    })().catch(e => apiJson(res, { ok: false, e: e.message }, 500));
     return;
   }
 
