@@ -20,6 +20,8 @@ const {
   createToken, verifyToken, deleteToken,
   isOwner, extractToken, requireAuth,
 } = require('./auth');
+const { getMetricsHistory } = require('./metrics-history');
+const { supabase: supaClient, isEnabled: supaEnabled } = require('./supabase');
 
 const token       = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey      = process.env.GROQ_API_KEY;
@@ -372,6 +374,12 @@ const server = http.createServer((req, res) => {
         const leads = allLeads.slice(0, 20);
         const leadsSummary = await getLeadsSummary();
 
+        // 7d+prev7d history for sparklines (safe: fails to { available: false })
+        const history = await getMetricsHistory(req.chatId).catch(e => {
+          console.warn('[Dashboard] getMetricsHistory failed:', e.message);
+          return { available: false };
+        });
+
         const body = JSON.stringify({
           // Legacy shape kept for backwards compatibility with the old HTML
           health,
@@ -407,6 +415,7 @@ const server = http.createServer((req, res) => {
           pain30,
           avgSleep: avgSleep != null ? Math.round(avgSleep * 10) / 10 : null,
           avgMood:  avgMood  != null ? Math.round(avgMood  * 10) / 10 : null,
+          history,
           supabase: supabaseEnabled(),
           timestamp: new Date().toISOString(),
         });
@@ -605,6 +614,32 @@ const server = http.createServer((req, res) => {
 
 // Disable automatic Date header — keeps responses tiny for cron-job.org
 server.sendDate = false;
+
+// ── One-shot chat_id backfill (idempotent) ──────────────────────────────────
+async function backfillChatIds() {
+  const chatId = Number(process.env.TELEGRAM_CHAT_ID);
+  if (!chatId) {
+    console.warn('[Backfill] TELEGRAM_CHAT_ID not set, skipping');
+    return;
+  }
+  if (!supaEnabled()) return;
+
+  const tables = ['tasks', 'habits', 'health_logs', 'expenses', 'leads'];
+  for (const t of tables) {
+    try {
+      const { data, error } = await supaClient
+        .from(t).update({ chat_id: chatId })
+        .is('chat_id', null)
+        .select('id');
+      if (error) throw error;
+      const count = (data || []).length;
+      if (count > 0) console.log(`[Backfill] Set chat_id on ${count} rows in ${t}`);
+    } catch (e) {
+      console.warn(`[Backfill] ${t} error:`, e.message);
+    }
+  }
+}
+backfillChatIds().catch(e => console.warn('[Backfill] Failed:', e.message));
 
 server.listen(PORT, () => {
   console.log(`✅ HTTP server listening on port ${PORT}`);

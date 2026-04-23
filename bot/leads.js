@@ -5,6 +5,7 @@ const path = require('path');
 const { supabase, isEnabled } = require('./supabase');
 
 const DATA = path.join(__dirname, '../data/leads.json');
+const OWNER_CHAT_ID = process.env.TELEGRAM_CHAT_ID ? Number(process.env.TELEGRAM_CHAT_ID) : null;
 
 // ── JSON fallback ─────────────────────────────────────────────────────────────
 function loadLeadsFromJson() {
@@ -73,9 +74,10 @@ async function saveLead(title, data) {
   };
 
   if (isEnabled()) {
+    if (!OWNER_CHAT_ID) console.warn('[leads] TELEGRAM_CHAT_ID missing — row will have NULL chat_id');
     const { error } = await supabase.from('leads').insert({
       id:         lead.id,
-      chat_id:    null,
+      chat_id:    OWNER_CHAT_ID,
       data:       toDataPayload(lead),
       created_at: lead.createdAt,
       updated_at: lead.createdAt,

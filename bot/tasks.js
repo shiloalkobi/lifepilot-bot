@@ -5,6 +5,7 @@ const path = require('path');
 const { supabase, isEnabled } = require('./supabase');
 
 const TASKS_FILE = path.join(__dirname, '..', 'data', 'tasks.json');
+const OWNER_CHAT_ID = process.env.TELEGRAM_CHAT_ID ? Number(process.env.TELEGRAM_CHAT_ID) : null;
 
 // ── JSON fallback ─────────────────────────────────────────────────────────────
 function loadFromJson() {
@@ -48,9 +49,10 @@ async function loadTasks() {
 
 async function upsertTask(task) {
   if (isEnabled()) {
+    if (!OWNER_CHAT_ID) console.warn('[tasks] TELEGRAM_CHAT_ID missing — row will have NULL chat_id');
     const { error } = await supabase.from('tasks').upsert({
       id:         String(task.id),
-      chat_id:    null,
+      chat_id:    OWNER_CHAT_ID,
       data: {
         text:      task.text,
         done:      task.done,

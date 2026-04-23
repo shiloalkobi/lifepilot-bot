@@ -38,6 +38,11 @@
     /* Card hover lift */
     .card-lift { transition: transform .18s ease, box-shadow .18s ease; }
     .card-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+    .sparkline-slot { opacity: 0.7; transition: opacity .2s ease; }
+    .card-lift:hover .sparkline-slot { opacity: 1; }
+    .sparkline-slot svg { height: 40px; display: block; }
+    @media (max-width: 1024px) { .sparkline-slot svg { height: 32px; } }
+    @media (max-width: 640px)  { .sparkline-slot svg { height: 28px; } }
 
     /* Tab button underline animation */
     .tab-btn { position: relative; transition: color .18s ease; }
@@ -444,6 +449,18 @@ function renderOverview() {
   const habitsDone = (D.habits || []).filter(h => h.doneToday).length;
   const habitsTotal = (D.habits || []).length;
 
+  const trendChip = (change, negativeMetric) => {
+    if (change == null || change === undefined) return '';
+    const neg = !!negativeMetric;
+    const cls =
+      change > 0 ? (neg ? 'text-amber-500'   : 'text-emerald-500') :
+      change < 0 ? (neg ? 'text-emerald-500' : 'text-red-500')     :
+      'text-gray-500';
+    const arrow = change > 0 ? '↑ +' : change < 0 ? '↓ ' : '→ ';
+    const label = change > 0 ? 'עלייה' : change < 0 ? 'ירידה' : 'יציב';
+    return `<span class="text-xs font-semibold ${cls} tabular-nums" dir="ltr" aria-label="${label} של ${Math.abs(change)} אחוזים">${arrow}${Math.abs(change)}%</span>`;
+  };
+
   const statCard = (emoji, label, value, sub, color, spark) => `
     <div class="card-lift bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm cursor-pointer"
          onclick="showTab('${sub.tabId}')">
@@ -451,17 +468,35 @@ function renderOverview() {
         <span class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">${esc(label)}</span>
         <span class="text-xl">${emoji}</span>
       </div>
-      <div class="text-2xl font-bold ${color} tabular-nums">${value}</div>
+      <div class="flex items-baseline gap-2 flex-wrap">
+        <div class="text-2xl font-bold ${color} tabular-nums">${value}</div>
+        ${trendChip(sub.change, sub.negative)}
+      </div>
       <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">${esc(sub.text)}</div>
-      ${spark ? `<div class="mt-2 opacity-80">${spark}</div>` : ''}
+      ${spark ? `<div class="sparkline-slot mt-2" title="${esc(label)} — 7 ימים אחרונים">${spark}</div>` : ''}
     </div>`;
+
+  const H = D.history || {};
+  const spark = (arr, color) => Array.isArray(arr) && arr.filter(v => v != null).length >= 2 ? sparkline(arr, color) : '';
 
   const totals = `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 stagger">
-      ${statCard('💼', 'לידים', fmt(s.total || 0), { tabId: 'leads', text: `השבוע: ${s.thisWeek||0} · חדשים: ${s.new||0}` }, 'text-brand-600 dark:text-brand-500', '')}
-      ${statCard('📋', 'משימות פתוחות', fmt(D.tasks.open || 0), { tabId: 'tasks', text: `הושלמו היום: ${D.tasks.completed_today||0}` }, 'text-blue-600 dark:text-blue-400', '')}
-      ${statCard('✅', 'הרגלים', `${habitsDone}/${habitsTotal}`, { tabId: 'habits', text: 'בוצעו היום' }, 'text-emerald-600 dark:text-emerald-400', '')}
-      ${statCard('💰', 'הוצאות החודש', '₪' + fmt(D.expenses.total_ils || 0), { tabId: 'expenses', text: `${D.expenses.count||0} רשומות` }, 'text-amber-600 dark:text-amber-400', '')}
+      ${statCard('💼', 'לידים', fmt(s.total || 0),
+        { tabId: 'leads', text: `השבוע: ${s.thisWeek||0} · חדשים: ${s.new||0}`, change: H.leads?.change },
+        'text-brand-600 dark:text-brand-500',
+        spark(H.leads?.last7, '#6366F1'))}
+      ${statCard('📋', 'משימות פתוחות', fmt(D.tasks.open || 0),
+        { tabId: 'tasks', text: `הושלמו היום: ${D.tasks.completed_today||0}`, change: H.tasks?.change },
+        'text-blue-600 dark:text-blue-400',
+        spark(H.tasks?.last7, '#3B82F6'))}
+      ${statCard('✅', 'הרגלים', `${habitsDone}/${habitsTotal}`,
+        { tabId: 'habits', text: 'בוצעו היום', change: H.habits?.change },
+        'text-emerald-600 dark:text-emerald-400',
+        spark(H.habits?.last7, '#10B981'))}
+      ${statCard('💰', 'הוצאות החודש', '₪' + fmt(D.expenses.total_ils || 0),
+        { tabId: 'expenses', text: `${D.expenses.count||0} רשומות`, change: H.expenses?.change, negative: true },
+        'text-amber-600 dark:text-amber-400',
+        spark(H.expenses?.last7, '#F59E0B'))}
     </div>`;
 
   // Health today summary (if any)
@@ -1152,7 +1187,9 @@ function sparkline(values, color = '#6366F1', height = 28) {
     const y = h - ((v - min) / range) * (h - 4) - 2;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px" aria-hidden="true">
+  const trendLabel = arr[arr.length - 1] > arr[0] ? 'מגמת עלייה' : arr[arr.length - 1] < arr[0] ? 'מגמת ירידה' : 'מגמה יציבה';
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:100%" role="img" aria-label="${trendLabel}">
+    <title>${trendLabel}</title>
     <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
   </svg>`;
 }
