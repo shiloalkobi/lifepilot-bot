@@ -22,6 +22,7 @@ const {
 } = require('./auth');
 const { getMetricsHistory } = require('./metrics-history');
 const { supabase: supaClient, isEnabled: supaEnabled } = require('./supabase');
+const { performBackup, listBackups, getBackup, cleanupOldBackups } = require('./backup');
 
 const token       = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey      = process.env.GROQ_API_KEY;
@@ -70,6 +71,65 @@ startReminderScheduler(bot);
   } else {
     console.warn('[Proactive] TELEGRAM_CHAT_ID not set — scheduler disabled');
   }
+}
+
+// ── Daily automatic backup (03:00 IL) + weekly cleanup (Sun 02:00 IL) ────────
+{
+  const backupChatId = process.env.TELEGRAM_CHAT_ID || mainChatId;
+
+  cron.schedule('0 3 * * *', async () => {
+    try {
+      const result = await performBackup('auto');
+      if (!backupChatId) return;
+      if (result.success && !result.skipped) {
+        const mb = (result.size / 1024 / 1024).toFixed(2);
+        bot.sendMessage(
+          backupChatId,
+          `✅ <b>גיבוי יומי הושלם</b>\n\n` +
+          `📦 ${result.recordCount} רשומות • ${mb} MB\n` +
+          `⏱️ ${result.durationMs}ms\n` +
+          `🆔 <code>${result.id}</code>`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      } else if (!result.success) {
+        bot.sendMessage(
+          backupChatId,
+          `⚠️ <b>גיבוי יומי נכשל</b>\n\n${result.error || 'שגיאה לא ידועה'}\n\nמנסה שוב בעוד 5 דקות...`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+        setTimeout(async () => {
+          try {
+            const retry = await performBackup('auto');
+            if (retry.success && !retry.skipped) {
+              const mb = (retry.size / 1024 / 1024).toFixed(2);
+              bot.sendMessage(
+                backupChatId,
+                `✅ <b>גיבוי הצליח בניסיון השני</b>\n\n📦 ${retry.recordCount} רשומות • ${mb} MB`,
+                { parse_mode: 'HTML' }
+              ).catch(() => {});
+            } else if (!retry.success) {
+              bot.sendMessage(
+                backupChatId,
+                `❌ <b>גיבוי נכשל שוב</b>\n\n${retry.error || 'שגיאה'}\n\nבדוק את הלוגים.`,
+                { parse_mode: 'HTML' }
+              ).catch(() => {});
+            }
+          } catch (e) {
+            console.error('[Backup] Retry crashed:', e.message);
+          }
+        }, 5 * 60 * 1000);
+      }
+    } catch (e) {
+      console.error('[Backup] Daily cron crashed:', e.message);
+    }
+  }, { timezone: 'Asia/Jerusalem' });
+
+  cron.schedule('0 2 * * 0', async () => {
+    try { await cleanupOldBackups(); }
+    catch (e) { console.error('[Backup] Cleanup crashed:', e.message); }
+  }, { timezone: 'Asia/Jerusalem' });
+
+  console.log('[Backup] Daily 03:00 IL + weekly cleanup Sun 02:00 IL scheduled');
 }
 
 // ── AI News cron removed — covered by scheduler.js 12:00 full news send ──────
@@ -604,6 +664,61 @@ const server = http.createServer((req, res) => {
       apiJson(res, { ok: true, leadId: lead.id });
     }).catch(e => apiJson(res, { ok: false, e: e.message }, 400));
     return;
+  }
+
+  // GET /api/backups — list recent backups (protected)
+  if (req.method === 'GET' && route === '/api/backups') {
+    return requireAuth(req, res, async () => {
+      try {
+        const limit = Math.min(Number(urlObj.searchParams.get('limit')) || 30, 100);
+        const items = await listBackups(limit);
+        apiJson(res, { ok: true, backups: items });
+      } catch (e) {
+        apiJson(res, { ok: false, e: e.message }, 500);
+      }
+    });
+  }
+
+  // POST /api/backup/trigger — manual backup (protected)
+  if (req.method === 'POST' && route === '/api/backup/trigger') {
+    return requireAuth(req, res, async () => {
+      try {
+        const result = await performBackup('manual');
+        if (!result.success) return apiJson(res, { ok: false, e: result.error || 'failed' }, 500);
+        apiJson(res, {
+          ok: true,
+          id: result.id,
+          size: result.size,
+          recordCount: result.recordCount,
+          durationMs: result.durationMs,
+        });
+      } catch (e) {
+        apiJson(res, { ok: false, e: e.message }, 500);
+      }
+    });
+  }
+
+  // GET /api/backups/:id — download full backup JSON (protected)
+  if (req.method === 'GET' && route.startsWith('/api/backups/')) {
+    return requireAuth(req, res, async () => {
+      try {
+        const id = decodeURIComponent(route.slice('/api/backups/'.length));
+        if (!id || !/^bkp_(auto|manual)_/.test(id)) {
+          return apiJson(res, { ok: false, e: 'invalid_id' }, 400);
+        }
+        const row = await getBackup(id);
+        if (!row) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+        const body = JSON.stringify(row.data || {}, null, 2);
+        res.writeHead(200, {
+          'Content-Type':        'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${id}.json"`,
+          'Content-Length':      Buffer.byteLength(body),
+        });
+        res.end(body);
+      } catch (e) {
+        apiJson(res, { ok: false, e: e.message }, 500);
+      }
+    });
   }
 
   // Default keep-alive / wake-up ping — 2 bytes

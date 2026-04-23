@@ -220,6 +220,8 @@ CRPS רגל שמאל (DRG) — כאב כרוני
 ${painCtx ? painCtx + '\n' : ''}${topicsCtx ? topicsCtx + '\n' : ''}${memBlock ? 'זיכרון:\n' + memBlock + '\n' : ''}
 CRITICAL TOOL ROUTING — HIGHEST PRIORITY (NEVER respond with text for these):
 • "דשבורד" / "dashboard" / "כניסה" / "login" / "קישור לדשבורד" / "תביא לי דשבורד" → MUST call get_dashboard_access immediately
+• "גבה עכשיו" / "גבה" / "גיבוי" / "backup now" / "תגבה" → MUST call trigger_manual_backup immediately
+• "גיבויים אחרונים" / "list backups" / "הצג גיבויים" → MUST call list_recent_backups immediately
 • "תכתוב פוסט" / "פוסט אינסטגרם" / "פוסט לפייסבוק" / "תכתוב תוכן" → MUST call write_content immediately
 • "תבנה דף נחיתה" / "דף נחיתה ל" / "landing page" → MUST call generate_landing_page immediately
 • "תבנה טופס" / "צור טופס" / "טופס יצירת קשר" → MUST call generate_form immediately
@@ -373,6 +375,9 @@ const TOOL_DECLARATIONS = [
   { name: 'generate_landing_page', description: 'ALWAYS call when asked for a landing page. צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] }, template: { type: 'string', enum: ['minimal','bold','elegant','tech','corporate','random'], description: 'סגנון עיצוב — random לאקראי' } }, required: ['business_name'] } },
   // Dashboard Access (Security Level 2+)
   { name: 'get_dashboard_access', description: 'ALWAYS call when user asks for dashboard/login/כניסה. Generates secure 24h token. Owner only.', parameters: { type: 'object', properties: {}, required: [] } },
+  // Backup System (owner only)
+  { name: 'trigger_manual_backup', description: 'ALWAYS call when user says "גבה עכשיו"/"גיבוי"/"backup now"/"גבה". מייד. Owner only.', parameters: { type: 'object', properties: {}, required: [] } },
+  { name: 'list_recent_backups',   description: 'הצג גיבויים אחרונים: מתי, גודל, טריגר. Owner only.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'ברירת מחדל: 10' } }, required: [] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -389,6 +394,7 @@ const CORE_TOOL_NAMES = new Set([
   'get_stock_price', 'get_watchlist',
   'list_passwords',
   'get_dashboard_access',
+  'trigger_manual_backup', 'list_recent_backups',
 ]);
 
 const EXTENDED_KEYWORDS = [
@@ -425,6 +431,8 @@ const EXTENDED_KEYWORDS = [
   'הוצאות', 'סיכום חודשי', 'כמה הוצאתי', 'ייצא', 'export', 'csv', 'הוצאתי',
   // Dashboard
   'דשבורד', 'dashboard',
+  // Backup
+  'גבה', 'גיבוי', 'גיבויים', 'backup', 'backups',
   // Content Writing (#30)
   'פוסט', 'תוכן', 'מייל ללקוח', 'ביו', 'כתוב לי', 'content', 'כותרת', 'כתיבה',
   // Code Generation (#31)
@@ -1941,6 +1949,44 @@ footer{background:#001a33}`,
           console.error('[Auth] Failed to create token:', e.message);
           return '❌ שגיאה ביצירת קישור. נסה שוב בעוד רגע.';
         }
+      }
+
+      case 'trigger_manual_backup': {
+        if (String(chatId) !== String(process.env.TELEGRAM_CHAT_ID)) {
+          return '❌ מצטער, גיבויים זמינים רק לבעלים.';
+        }
+        const { performBackup } = require('./backup');
+        const result = await performBackup('manual');
+        if (!result.success) {
+          return `❌ גיבוי נכשל: ${result.error || 'שגיאה לא ידועה'}`;
+        }
+        const mb = (result.size / 1024 / 1024).toFixed(2);
+        let msg = `✅ <b>גיבוי ידני הושלם</b>\n\n` +
+                  `📦 ${result.recordCount} רשומות • ${mb} MB\n` +
+                  `⏱️ ${result.durationMs}ms\n` +
+                  `🆔 <code>${result.id}</code>`;
+        if (result.errors && result.errors.length) {
+          msg += `\n\n⚠️ ${result.errors.length} טבלאות נכשלו — בדוק לוגים.`;
+        }
+        return msg;
+      }
+
+      case 'list_recent_backups': {
+        if (String(chatId) !== String(process.env.TELEGRAM_CHAT_ID)) {
+          return '❌ מצטער, גיבויים זמינים רק לבעלים.';
+        }
+        const { listBackups } = require('./backup');
+        const limit = Math.min(Number(args.limit) || 10, 30);
+        const items = await listBackups(limit);
+        if (!items.length) return '📭 אין גיבויים עדיין. שלח "גבה עכשיו" כדי ליצור את הראשון.';
+        const lines = items.map(b => {
+          const when  = new Date(b.created_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+          const mb    = ((b.size_bytes || 0) / 1024 / 1024).toFixed(2);
+          const recs  = b.metadata?.totalRecords ?? '?';
+          const trig  = b.trigger === 'auto' ? '🕒' : '✋';
+          return `${trig} <code>${b.id}</code>\n   ${when} • ${recs} רשומות • ${mb} MB`;
+        });
+        return `📦 <b>${items.length} גיבויים אחרונים</b>\n\n${lines.join('\n\n')}`;
       }
 
       default:
