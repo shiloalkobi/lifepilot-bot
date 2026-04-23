@@ -90,6 +90,94 @@
     /* Hide scrollbar for horizontal tabs */
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* ── Premium animations ────────────────────────────────────────────────── */
+    @keyframes fadeSlideUp   { from { opacity:0; transform:translateY(8px);  } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeSlideDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes scaleIn       { from { opacity:0; transform:scale(.96); }       to { opacity:1; transform:scale(1); } }
+    @keyframes pulseDot      { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.7; transform:scale(1.25); } }
+    @keyframes confetti      { 0% { transform:translateY(0) rotate(0);      opacity:1; }
+                               100% { transform:translateY(100vh) rotate(720deg); opacity:0; } }
+    @keyframes checkmarkDraw { from { stroke-dashoffset:24; } to { stroke-dashoffset:0; } }
+    @keyframes shake         { 0%,100% { transform:translateX(0); } 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
+    @keyframes toastSlideIn  { from { opacity:0; transform:translateY(-12px) scale(.95); }
+                               to   { opacity:1; transform:translateY(0) scale(1); } }
+    @keyframes toastProgress { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+
+    .anim-fade-up    { animation: fadeSlideUp   .3s ease both; }
+    .anim-fade-down  { animation: fadeSlideDown .3s ease both; }
+    .anim-scale-in   { animation: scaleIn       .22s ease both; }
+    .anim-shake      { animation: shake         .32s ease both; }
+    .pulse-dot       { animation: pulseDot      2s ease-in-out infinite; }
+
+    /* Ripple effect on any .btn-ripple */
+    .btn-ripple { position: relative; overflow: hidden; }
+    .btn-ripple::after {
+      content: ''; position: absolute; inset: 0; margin: auto; width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor; opacity: 0; pointer-events: none; transform: scale(0);
+    }
+    .btn-ripple:active::after { animation: rippleOut .5s ease-out; }
+    @keyframes rippleOut { from { transform: scale(0); opacity: .3; } to { transform: scale(25); opacity: 0; } }
+
+    /* Active-tab micro pulse */
+    .tab-btn.active { animation: scaleIn .18s ease both; }
+
+    /* Global search modal */
+    .modal-backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); animation: fadeSlideDown .2s ease both; }
+    .modal-panel    { animation: scaleIn .22s ease both; }
+
+    /* Toast 2.0 */
+    #toast-stack { position: fixed; top: 1rem; right: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 60; max-width: 360px; width: calc(100% - 2rem); pointer-events: none; }
+    .toast-item { pointer-events: auto; position: relative; overflow: hidden; padding: .75rem 1rem; border-radius: .75rem; box-shadow: 0 20px 40px -10px rgba(0,0,0,.25); animation: toastSlideIn .25s ease both; display: flex; align-items: flex-start; gap: .6rem; font-size: .875rem; font-weight: 500; }
+    .toast-item .toast-progress { position: absolute; bottom: 0; right: 0; left: 0; height: 3px; background: rgba(255,255,255,.55); transform-origin: right; animation: toastProgress var(--dur, 4s) linear forwards; }
+    .toast-item.paused .toast-progress { animation-play-state: paused; }
+    .toast-success { background: #059669; color: #fff; }
+    .toast-error   { background: #dc2626; color: #fff; }
+    .toast-info    { background: #0f172a; color: #fff; }
+    .toast-warning { background: #d97706; color: #fff; }
+    .dark .toast-info { background: #e2e8f0; color: #0f172a; }
+    .dark .toast-info .toast-progress { background: rgba(15,23,42,.4); }
+
+    /* Checkmark SVG draw */
+    .check-draw path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: checkmarkDraw .35s ease forwards; }
+
+    /* Confetti piece */
+    .confetti-piece { position: fixed; top: -20px; width: 8px; height: 12px; border-radius: 2px; pointer-events: none; z-index: 9999; animation: confetti 2.5s ease-in forwards; }
+
+    /* Focus mode */
+    body.focus-mode > header nav,
+    body.focus-mode > header .status-line { display: none !important; }
+    body.focus-mode main  { padding-top: 1.5rem; }
+    body.focus-mode .focus-exit-hint {
+      position: fixed; bottom: 1rem; left: 1rem; font-size: .72rem; color: #94a3b8;
+      background: rgba(255,255,255,.7); padding: .35rem .6rem; border-radius: .5rem; backdrop-filter: blur(8px);
+    }
+    .dark body.focus-mode .focus-exit-hint { background: rgba(15,23,42,.7); color: #cbd5e1; }
+    .focus-exit-hint { display: none; }
+    body.focus-mode .focus-exit-hint { display: block; }
+
+    /* Tabular numbers for LTR numeric spans (prevents digit wobble in RTL) */
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+
+    /* Suggestion chip */
+    .chip-btn { transition: transform .15s ease, background .15s ease; }
+    .chip-btn:active { transform: scale(.95); }
+
+    /* Inline delete confirm */
+    .inline-confirm { animation: fadeSlideDown .18s ease both; }
+
+    /* Kbd visual */
+    kbd { display:inline-block; padding:.1rem .4rem; border-radius:.3rem; background:#e2e8f0; color:#0f172a; font-size:.7rem; font-family: ui-monospace, Menlo, monospace; border: 1px solid #cbd5e1; min-width: 1.5rem; text-align: center; }
+    .dark kbd { background:#1e293b; color:#e2e8f0; border-color:#334155; }
+
+    /* Habit streak tooltip */
+    .streak-tip { position: relative; }
+    .streak-tip:hover::after {
+      content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); right: 50%; transform: translateX(50%);
+      background: #0f172a; color: #fff; padding: .3rem .6rem; border-radius: .4rem; font-size: .7rem; white-space: nowrap; z-index: 20;
+      animation: fadeSlideDown .18s ease both;
+    }
+    .dark .streak-tip:hover::after { background: #e2e8f0; color: #0f172a; }
   </style>
 </head>
 
@@ -102,7 +190,7 @@
         <span class="text-2xl">🚀</span>
         <div>
           <h1 class="text-base sm:text-lg font-bold leading-tight">שילובילו — לוח בקרה</h1>
-          <div class="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500 dark:text-slate-400">
+          <div class="status-line flex items-center gap-2 text-[10px] sm:text-xs text-gray-500 dark:text-slate-400">
             <span id="supabase-dot" class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400"></span>
             <span id="supabase-label">מתחבר...</span>
             <span>·</span>
@@ -111,6 +199,17 @@
         </div>
       </div>
       <div class="flex items-center gap-1">
+        <button onclick="openSearchModal()" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-slate-400 text-xs transition" title="חיפוש (Ctrl+K)">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z"/></svg>
+          <span>חיפוש</span>
+          <kbd class="hidden md:inline">⌘K</kbd>
+        </button>
+        <button onclick="toggleFocusMode()" id="focus-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition" title="מצב פוקוס (F)">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        </button>
+        <button onclick="showShortcutsModal()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition text-gray-500 dark:text-slate-400" title="קיצורי מקלדת (?)">
+          <span class="text-sm font-bold">?</span>
+        </button>
         <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition" title="מצב בהיר/כהה">
           <span class="dark:hidden">🌙</span>
           <span class="hidden dark:inline">☀️</span>
@@ -151,10 +250,14 @@
     <section data-tab="stocks" class="hidden"><div id="stocks-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
   </main>
 
-  <!-- Toast -->
-  <div id="toast" class="fixed bottom-6 right-1/2 translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition-all duration-200
-                        bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium z-50">
-  </div>
+  <!-- Toast 2.0 stack -->
+  <div id="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Focus-mode exit hint -->
+  <div class="focus-exit-hint">💡 לחץ <kbd>F</kbd> או <kbd>Esc</kbd> ליציאה ממצב פוקוס</div>
+
+  <!-- Modal mount point (search / shortcuts) -->
+  <div id="modal-mount"></div>
 
 <script>
 'use strict';
@@ -194,18 +297,46 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-function toast(msg, isErr = false) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = (isErr
-    ? 'fixed bottom-6 right-1/2 translate-x-1/2 translate-y-0 opacity-100 bg-red-600 text-white'
-    : 'fixed bottom-6 right-1/2 translate-x-1/2 translate-y-0 opacity-100 bg-slate-900 dark:bg-white text-white dark:text-slate-900')
-    + ' pointer-events-none transition-all duration-200 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium z-50';
-  clearTimeout(el._t);
-  el._t = setTimeout(() => {
-    el.className = 'fixed bottom-6 right-1/2 translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition-all duration-200 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium z-50';
-  }, 2000);
+// ── Toast 2.0 — stack of max 3 with progress bar, hover-pause, queue ─────────
+const TOAST_ICONS = { success: '✓', error: '✗', info: 'ℹ', warning: '⚠' };
+const toastQueue = [];
+let activeToasts = 0;
+function showToast(msg, type = 'info', duration = 4000) {
+  if (activeToasts >= 3) { toastQueue.push({ msg, type, duration }); return; }
+  activeToasts++;
+
+  const stack = document.getElementById('toast-stack');
+  const el = document.createElement('div');
+  el.className = `toast-item toast-${type}`;
+  if (type === 'error') el.classList.add('anim-shake');
+  el.style.setProperty('--dur', duration + 'ms');
+  el.innerHTML = `
+    <span class="text-lg leading-none flex-shrink-0">${TOAST_ICONS[type] || 'ℹ'}</span>
+    <span class="flex-1 min-w-0">${esc(msg)}</span>
+    <span class="toast-progress"></span>`;
+  stack.appendChild(el);
+
+  const dismiss = () => {
+    if (!el.isConnected) return;
+    el.style.transition = 'opacity .2s ease, transform .2s ease';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(-6px)';
+    setTimeout(() => {
+      el.remove();
+      activeToasts = Math.max(0, activeToasts - 1);
+      if (toastQueue.length) {
+        const next = toastQueue.shift();
+        showToast(next.msg, next.type, next.duration);
+      }
+    }, 200);
+  };
+  let timer = setTimeout(dismiss, duration);
+  el.addEventListener('mouseenter', () => { el.classList.add('paused'); clearTimeout(timer); });
+  el.addEventListener('mouseleave', () => { el.classList.remove('paused'); timer = setTimeout(dismiss, 1500); });
+  el.addEventListener('click',      () => { clearTimeout(timer); dismiss(); });
 }
+// Legacy shim — keep existing callers working. Boolean second arg → 'error'.
+function toast(msg, isErr = false) { showToast(msg, isErr ? 'error' : 'success', 3500); }
 
 async function api(path, body) {
   const opts = body
@@ -294,23 +425,43 @@ window.addEventListener('hashchange', () => {
 // ── Overview ─────────────────────────────────────────────────────────────────
 function renderOverview() {
   const s = D.leadsSummary || {};
-  const statCard = (emoji, label, value, sub, color) => `
+
+  // Greeting banner (time-aware)
+  const g = getGreeting();
+  const greetingBanner = `
+    <div class="bg-gradient-to-br from-brand-50 to-indigo-50 dark:from-brand-950/40 dark:to-indigo-950/40 border border-brand-200/60 dark:border-brand-900 rounded-xl p-4 mb-4 anim-fade-up flex items-center gap-3">
+      <div class="text-4xl">${g.emoji}</div>
+      <div class="flex-1 min-w-0">
+        <div class="text-lg font-bold">${esc(g.text)}</div>
+        <div class="text-xs text-gray-500 dark:text-slate-400">${esc(g.sub)}</div>
+      </div>
+    </div>`;
+
+  // Sparklines from available history
+  const painHist  = (D.pain30 || []).slice(-14).map(d => d.pain).filter(v => v != null);
+  const moodHist  = (D.pain30 || []).slice(-14).map(d => d.mood).filter(v => v != null);
+  const tasksDone = (D.tasks?.doneList || []).length;
+  const habitsDone = (D.habits || []).filter(h => h.doneToday).length;
+  const habitsTotal = (D.habits || []).length;
+
+  const statCard = (emoji, label, value, sub, color, spark) => `
     <div class="card-lift bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 shadow-sm cursor-pointer"
          onclick="showTab('${sub.tabId}')">
       <div class="flex items-center justify-between mb-2">
         <span class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">${esc(label)}</span>
         <span class="text-xl">${emoji}</span>
       </div>
-      <div class="text-2xl font-bold ${color}">${value}</div>
+      <div class="text-2xl font-bold ${color} tabular-nums">${value}</div>
       <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">${esc(sub.text)}</div>
+      ${spark ? `<div class="mt-2 opacity-80">${spark}</div>` : ''}
     </div>`;
 
   const totals = `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 stagger">
-      ${statCard('💼', 'לידים', fmt(s.total || 0), { tabId: 'leads', text: `השבוע: ${s.thisWeek||0} · חדשים: ${s.new||0}` }, 'text-brand-600 dark:text-brand-500')}
-      ${statCard('📋', 'משימות פתוחות', fmt(D.tasks.open || 0), { tabId: 'tasks', text: `הושלמו היום: ${D.tasks.completed_today||0}` }, 'text-blue-600 dark:text-blue-400')}
-      ${statCard('✅', 'הרגלים', `${D.habits.filter(h => h.doneToday).length}/${D.habits.length}`, { tabId: 'habits', text: 'בוצעו היום' }, 'text-emerald-600 dark:text-emerald-400')}
-      ${statCard('💰', 'הוצאות החודש', '₪' + fmt(D.expenses.total_ils || 0), { tabId: 'expenses', text: `${D.expenses.count||0} רשומות` }, 'text-amber-600 dark:text-amber-400')}
+      ${statCard('💼', 'לידים', fmt(s.total || 0), { tabId: 'leads', text: `השבוע: ${s.thisWeek||0} · חדשים: ${s.new||0}` }, 'text-brand-600 dark:text-brand-500', '')}
+      ${statCard('📋', 'משימות פתוחות', fmt(D.tasks.open || 0), { tabId: 'tasks', text: `הושלמו היום: ${D.tasks.completed_today||0}` }, 'text-blue-600 dark:text-blue-400', '')}
+      ${statCard('✅', 'הרגלים', `${habitsDone}/${habitsTotal}`, { tabId: 'habits', text: 'בוצעו היום' }, 'text-emerald-600 dark:text-emerald-400', '')}
+      ${statCard('💰', 'הוצאות החודש', '₪' + fmt(D.expenses.total_ils || 0), { tabId: 'expenses', text: `${D.expenses.count||0} רשומות` }, 'text-amber-600 dark:text-amber-400', '')}
     </div>`;
 
   // Health today summary (if any)
@@ -360,8 +511,12 @@ function renderOverview() {
         : '<div class="text-sm text-gray-500 dark:text-slate-400">אין פעילות עדיין</div>'}
     </div>`;
 
+  const insights = renderInsightsCard();
+
   document.getElementById('overview-content').innerHTML = `
+    ${greetingBanner}
     ${totals}
+    ${insights ? `<div class="mt-4">${insights}</div>` : ''}
     <div class="grid md:grid-cols-2 gap-3 mt-4">
       ${healthBlock}
       ${recentBlock}
@@ -451,7 +606,7 @@ function renderTasks() {
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
           </button>` : ''}
         </div>`).join('')
-    : '<div class="text-center text-gray-500 dark:text-slate-400 py-12 text-sm">אין משימות להצגה 🎉</div>';
+    : renderEmptyState('tasks');
 
   // Add task form
   const addForm = `
@@ -539,12 +694,7 @@ function quickTask() {
 function renderHabits() {
   const habits = D.habits || [];
   if (!habits.length) {
-    document.getElementById('habits-content').innerHTML = `
-      <div class="text-center py-12">
-        <div class="text-5xl mb-3">✅</div>
-        <div class="text-lg font-semibold mb-1">אין הרגלים עדיין</div>
-        <div class="text-sm text-gray-500 dark:text-slate-400">הוסף דרך הבוט — למשל "תוסיף הרגל: שתיית מים"</div>
-      </div>`;
+    document.getElementById('habits-content').innerHTML = renderEmptyState('habits');
     return;
   }
 
@@ -589,6 +739,7 @@ function renderHabits() {
 
   document.getElementById('habits-content').innerHTML = `
     <div class="grid sm:grid-cols-2 gap-3 stagger">${cards}</div>`;
+  maybeCelebrateHabits();
 }
 
 async function logHabit(id, done) {
@@ -665,7 +816,7 @@ function renderLeads() {
           </div>` : ''}
           ${l.notes ? `<div class="text-xs text-gray-600 dark:text-slate-300 mt-2 bg-gray-50 dark:bg-slate-800 rounded px-2 py-1">📝 ${esc(l.notes)}</div>` : ''}
         </div>`).join('')
-    : '<div class="text-center text-gray-500 dark:text-slate-400 py-10 text-sm">אין לידים להצגה</div>';
+    : renderEmptyState('leads');
 
   document.getElementById('leads-content').innerHTML = `
     ${summary}
@@ -706,7 +857,7 @@ function renderExpenses() {
           <span class="flex items-center gap-2 text-sm">${catEmoji[c] || '📌'} ${esc(c)}</span>
           <span class="text-sm font-semibold">₪${fmt(byCat[c])}</span>
         </li>`).join('')}</ul>`
-    : '<div class="text-sm text-gray-500 dark:text-slate-400 py-4 text-center">אין הוצאות החודש</div>';
+    : renderEmptyState('expenses');
 
   const chartBlock = cats.length
     ? `<div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4">
@@ -772,7 +923,10 @@ function renderExpenses() {
         },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { color: cc.label, boxWidth: 12, font: { size: 11 } } } },
+          plugins: {
+            legend: { position: 'bottom', labels: { color: cc.label, boxWidth: 12, font: { size: 11 } } },
+            tooltip: { rtl: true, textDirection: 'rtl', bodyFont: { family: 'Heebo' }, titleFont: { family: 'Heebo' } },
+          },
         }
       });
     }, 30);
@@ -880,7 +1034,10 @@ function renderHealth() {
         },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: cc.label, boxWidth: 12, font: { size: 11 } } } },
+          plugins: {
+            legend: { labels: { color: cc.label, boxWidth: 12, font: { size: 11 } } },
+            tooltip: { rtl: true, textDirection: 'rtl', bodyFont: { family: 'Heebo' }, titleFont: { family: 'Heebo' } },
+          },
           scales: {
             y: { min: 0, max: 10, ticks: { color: cc.tick, stepSize: 2 }, grid: { color: cc.grid } },
             x: { ticks: { color: cc.tick, font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } },
@@ -906,11 +1063,7 @@ async function submitHealth() {
 function renderStocks() {
   const stocks = D.stocks || [];
   if (!stocks.length) {
-    document.getElementById('stocks-content').innerHTML = `
-      <div class="text-center py-12">
-        <div class="text-5xl mb-3">📈</div>
-        <div class="text-sm text-gray-500 dark:text-slate-400">אין מניות במעקב. הוסף דרך הבוט: "תעקוב אחרי NVDA ב-150$"</div>
-      </div>`;
+    document.getElementById('stocks-content').innerHTML = renderEmptyState('stocks');
     return;
   }
   const triggered = stocks.filter(s => s.triggered);
@@ -967,6 +1120,362 @@ async function reload() {
   }
 }
 
+// ── Premium utilities ────────────────────────────────────────────────────────
+function countUp(el, target, duration = 800) {
+  if (!el) return;
+  const start = performance.now();
+  target = Number(target) || 0;
+  (function step(now) {
+    const p = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = String(Math.round(target * eased));
+    if (p < 1) requestAnimationFrame(step);
+  })(performance.now());
+}
+
+function animateCountUps(root) {
+  (root || document).querySelectorAll('[data-countup]').forEach(el => {
+    const v = parseInt(el.dataset.countup, 10);
+    if (!isNaN(v)) countUp(el, v, 800);
+  });
+}
+
+function sparkline(values, color = '#6366F1', height = 28) {
+  const arr = (values || []).filter(v => v != null);
+  if (arr.length < 2) return '';
+  const w = 100, h = height;
+  const max = Math.max(...arr, 1);
+  const min = Math.min(...arr, 0);
+  const range = Math.max(max - min, 1);
+  const pts = arr.map((v, i) => {
+    const x = (i / (arr.length - 1)) * w;
+    const y = h - ((v - min) / range) * (h - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+  </svg>`;
+}
+
+function trendArrow(current, previous) {
+  if (previous == null || previous === 0) return '';
+  const diff = current - previous;
+  const pct  = Math.round((diff / Math.abs(previous)) * 100);
+  if (pct === 0) return '<span class="text-gray-500 text-xs">→ יציב</span>';
+  if (pct > 0)  return `<span class="text-emerald-500 text-xs" dir="ltr">↑ +${pct}%</span>`;
+  return `<span class="text-red-500 text-xs" dir="ltr">↓ ${pct}%</span>`;
+}
+
+function isThisWeek(iso) {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (isNaN(d)) return false;
+  const now = new Date();
+  const diffDays = Math.floor((now - d) / 86400000);
+  return diffDays < 7 && diffDays >= 0;
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour >= 5  && hour < 11) return { text: 'בוקר טוב, שילה', emoji: '☀️', sub: 'מה יש לך היום?' };
+  if (hour >= 11 && hour < 16) return { text: 'יום טוב, שילה',  emoji: '🌤️', sub: 'איך ההתקדמות?' };
+  if (hour >= 16 && hour < 21) return { text: 'ערב טוב, שילה', emoji: '🌅', sub: 'סיכום היום?' };
+  return { text: 'לילה טוב, שילה', emoji: '🌙', sub: 'לנוח או לתכנן?' };
+}
+
+// ── Auto-insights ────────────────────────────────────────────────────────────
+function generateInsights() {
+  if (!D) return [];
+  const insights = [];
+
+  // Tasks: completed this week
+  const doneThisWeek = (D.tasks?.doneList || [])
+    .filter(t => t.doneAt && isThisWeek(t.doneAt)).length;
+  if (doneThisWeek >= 5) {
+    insights.push({ icon: '🎯', text: `השלמת ${doneThisWeek} משימות השבוע — כל הכבוד!`, type: 'success' });
+  }
+
+  // Habits: top streak
+  const topStreak = Math.max(0, ...((D.habits || []).map(h => h.streak || 0)));
+  if (topStreak >= 7) {
+    insights.push({ icon: '🔥', text: `${topStreak} ימי רצף בהרגל שלך — שיא אישי!`, type: 'success' });
+  }
+
+  // Health: gap
+  const hist = D.healthHistory || [];
+  if (hist.length >= 3) {
+    const last3 = hist.slice(-3);
+    const allMissing = last3.every(d => d.pain == null && d.mood == null);
+    if (allMissing) {
+      insights.push({ icon: '🩺', text: 'לא דיווחת על בריאות 3 ימים — הכל בסדר?', type: 'warning', cta: { label: 'דווח עכשיו', tab: 'health' } });
+    }
+  }
+
+  // Leads: new this week
+  const newLeadsWk = (D.leads || []).filter(l => l.status === 'new' && isThisWeek(l.createdAt)).length;
+  if (newLeadsWk >= 2) {
+    insights.push({ icon: '🎯', text: `${newLeadsWk} לידים חדשים השבוע — בדוק אותם`, type: 'info', cta: { label: 'פתח לידים', tab: 'leads' } });
+  }
+
+  // Pain high recently
+  const recentPains = (D.pain30 || []).slice(-7).map(d => d.pain).filter(v => v != null);
+  if (recentPains.length >= 3) {
+    const avg = recentPains.reduce((a, b) => a + b, 0) / recentPains.length;
+    if (avg >= 7) insights.push({ icon: '⚠️', text: `ממוצע כאב השבוע גבוה (${avg.toFixed(1)}/10) — שקול מנוחה`, type: 'warning' });
+  }
+
+  return insights.slice(0, 3);
+}
+
+function renderInsightsCard() {
+  const ins = generateInsights();
+  if (!ins.length) return '';
+  const rows = ins.map(i => `
+    <li class="flex items-center gap-3 py-2 text-sm">
+      <span class="text-xl flex-shrink-0">${i.icon}</span>
+      <span class="flex-1 min-w-0">${esc(i.text)}</span>
+      ${i.cta ? `<button onclick="showTab('${i.cta.tab}')" class="text-xs text-brand-600 dark:text-brand-500 hover:underline flex-shrink-0">${esc(i.cta.label)} ←</button>` : ''}
+    </li>`).join('');
+  return `
+    <div class="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 border border-indigo-200 dark:border-indigo-900 rounded-xl p-4 shadow-sm anim-fade-up">
+      <div class="text-xs uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-semibold mb-2">💡 תובנות</div>
+      <ul class="divide-y divide-indigo-100 dark:divide-indigo-900/50">${rows}</ul>
+    </div>`;
+}
+
+// ── Empty states ─────────────────────────────────────────────────────────────
+function renderEmptyState(type) {
+  const states = {
+    tasks: {
+      svg: `<svg class="w-20 h-20 mx-auto text-brand-500/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="1.5"/><circle cx="12" cy="12" r="5" stroke-width="1.5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>`,
+      title: 'אין משימות פתוחות',
+      sub: 'זמן להירגע — או להוסיף משימה חדשה',
+      action: { label: '+ הוסף משימה ראשונה', onclick: "document.getElementById('new-task-input')?.focus()" },
+    },
+    habits: {
+      svg: `<svg class="w-20 h-20 mx-auto text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M12 3v3M12 18v3M3 12h3M18 12h3M5.636 5.636l2.121 2.121M16.243 16.243l2.121 2.121M5.636 18.364l2.121-2.121M16.243 7.757l2.121-2.121"/></svg>`,
+      title: 'עדיין אין הרגלים — בוא נתחיל',
+      sub: 'בחר הרגל כדי להתחיל, או שלח בבוט: "תוסיף הרגל: שם"',
+      chips: ['💧 שתיית מים', '🏃 ריצה בוקר', '📖 קריאה 10 דק׳', '🧘 מדיטציה'],
+    },
+    leads: {
+      svg: `<svg class="w-20 h-20 mx-auto text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3 5h18l-7 9v5l-4 2v-7L3 5z"/></svg>`,
+      title: 'אין לידים עדיין',
+      sub: "שלח 'צור טופס ליצירת קשר' לבוט בטלגרם — כל הגשה תופיע כאן",
+    },
+    expenses: {
+      svg: `<svg class="w-20 h-20 mx-auto text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M6 6h15v12a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h1V5a1 1 0 011-1h0"/><circle cx="17" cy="14" r="1.5" fill="currentColor"/></svg>`,
+      title: 'אין הוצאות החודש',
+      sub: 'הוסף הוצאה ידנית או שלח תמונה של חשבונית לבוט',
+    },
+    health: {
+      svg: `<svg class="w-20 h-20 mx-auto text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M12 21s-7-4.5-7-11a5 5 0 0110-1 5 5 0 0110 1c0 6.5-7 11-7 11z" opacity=".3"/><path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l2-5 3 10 2-5h7"/></svg>`,
+      title: 'התחל לעקוב אחר הבריאות שלך',
+      sub: 'דיווח יומי קצר — כאב, מצב רוח, שינה',
+    },
+    stocks: {
+      svg: `<svg class="w-20 h-20 mx-auto text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>`,
+      title: 'אין מניות במעקב',
+      sub: 'שלח "תעקוב אחרי NVDA ב-$150" לבוט בטלגרם',
+    },
+  };
+  const s = states[type] || {};
+  const chipsHtml = s.chips ? `
+    <div class="flex flex-wrap gap-2 justify-center mt-4">
+      ${s.chips.map(c => `<button class="chip-btn px-3 py-1.5 text-sm rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700" onclick="showToast('טיפ: שלח לבוט: תוסיף הרגל ${esc(c)}', 'info', 5000)">${esc(c)}</button>`).join('')}
+    </div>` : '';
+  const actionHtml = s.action ? `
+    <button onclick="${s.action.onclick}" class="mt-5 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-semibold transition">
+      ${esc(s.action.label)}
+    </button>` : '';
+  return `
+    <div class="text-center py-12 anim-fade-up">
+      ${s.svg || ''}
+      <div class="text-lg font-bold mt-4">${esc(s.title || '')}</div>
+      <div class="text-sm text-gray-500 dark:text-slate-400 mt-1">${esc(s.sub || '')}</div>
+      ${chipsHtml}${actionHtml}
+    </div>`;
+}
+
+// ── Confetti on all-habits-done ──────────────────────────────────────────────
+function launchConfetti() {
+  const colors = ['#6366F1', '#EC4899', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4'];
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement('div');
+    p.className = 'confetti-piece';
+    p.style.left = (Math.random() * 100) + 'vw';
+    p.style.background = colors[i % colors.length];
+    p.style.animationDuration = (1.8 + Math.random() * 1.8) + 's';
+    p.style.animationDelay = (Math.random() * 0.3) + 's';
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 5000);
+  }
+}
+function maybeCelebrateHabits() {
+  const habits = D?.habits || [];
+  if (!habits.length) return;
+  const allDone = habits.every(h => h.doneToday);
+  if (!allDone) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (sessionStorage.getItem('confettiShownDay') === today) return;
+  sessionStorage.setItem('confettiShownDay', today);
+  launchConfetti();
+  showToast('🎉 סיימת את כל ההרגלים היום! מצוין.', 'success', 5500);
+}
+
+// ── Focus mode ───────────────────────────────────────────────────────────────
+function toggleFocusMode() {
+  const on = !document.body.classList.contains('focus-mode');
+  document.body.classList.toggle('focus-mode', on);
+  localStorage.setItem('focusMode', on ? '1' : '0');
+  if (on) showToast('מצב פוקוס — לחץ F או Esc לצאת', 'info', 3000);
+}
+(function restoreFocus() {
+  if (localStorage.getItem('focusMode') === '1') document.body.classList.add('focus-mode');
+})();
+
+// ── Global search modal (Ctrl+K) ─────────────────────────────────────────────
+function closeModal() {
+  const m = document.getElementById('modal-mount');
+  if (m) m.innerHTML = '';
+}
+function openSearchModal() {
+  const mount = document.getElementById('modal-mount');
+  mount.innerHTML = `
+    <div class="fixed inset-0 z-50 modal-backdrop flex items-start justify-center pt-16 sm:pt-24 px-4" onclick="if(event.target===this)closeModal()">
+      <div class="modal-panel w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-slate-800">
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z"/></svg>
+          <input id="global-search" type="text" placeholder="חפש משימות, הרגלים, לידים, הוצאות..." class="flex-1 bg-transparent outline-none text-sm" autocomplete="off"/>
+          <kbd>Esc</kbd>
+        </div>
+        <div id="global-search-results" class="max-h-96 overflow-y-auto p-2 text-sm"></div>
+      </div>
+    </div>`;
+  const input = document.getElementById('global-search');
+  input.focus();
+  let debounce;
+  let selectedIdx = 0;
+  const render = () => {
+    const q = input.value.trim().toLowerCase();
+    const container = document.getElementById('global-search-results');
+    if (!q) {
+      container.innerHTML = `<div class="text-xs text-gray-500 dark:text-slate-400 px-3 py-4 text-center">התחל להקליד כדי לחפש בכל הדשבורד</div>`;
+      return;
+    }
+    const match = (s) => s && String(s).toLowerCase().includes(q);
+    const groups = [];
+
+    const tMatches = (D?.tasks?.openList || []).concat(D?.tasks?.doneList || []).filter(t => match(t.text)).slice(0, 6);
+    if (tMatches.length) groups.push({ title: '📋 משימות', tab: 'tasks', items: tMatches.map(t => ({ label: t.text, sub: `#${t.id} · ${t.priority}`, tab: 'tasks' })) });
+
+    const hMatches = (D?.habits || []).filter(h => match(h.name)).slice(0, 6);
+    if (hMatches.length) groups.push({ title: '✅ הרגלים', tab: 'habits', items: hMatches.map(h => ({ label: (h.icon || '') + ' ' + h.name, sub: `🔥 ${h.streak || 0} ימים`, tab: 'habits' })) });
+
+    const lMatches = (D?.leads || []).filter(l => match(l.name) || match(l.email) || match(l.phone) || match(l.title)).slice(0, 6);
+    if (lMatches.length) groups.push({ title: '💼 לידים', tab: 'leads', items: lMatches.map(l => ({ label: l.name, sub: l.title, tab: 'leads' })) });
+
+    const eMatches = (D?.expenses?.recent || []).filter(e => match(e.vendor) || match(e.category)).slice(0, 6);
+    if (eMatches.length) groups.push({ title: '💰 הוצאות', tab: 'expenses', items: eMatches.map(e => ({ label: e.vendor || '—', sub: `${e.currency === 'USD' ? '$' : '₪'}${fmt(e.amount)} · ${e.category || ''}`, tab: 'expenses' })) });
+
+    if (!groups.length) {
+      container.innerHTML = `<div class="text-xs text-gray-500 dark:text-slate-400 px-3 py-8 text-center">לא נמצאו תוצאות ל"${esc(q)}"</div>`;
+      return;
+    }
+
+    // Flatten for arrow-key navigation
+    const flat = [];
+    groups.forEach(g => g.items.forEach(it => flat.push(it)));
+    selectedIdx = Math.min(selectedIdx, flat.length - 1);
+
+    let idx = 0;
+    container.innerHTML = groups.map(g => `
+      <div class="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-gray-400 dark:text-slate-500 font-semibold">${g.title}</div>
+      ${g.items.map(it => {
+        const i = idx++;
+        return `<button data-idx="${i}" data-tab="${it.tab}" class="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-right hover:bg-gray-100 dark:hover:bg-slate-800 ${i === selectedIdx ? 'bg-gray-100 dark:bg-slate-800' : ''}">
+          <span class="flex-1 min-w-0 truncate">${esc(it.label)}</span>
+          <span class="text-xs text-gray-500 dark:text-slate-400 flex-shrink-0">${esc(it.sub || '')}</span>
+        </button>`;
+      }).join('')}
+    `).join('');
+    container.querySelectorAll('button[data-tab]').forEach(btn => {
+      btn.onclick = () => { closeModal(); showTab(btn.dataset.tab); };
+    });
+  };
+  input.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(render, 150); });
+  input.addEventListener('keydown', (e) => {
+    const buttons = document.querySelectorAll('#global-search-results button[data-tab]');
+    if (e.key === 'ArrowDown') { e.preventDefault(); selectedIdx = Math.min(selectedIdx + 1, buttons.length - 1); render(); buttons[selectedIdx]?.scrollIntoView({ block: 'nearest' }); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); selectedIdx = Math.max(selectedIdx - 1, 0); render(); buttons[selectedIdx]?.scrollIntoView({ block: 'nearest' }); }
+    else if (e.key === 'Enter') { e.preventDefault(); buttons[selectedIdx]?.click(); }
+  });
+  render();
+}
+
+// ── Shortcuts help modal ─────────────────────────────────────────────────────
+function showShortcutsModal() {
+  const mount = document.getElementById('modal-mount');
+  mount.innerHTML = `
+    <div class="fixed inset-0 z-50 modal-backdrop flex items-start justify-center pt-20 px-4" onclick="if(event.target===this)closeModal()">
+      <div class="modal-panel w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
+          <div class="font-bold">⌨️ קיצורי מקלדת</div>
+          <button onclick="closeModal()" class="text-gray-500 hover:text-gray-900 dark:hover:text-white">✕</button>
+        </div>
+        <div class="p-4 space-y-4 text-sm">
+          <div>
+            <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-2">ניווט</div>
+            <ul class="space-y-1.5">
+              <li class="flex justify-between"><span>חיפוש גלובלי</span><span><kbd>Ctrl</kbd>+<kbd>K</kbd></span></li>
+              <li class="flex justify-between"><span>סקירה</span><span><kbd>G</kbd> אז <kbd>O</kbd></span></li>
+              <li class="flex justify-between"><span>משימות</span><span><kbd>G</kbd> אז <kbd>T</kbd></span></li>
+              <li class="flex justify-between"><span>הרגלים</span><span><kbd>G</kbd> אז <kbd>H</kbd></span></li>
+              <li class="flex justify-between"><span>לידים</span><span><kbd>G</kbd> אז <kbd>L</kbd></span></li>
+            </ul>
+          </div>
+          <div>
+            <div class="text-xs uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-2">פעולות</div>
+            <ul class="space-y-1.5">
+              <li class="flex justify-between"><span>משימה חדשה (בטאב משימות)</span><span><kbd>N</kbd></span></li>
+              <li class="flex justify-between"><span>מצב פוקוס</span><span><kbd>F</kbd></span></li>
+              <li class="flex justify-between"><span>עזרה זו</span><span><kbd>?</kbd></span></li>
+              <li class="flex justify-between"><span>סגור חלון</span><span><kbd>Esc</kbd></span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Keyboard shortcut handler ────────────────────────────────────────────────
+let keySequence = '';
+let keySequenceTimer = null;
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches('input, textarea, select, [contenteditable]')) return;
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearchModal(); return; }
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.key === '?') { e.preventDefault(); showShortcutsModal(); return; }
+
+  if (e.key.toLowerCase() === 'g' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    keySequence = 'g';
+    clearTimeout(keySequenceTimer);
+    keySequenceTimer = setTimeout(() => keySequence = '', 1500);
+    return;
+  }
+  if (keySequence === 'g') {
+    const map = { t: 'tasks', h: 'habits', l: 'leads', o: 'overview', e: 'expenses', s: 'stocks' };
+    const t = map[e.key.toLowerCase()];
+    if (t) { e.preventDefault(); showTab(t); keySequence = ''; return; }
+  }
+
+  if (e.key.toLowerCase() === 'n' && activeTab === 'tasks') {
+    e.preventDefault(); document.getElementById('new-task-input')?.focus(); return;
+  }
+  if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); toggleFocusMode(); }
+});
+
 // Boot
 const initialTab = window.location.hash.slice(1);
 if (TABS.includes(initialTab)) activeTab = initialTab;
@@ -986,6 +1495,11 @@ window.logHabit = logHabit;
 window.submitExpense = submitExpense;
 window.toggleHealthForm = toggleHealthForm;
 window.submitHealth = submitHealth;
+window.openSearchModal = openSearchModal;
+window.showShortcutsModal = showShortcutsModal;
+window.closeModal = closeModal;
+window.toggleFocusMode = toggleFocusMode;
+window.showToast = showToast;
 </script>
 </body>
 </html>
