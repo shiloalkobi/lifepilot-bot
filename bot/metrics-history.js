@@ -2,6 +2,32 @@
 
 const { supabase, isEnabled } = require('./supabase');
 
+// ── In-memory cache (per chat_id, 60s TTL) ──────────────────────────────────
+const historyCache = new Map(); // chatId → { data, expiresAt }
+const CACHE_TTL_MS = 60 * 1000;
+
+function getCached(chatId) {
+  const entry = historyCache.get(String(chatId));
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    historyCache.delete(String(chatId));
+    return null;
+  }
+  return entry.data;
+}
+
+function setCached(chatId, data) {
+  historyCache.set(String(chatId), {
+    data,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+}
+
+function invalidateCache(chatId) {
+  if (chatId) historyCache.delete(String(chatId));
+  else historyCache.clear();
+}
+
 // ── Date helpers (UTC, YYYY-MM-DD keys) ──────────────────────────────────────
 function last7Days(offsetDays = 0) {
   const days = [];
@@ -178,6 +204,10 @@ async function healthHistory(chatId) {
 // ── Public entrypoint ────────────────────────────────────────────────────────
 async function getMetricsHistory(chatId) {
   if (!isEnabled()) return { available: false };
+
+  const cached = getCached(chatId);
+  if (cached) return { ...cached, cached: true };
+
   const started = Date.now();
   try {
     const [tasks, habits, expenses, leads, health] = await Promise.all([
@@ -188,12 +218,16 @@ async function getMetricsHistory(chatId) {
       healthHistory(chatId).catch(e => ({ _err: e.message })),
     ]);
     const ms = Date.now() - started;
-    if (ms > 200) console.warn(`[MetricsHistory] Slow: ${ms}ms`);
-    return { available: true, tasks, habits, expenses, leads, health };
+    // Network RTT to Supabase Frankfurt is ~500-700ms; only warn on outliers
+    if (ms > 1000) console.warn(`[MetricsHistory] Slow: ${ms}ms`);
+
+    const result = { available: true, tasks, habits, expenses, leads, health, computedInMs: ms };
+    setCached(chatId, result); // only successful results are cached
+    return result;
   } catch (e) {
     console.warn('[MetricsHistory] error:', e.message);
-    return { available: false, error: e.message };
+    return { available: false, error: e.message }; // NOT cached
   }
 }
 
-module.exports = { getMetricsHistory };
+module.exports = { getMetricsHistory, invalidateCache };

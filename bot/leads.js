@@ -92,6 +92,7 @@ async function saveLead(title, data) {
     saveLeadsToJson(leads);
   } catch {}
 
+  try { require('./metrics-history').invalidateCache(OWNER_CHAT_ID); } catch {}
   return lead;
 }
 

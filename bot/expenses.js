@@ -110,6 +110,7 @@ async function saveInvoice(fields) {
   expenses.push(entry);
   saveToJson(expenses);
 
+  try { require('./metrics-history').invalidateCache(OWNER_CHAT_ID); } catch {}
   return entry;
 }
 

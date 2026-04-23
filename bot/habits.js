@@ -70,6 +70,8 @@ async function upsertHabit(habit) {
   if (idx >= 0) habits[idx] = habit;
   else habits.push(habit);
   saveToJson(habits);
+
+  try { require('./metrics-history').invalidateCache(OWNER_CHAT_ID); } catch {}
 }
 
 async function deleteHabitRow(id) {
@@ -80,6 +82,8 @@ async function deleteHabitRow(id) {
   const habits = loadFromJson();
   const filtered = habits.filter(h => h.id !== id);
   saveToJson(filtered);
+
+  try { require('./metrics-history').invalidateCache(OWNER_CHAT_ID); } catch {}
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

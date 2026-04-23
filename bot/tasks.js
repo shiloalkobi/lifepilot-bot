@@ -71,6 +71,8 @@ async function upsertTask(task) {
   if (idx >= 0) tasks[idx] = task;
   else tasks.push(task);
   saveToJson(tasks);
+
+  try { require('./metrics-history').invalidateCache(OWNER_CHAT_ID); } catch {}
 }
 
 async function deleteTaskRow(id) {
@@ -80,6 +82,8 @@ async function deleteTaskRow(id) {
   }
   const tasks = loadFromJson();
   saveToJson(tasks.filter(t => t.id !== id));
+
+  try { require('./metrics-history').invalidateCache(OWNER_CHAT_ID); } catch {}
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

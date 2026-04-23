@@ -75,6 +75,8 @@ async function saveEntry(entry) {
   if (existing >= 0) entries[existing] = entry;
   else entries.push(entry);
   saveToJson(entries);
+
+  try { require('./metrics-history').invalidateCache(OWNER_CHAT_ID); } catch {}
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
