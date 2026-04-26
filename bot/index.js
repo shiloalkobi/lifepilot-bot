@@ -698,6 +698,36 @@ const server = http.createServer((req, res) => {
     });
   }
 
+  // GET /api/summaries — list document summaries (protected)
+  if (req.method === 'GET' && route === '/api/summaries') {
+    return requireAuth(req, res, async () => {
+      try {
+        const { listSummaries } = require('./doc-summary');
+        const limit = Math.min(Number(urlObj.searchParams.get('limit')) || 30, 100);
+        const items = await listSummaries(req.chatId, limit);
+        apiJson(res, { ok: true, summaries: items });
+      } catch (e) {
+        apiJson(res, { ok: false, e: e.message }, 500);
+      }
+    });
+  }
+
+  // GET /api/summaries/:id — full summary detail (protected)
+  if (req.method === 'GET' && route.startsWith('/api/summaries/')) {
+    return requireAuth(req, res, async () => {
+      try {
+        const { getSummary } = require('./doc-summary');
+        const id = decodeURIComponent(route.slice('/api/summaries/'.length));
+        if (!id) return apiJson(res, { ok: false, e: 'invalid_id' }, 400);
+        const item = await getSummary(id);
+        if (!item) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+        apiJson(res, { ok: true, summary: item });
+      } catch (e) {
+        apiJson(res, { ok: false, e: e.message }, 500);
+      }
+    });
+  }
+
   // GET /api/backups/:id — download full backup JSON (protected)
   if (req.method === 'GET' && route.startsWith('/api/backups/')) {
     return requireAuth(req, res, async () => {

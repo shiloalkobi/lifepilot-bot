@@ -30,6 +30,10 @@ const { startPomo, stopPomo, statusPomo, statsPomo } = require('./pomodoro');
 const { sendNews } = require('./news');
 const { addSite, removeSite, load: loadSites, formatList: formatSiteList, runChecks } = require('./sites');
 const { addNote, deleteNote, searchNotes, getNotesByTag, formatList: formatNoteList, load: loadNotes, fmtNote } = require('./notes');
+const {
+  detectFileType, extractText, summarizeDocument,
+  saveSummary, formatSummaryForTelegram,
+} = require('./doc-summary');
 
 function startBot(token, webhookUrl = null) {
   let bot;
@@ -790,6 +794,102 @@ function startBot(token, webhookUrl = null) {
         } catch (err) {
           console.error('[CSV]', err.message);
           bot.sendMessage(chatId, '⚠️ שגיאה בניתוח הקובץ. וודא שהוא CSV תקני.');
+        }
+        return;
+      }
+
+      // ── PDF / Word / Text / Markdown — Document Summary (#46) ─────────────
+      const docType = detectFileType(name);
+      if (docType) {
+        // Owner-only
+        if (String(chatId) !== String(process.env.TELEGRAM_CHAT_ID)) {
+          bot.sendMessage(chatId, '❌ סיכום מסמכים זמין רק לבעלים').catch(() => {});
+          return;
+        }
+
+        const fileSize = doc.file_size || 0;
+        if (fileSize > 20 * 1024 * 1024) {
+          bot.sendMessage(chatId, '❌ הקובץ גדול מדי (מקס\' 20MB)').catch(() => {});
+          return;
+        }
+
+        // Detail level from caption
+        const caption = (msg.caption || '').toLowerCase();
+        let level = 'normal';
+        if (/קצר|short/i.test(caption))         level = 'short';
+        else if (/מפורט|detailed/i.test(caption)) level = 'detailed';
+
+        bot.sendMessage(chatId, '📄 קיבלתי את המסמך! מסכם עכשיו... ⏳').catch(() => {});
+        bot.sendChatAction(chatId, 'typing');
+
+        let tmpPath = null;
+        try {
+          // Download via getFile → URL → /tmp
+          const file    = await bot.getFile(doc.file_id);
+          const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+          const safeName = (name || 'doc').replace(/[^\w.\-]+/g, '_');
+          tmpPath = `/tmp/doc_${Date.now()}_${safeName}`;
+
+          const httpsMod = require('https');
+          const httpMod  = require('http');
+          const fsSync   = require('fs');
+
+          await new Promise((resolve, reject) => {
+            const stream = fsSync.createWriteStream(tmpPath);
+            const get    = fileUrl.startsWith('https') ? httpsMod.get : httpMod.get;
+            get(fileUrl, (response) => {
+              if (response.statusCode !== 200) {
+                reject(new Error(`download failed: HTTP ${response.statusCode}`));
+                return;
+              }
+              response.pipe(stream);
+              stream.on('finish', () => stream.close(resolve));
+              stream.on('error',  reject);
+            }).on('error', reject);
+          });
+
+          // Extract text
+          const { text, pages } = await extractText(tmpPath, docType);
+
+          if (!text || text.length < 50) {
+            bot.sendMessage(
+              chatId,
+              '❌ לא הצלחתי לחלץ טקסט מהמסמך.\nאם זה PDF סרוק — צריך OCR (לא נתמך כרגע)',
+            ).catch(() => {});
+            return;
+          }
+
+          // Summarize via Gemini
+          const result = await summarizeDocument(text, { level });
+
+          // Save to Supabase
+          const summaryId = await saveSummary(chatId, {
+            filename:  name,
+            fileType:  docType,
+            fileSize,
+            level,
+            ...result,
+            metadata:  { ...result.metadata, pages },
+          });
+
+          // Format and send
+          const formatted = formatSummaryForTelegram({
+            filename:  name,
+            summary:   result.summary,
+            keyPoints: result.keyPoints,
+            warnings:  result.warnings,
+            actions:   result.actions,
+            metadata:  { ...result.metadata, pages },
+          }, summaryId);
+
+          bot.sendMessage(chatId, formatted, { parse_mode: 'HTML' }).catch(() => {});
+        } catch (err) {
+          console.error('[DocSummary]', err.message);
+          bot.sendMessage(chatId, `❌ שגיאה: ${err.message}`).catch(() => {});
+        } finally {
+          if (tmpPath) {
+            try { await fs.promises.unlink(tmpPath); } catch {}
+          }
         }
         return;
       }

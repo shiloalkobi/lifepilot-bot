@@ -378,6 +378,8 @@ const TOOL_DECLARATIONS = [
   // Backup System (owner only)
   { name: 'trigger_manual_backup', description: 'ALWAYS call when user says "גבה עכשיו"/"גיבוי"/"backup now"/"גבה". מייד. Owner only.', parameters: { type: 'object', properties: {}, required: [] } },
   { name: 'list_recent_backups',   description: 'הצג גיבויים אחרונים: מתי, גודל, טריגר. Owner only.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'ברירת מחדל: 10' } }, required: [] } },
+
+  { name: 'list_recent_summaries', description: 'ALWAYS call when user asks "הצג סיכומים"/"סיכומי מסמכים"/"מה סיכמתי"/"list summaries". Owner only.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'ברירת מחדל: 10' } }, required: [] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -433,6 +435,8 @@ const EXTENDED_KEYWORDS = [
   'דשבורד', 'dashboard',
   // Backup
   'גבה', 'גיבוי', 'גיבויים', 'backup', 'backups',
+  // Document Summaries (#46)
+  'סיכום', 'סיכומים', 'מסמך', 'מסמכים', 'summary', 'summaries', 'summarize',
   // Content Writing (#30)
   'פוסט', 'תוכן', 'מייל ללקוח', 'ביו', 'כתוב לי', 'content', 'כותרת', 'כתיבה',
   // Code Generation (#31)
@@ -1987,6 +1991,28 @@ footer{background:#001a33}`,
           return `${trig} <code>${b.id}</code>\n   ${when} • ${recs} רשומות • ${mb} MB`;
         });
         return `📦 <b>${items.length} גיבויים אחרונים</b>\n\n${lines.join('\n\n')}`;
+      }
+
+      case 'list_recent_summaries': {
+        if (String(chatId) !== String(process.env.TELEGRAM_CHAT_ID)) {
+          return '❌ מצטער, סיכומי מסמכים זמינים רק לבעלים.';
+        }
+        const { listSummaries } = require('./doc-summary');
+        const limit = Math.min(Number(args.limit) || 10, 30);
+        const items = await listSummaries(chatId, limit);
+        if (!items.length) {
+          return '📭 אין סיכומים עדיין. שלח PDF/Word/Text/Markdown לבוט וקבל סיכום אוטומטי.';
+        }
+        const lines = items.map(s => {
+          const when = new Date(s.created_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+          const icon = s.file_type === 'pdf'  ? '📕'
+                     : s.file_type === 'docx' ? '📘'
+                     : s.file_type === 'md'   ? '📝'
+                     : '📄';
+          const preview = (s.summary || '').slice(0, 100);
+          return `${icon} <b>${s.filename}</b>\n   ${when}\n   ${preview}${preview.length >= 100 ? '...' : ''}`;
+        });
+        return `📚 <b>${items.length} סיכומים אחרונים:</b>\n\n${lines.join('\n\n')}`;
       }
 
       default:
