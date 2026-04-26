@@ -22,13 +22,14 @@ function detectFileType(filename) {
 
 async function extractText(filePath, fileType) {
   if (fileType === 'pdf') {
-    const pdfParse = require('pdf-parse');
+    const { PDFParse } = require('pdf-parse');
     const buffer   = await fs.readFile(filePath);
-    const data     = await pdfParse(buffer);
+    const parser   = new PDFParse({ data: buffer });
+    const result   = await parser.getText();
     return {
-      text:  (data.text || '').trim(),
-      pages: data.numpages || null,
-      info:  data.info || {},
+      text:  (result.text || '').trim(),
+      pages: result.total || (Array.isArray(result.pages) ? result.pages.length : null),
+      info:  result.info || {},
     };
   }
   if (fileType === 'docx') {
