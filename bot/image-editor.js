@@ -44,24 +44,30 @@ async function cropGrid(imagePath, rows, cols) {
 async function cropCircle(imagePath, cx, cy, radius) {
   const meta = await sharp(imagePath).metadata();
   const pad = 4;
-  const size = (radius + pad) * 2;
 
+  // Bounds-safe extract origin
   const left = Math.max(0, cx - radius - pad);
   const top  = Math.max(0, cy - radius - pad);
-  const actualSize = Math.min(
-    size,
-    meta.width - left,
-    meta.height - top
-  );
+  // Extract size: from origin to the requested far edge, clamped to image
+  const right  = Math.min(meta.width,  cx + radius + pad);
+  const bottom = Math.min(meta.height, cy + radius + pad);
+  const width  = right  - left;
+  const height = bottom - top;
+
+  // Mask circle position is in extracted-region coordinates,
+  // i.e. relative to (left, top) — NOT the geometric center of the region.
+  // This stays correct even when bounds clamping makes the region asymmetric.
+  const maskCx = cx - left;
+  const maskCy = cy - top;
 
   const mask = Buffer.from(
-    `<svg width="${actualSize}" height="${actualSize}">
-       <circle cx="${actualSize / 2}" cy="${actualSize / 2}" r="${radius}" fill="white"/>
+    `<svg width="${width}" height="${height}">
+       <circle cx="${maskCx}" cy="${maskCy}" r="${radius}" fill="white"/>
      </svg>`
   );
 
   return await sharp(imagePath)
-    .extract({ left, top, width: actualSize, height: actualSize })
+    .extract({ left, top, width, height })
     .composite([{ input: mask, blend: 'dest-in' }])
     .png()
     .toBuffer();
