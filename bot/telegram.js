@@ -615,6 +615,180 @@ function startBot(token, webhookUrl = null) {
       return;
     }
 
+    // ── Image Editor (#47) — image with editing caption ──────────────────────
+    {
+      const isImageDoc = msg.document && /^image\/(png|jpe?g)$/i.test(msg.document.mime_type || '');
+      if ((msg.photo || isImageDoc) && msg.caption) {
+        const caption = msg.caption.toLowerCase().trim();
+
+        const isGrid    = /חתוך\s*גריד|חתוך\s*לגריד|grid\s*\d+\s*[x×]\s*\d+/i.test(caption);
+        const isUpscale = /^הגדל|upscale|enlarge/i.test(caption);
+        const isFull    = /מדבקות\s*מלאות|full\s*workflow|full\s*sticker/i.test(caption);
+        const isDetect  = /חתוך\s*עיגולים|detect\s*circles|find\s*circles/i.test(caption);
+        const isCircle  = /חתוך\s*עיגול\s+\d+/i.test(caption);
+
+        if (isGrid || isUpscale || isFull || isDetect || isCircle) {
+          if (String(chatId) !== String(process.env.TELEGRAM_CHAT_ID)) {
+            bot.sendMessage(chatId, '❌ עריכת תמונות זמינה רק לבעלים').catch(() => {});
+            return;
+          }
+
+          const ie = require('./image-editor');
+          const fileObj = msg.document || msg.photo[msg.photo.length - 1];
+          const fileSize = fileObj.file_size || 0;
+
+          if (fileSize > 20 * 1024 * 1024) {
+            bot.sendMessage(chatId, '❌ הקובץ גדול מדי (מקס 20MB)').catch(() => {});
+            return;
+          }
+
+          bot.sendMessage(chatId, '📷 קיבלתי את התמונה. מתחיל לעבוד...').catch(() => {});
+          bot.sendChatAction(chatId, 'upload_document').catch(() => {});
+
+          let tmpDir = null;
+          try {
+            // Download
+            const file = await bot.getFile(fileObj.file_id);
+            const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+            tmpDir = `/tmp/img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            await fs.promises.mkdir(tmpDir, { recursive: true });
+            const tmpPath = `${tmpDir}/source.png`;
+
+            const httpsMod = require('https');
+            await new Promise((resolve, reject) => {
+              const stream = fs.createWriteStream(tmpPath);
+              httpsMod.get(fileUrl, (response) => {
+                if (response.statusCode !== 200) {
+                  reject(new Error(`download failed: ${response.statusCode}`));
+                  return;
+                }
+                response.pipe(stream);
+                stream.on('finish', () => stream.close(resolve));
+                stream.on('error', reject);
+              }).on('error', reject);
+            });
+
+            let operation, results = [], aiCallsUsed = 0;
+
+            if (isGrid) {
+              operation = 'grid';
+              const m = caption.match(/(\d+)\s*[x×]\s*(\d+)/);
+              const cols = m ? parseInt(m[1]) : 2;
+              const rows = m ? parseInt(m[2]) : 2;
+              bot.sendMessage(chatId, `✂️ חותך לגריד ${rows}x${cols}...`).catch(() => {});
+              results = await ie.cropGrid(tmpPath, rows, cols);
+            }
+            else if (isCircle) {
+              operation = 'circle';
+              const m = caption.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+              if (!m) throw new Error('פורמט: "חתוך עיגול 500,300,80" (cx,cy,r)');
+              const [cx, cy, r] = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
+              bot.sendMessage(chatId, `⭕ חותך עיגול במרכז (${cx},${cy}) רדיוס ${r}...`).catch(() => {});
+              const buf = await ie.cropCircle(tmpPath, cx, cy, r);
+              results = [{ name: `circle_${cx}_${cy}_r${r}.png`, buffer: buf }];
+            }
+            else if (isUpscale) {
+              operation = 'upscale';
+              const used = await ie.getMonthlyAiUsage(chatId);
+              if (used >= 30000) {
+                bot.sendMessage(chatId, `⚠️ הגעת לתקרת AI החודשית (30,000). מתאפס בחודש הבא.`).catch(() => {});
+                return;
+              }
+              if (used >= 25000) {
+                bot.sendMessage(chatId, `⚠️ אזהרה: ${used}/30000 קריאות AI החודש`).catch(() => {});
+              }
+              bot.sendMessage(chatId, '🤖 שולח ל-AI להגדלה (Real-ESRGAN)... 30-60 שניות').catch(() => {});
+              const sourceBuffer = await fs.promises.readFile(tmpPath);
+              const upscaled = await ie.upscaleAI(sourceBuffer);
+              results = [{ name: 'upscaled_4x.png', buffer: upscaled }];
+              aiCallsUsed = 1;
+            }
+            else if (isDetect) {
+              operation = 'detect-circles';
+              bot.sendMessage(chatId, '🔍 מזהה עיגולים...').catch(() => {});
+              const circles = await ie.detectCircles(tmpPath);
+              if (!circles.length) {
+                bot.sendMessage(chatId,
+                  '⚠️ זיהוי עיגולים אוטומטי עוד לא זמין (Phase 2).\n' +
+                  'נסה: "חתוך גריד 3x2" או "חתוך עיגול cx,cy,r"'
+                ).catch(() => {});
+                return;
+              }
+              for (let i = 0; i < circles.length; i++) {
+                const { cx, cy, radius } = circles[i];
+                const buf = await ie.cropCircle(tmpPath, cx, cy, radius);
+                results.push({ name: `circle_${i + 1}.png`, buffer: buf });
+              }
+            }
+            else if (isFull) {
+              operation = 'full-workflow';
+              bot.sendMessage(chatId, '🎨 BMAD לתמונה: זיהוי → חיתוך → הגדלה AI').catch(() => {});
+              const circles = await ie.detectCircles(tmpPath);
+              if (!circles.length) {
+                bot.sendMessage(chatId,
+                  '⚠️ זיהוי עיגולים אוטומטי עוד לא זמין.\n' +
+                  'נסה: "חתוך גריד 3x2" ואז על כל חלק "הגדל"'
+                ).catch(() => {});
+                return;
+              }
+              const used = await ie.getMonthlyAiUsage(chatId);
+              if (used + circles.length > 30000) {
+                bot.sendMessage(chatId, `⚠️ לא מספיק AI לכל העיגולים (${used}+${circles.length} > 30000)`).catch(() => {});
+                return;
+              }
+              for (let i = 0; i < circles.length; i++) {
+                const { cx, cy, radius } = circles[i];
+                const cropped = await ie.cropCircle(tmpPath, cx, cy, radius);
+                bot.sendMessage(chatId, `🤖 מגדיל ${i + 1}/${circles.length}...`).catch(() => {});
+                const upscaled = await ie.upscaleAI(cropped);
+                results.push({ name: `circle_${i + 1}_HQ.png`, buffer: upscaled });
+                aiCallsUsed++;
+              }
+            }
+
+            // Send all results
+            if (results.length > 0) {
+              bot.sendMessage(chatId, `📤 שולח ${results.length} קבצים...`).catch(() => {});
+              for (const result of results) {
+                const outPath = `${tmpDir}/${result.name}`;
+                await fs.promises.writeFile(outPath, result.buffer);
+                await bot.sendDocument(chatId, outPath, {}, {
+                  filename: result.name,
+                  contentType: 'image/png',
+                });
+              }
+            }
+
+            // Save metadata
+            const id = await ie.saveEdit(chatId, {
+              operation,
+              sourceFilename: msg.document?.file_name || 'photo.jpg',
+              sourceSize: fileSize,
+              outputCount: results.length,
+              outputMetadata: results.map(r => ({ name: r.name, size: r.buffer.length })),
+              aiCallsUsed,
+            });
+
+            bot.sendMessage(chatId,
+              `✅ סיים! ${results.length} קבצים\n` +
+              `🤖 AI: ${aiCallsUsed}\n` +
+              `💾 ID: <code>${id}</code>`,
+              { parse_mode: 'HTML' }
+            ).catch(() => {});
+
+          } catch (err) {
+            console.error('[ImageEditor]', err);
+            bot.sendMessage(chatId, `❌ שגיאה: ${err.message}`).catch(() => {});
+          } finally {
+            if (tmpDir) {
+              try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
+            }
+          }
+          return;
+        }
+      }
+    }
+
     // ── Photo messages ───────────────────────────────────────────────────────
     if (msg.photo) {
       bot.sendChatAction(chatId, 'typing');

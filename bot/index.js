@@ -728,6 +728,37 @@ const server = http.createServer((req, res) => {
     });
   }
 
+  // GET /api/image-edits — list image edits + AI usage (protected)
+  if (req.method === 'GET' && route === '/api/image-edits') {
+    return requireAuth(req, res, async () => {
+      try {
+        const { listEdits, getMonthlyAiUsage } = require('./image-editor');
+        const limit = Math.min(Number(urlObj.searchParams.get('limit')) || 30, 100);
+        const items = await listEdits(req.chatId, limit);
+        const aiUsedThisMonth = await getMonthlyAiUsage(req.chatId);
+        apiJson(res, { ok: true, edits: items, aiUsedThisMonth, aiLimit: 30000 });
+      } catch (e) {
+        apiJson(res, { ok: false, e: e.message }, 500);
+      }
+    });
+  }
+
+  // GET /api/image-edits/:id — single edit detail (protected)
+  if (req.method === 'GET' && route.startsWith('/api/image-edits/')) {
+    return requireAuth(req, res, async () => {
+      try {
+        const { getEdit } = require('./image-editor');
+        const id = decodeURIComponent(route.slice('/api/image-edits/'.length));
+        if (!id) return apiJson(res, { ok: false, e: 'invalid_id' }, 400);
+        const item = await getEdit(id);
+        if (!item) return apiJson(res, { ok: false, e: 'not_found' }, 404);
+        apiJson(res, { ok: true, edit: item });
+      } catch (e) {
+        apiJson(res, { ok: false, e: e.message }, 500);
+      }
+    });
+  }
+
   // GET /api/backups/:id — download full backup JSON (protected)
   if (req.method === 'GET' && route.startsWith('/api/backups/')) {
     return requireAuth(req, res, async () => {

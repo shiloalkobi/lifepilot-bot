@@ -242,6 +242,7 @@
         <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="stocks">📈 מניות</button>
         <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="backups">💾 גיבויים</button>
         <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="summaries">📄 סיכומים</button>
+        <button class="tab-btn px-4 py-3 whitespace-nowrap text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100" data-tab-button="imageedits">🎨 עריכות תמונה</button>
       </div>
     </nav>
   </header>
@@ -257,6 +258,7 @@
     <section data-tab="stocks" class="hidden"><div id="stocks-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
     <section data-tab="backups" class="hidden"><div id="backups-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
     <section data-tab="summaries" class="hidden"><div id="summaries-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
+    <section data-tab="imageedits" class="hidden"><div id="imageedits-content" class="fade-up"><div class="skeleton h-32"></div></div></section>
   </main>
 
   <!-- Toast 2.0 stack -->
@@ -279,7 +281,7 @@ if (tg) { tg.ready(); tg.expand(); }
 let D = null;
 let activeTab = 'overview';
 const charts = {};
-const TABS = ['overview','tasks','habits','leads','expenses','health','stocks','backups','summaries'];
+const TABS = ['overview','tasks','habits','leads','expenses','health','stocks','backups','summaries','imageedits'];
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 (function initTheme() {
@@ -421,6 +423,7 @@ function renderActive() {
     stocks:    renderStocks,
     backups:   renderBackups,
     summaries: renderSummaries,
+    imageedits: renderImageEdits,
   }[activeTab];
   if (r) r();
 }
@@ -1449,6 +1452,150 @@ async function showSummaryDetail(id) {
   }
 }
 
+// ── Image Editor (#47) ──────────────────────────────────────────────────────
+let imageEditsCache = null;
+let aiUsageCache = { used: 0, limit: 30000 };
+
+async function loadImageEdits() {
+  try {
+    const r = await api('/api/image-edits?limit=30');
+    if (r && r.ok) {
+      imageEditsCache = r.edits || [];
+      aiUsageCache = { used: r.aiUsedThisMonth || 0, limit: r.aiLimit || 30000 };
+    } else {
+      imageEditsCache = [];
+    }
+  } catch (e) {
+    imageEditsCache = [];
+    console.warn('[ImageEdits] load failed:', e.message);
+  }
+}
+
+function operationIcon(op) {
+  return { grid: '✂️', upscale: '🤖', circle: '⭕', 'full-workflow': '🎨', 'detect-circles': '🔍' }[op] || '📷';
+}
+
+function operationLabel(op) {
+  return { grid: 'גריד', upscale: 'הגדלת AI', circle: 'עיגול', 'full-workflow': 'workflow מלא', 'detect-circles': 'זיהוי עיגולים' }[op] || op;
+}
+
+async function renderImageEdits() {
+  const host = document.getElementById('imageedits-content');
+  if (!host) return;
+
+  if (imageEditsCache === null) {
+    host.innerHTML = '<div class="skeleton h-24"></div><div class="skeleton h-16 mt-2"></div><div class="skeleton h-16 mt-2"></div>';
+    await loadImageEdits();
+  }
+
+  const items = imageEditsCache || [];
+  const now = new Date();
+  const monthCount = items.filter(s => {
+    const d = new Date(s.created_at);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+
+  const aiPercent = Math.round((aiUsageCache.used / aiUsageCache.limit) * 100);
+  const aiColor = aiPercent > 80 ? 'text-rose-500' : aiPercent > 50 ? 'text-amber-500' : 'text-emerald-500';
+
+  const header = `
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold">🎨 עריכות תמונה</h2>
+      <span class="text-xs text-gray-500 dark:text-slate-400">${items.length} עריכות</span>
+    </div>
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3 text-center">
+        <div class="text-lg font-bold text-brand-600 dark:text-brand-500 tabular-nums">${items.length}</div>
+        <div class="text-[11px] text-gray-500 dark:text-slate-400">סה"כ</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3 text-center">
+        <div class="text-lg font-bold text-emerald-600 dark:text-emerald-500 tabular-nums">${monthCount}</div>
+        <div class="text-[11px] text-gray-500 dark:text-slate-400">החודש</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-3 text-center">
+        <div class="text-lg font-bold ${aiColor} tabular-nums">${aiUsageCache.used}<span class="text-xs">/${aiUsageCache.limit / 1000}K</span></div>
+        <div class="text-[11px] text-gray-500 dark:text-slate-400">AI החודש</div>
+      </div>
+    </div>`;
+
+  if (!items.length) {
+    host.innerHTML = header + `
+      <div class="text-center py-12 text-gray-500 dark:text-slate-400">
+        <div class="text-4xl mb-3">🎨</div>
+        <div class="text-sm">אין עריכות תמונה</div>
+        <div class="text-xs mt-2 leading-loose">
+          שלח תמונה לבוט עם caption:<br/>
+          <code class="bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded">חתוך גריד 2x2</code><br/>
+          <code class="bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded">הגדל פי 4</code><br/>
+          <code class="bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded">חתוך עיגול 500,300,80</code>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const cards = items.map(e => {
+    const when = new Date(e.created_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' });
+    const icon = operationIcon(e.operation);
+    const label = operationLabel(e.operation);
+    const sizeKB = e.source_size ? Math.round(e.source_size / 1024) + 'KB' : '';
+    return `
+      <button type="button" class="card-lift bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-4 cursor-pointer w-full text-right block" onclick="showImageEditDetail('${esc(e.id)}')">
+        <div class="flex items-start gap-3">
+          <span class="text-2xl shrink-0">${icon}</span>
+          <div class="min-w-0 flex-1">
+            <div class="font-semibold truncate">${esc(e.source_filename || 'unnamed')}</div>
+            <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">
+              ${esc(when)} · ${esc(label)} · ${e.output_count} קבצים ${sizeKB ? '· ' + sizeKB : ''}
+              ${e.ai_calls_used > 0 ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 text-[10px]">🤖 ${e.ai_calls_used}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      </button>`;
+  }).join('');
+
+  host.innerHTML = header + `<div class="space-y-2 stagger">${cards}</div>`;
+}
+
+async function showImageEditDetail(id) {
+  try {
+    const r = await api('/api/image-edits/' + encodeURIComponent(id));
+    if (!r || !r.ok) { showToast('שגיאה בטעינת העריכה', 'error'); return; }
+    const e = r.edit;
+    const meta = e.output_metadata || [];
+
+    const filesList = meta.map(f =>
+      `<li class="text-xs">📄 ${esc(f.name)} (${Math.round((f.size || 0) / 1024)}KB)</li>`
+    ).join('');
+
+    const mount = document.getElementById('modal-mount');
+    mount.innerHTML = `
+      <div class="fixed inset-0 z-50 modal-backdrop flex items-start justify-center pt-16 px-4 overflow-y-auto" onclick="if(event.target===this)closeModal()">
+        <div class="modal-panel w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-800 overflow-hidden mb-8">
+          <div class="px-5 py-4 border-b border-gray-200 dark:border-slate-800 flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl">${operationIcon(e.operation)}</span>
+                <h3 class="text-lg font-bold truncate">${esc(e.source_filename)}</h3>
+              </div>
+              <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                ${esc(operationLabel(e.operation))} · ${new Date(e.created_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}
+                · ${e.output_count} קבצים · 🤖 ${e.ai_calls_used} AI
+              </div>
+            </div>
+            <button onclick="closeModal()" class="text-gray-500 hover:text-gray-900 dark:hover:text-white shrink-0">✕</button>
+          </div>
+          <div class="p-5 space-y-3 max-h-[70vh] overflow-y-auto">
+            <p class="text-sm text-gray-600 dark:text-slate-400">📦 הקבצים נשלחו אליך בטלגרם. הם לא נשמרים בדשבורד.</p>
+            ${filesList ? `<ul class="list-none space-y-1">${filesList}</ul>` : ''}
+            <div class="text-[10px] text-gray-400 dark:text-slate-500 font-mono pt-2 border-t border-gray-100 dark:border-slate-800">ID: ${esc(e.id)}</div>
+          </div>
+        </div>
+      </div>`;
+  } catch (err) {
+    showToast('שגיאה: ' + err.message, 'error');
+  }
+}
+
 // ── Data load + boot ─────────────────────────────────────────────────────────
 async function reload() {
   try {
@@ -1812,7 +1959,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (keySequence === 'g') {
-    const map = { t: 'tasks', h: 'habits', l: 'leads', o: 'overview', e: 'expenses', s: 'stocks', b: 'backups', d: 'summaries' };
+    const map = { t: 'tasks', h: 'habits', l: 'leads', o: 'overview', e: 'expenses', s: 'stocks', b: 'backups', d: 'summaries', i: 'imageedits' };
     const t = map[e.key.toLowerCase()];
     if (t) { e.preventDefault(); showTab(t); keySequence = ''; return; }
   }
@@ -1849,6 +1996,7 @@ window.toggleFocusMode = toggleFocusMode;
 window.showToast = showToast;
 window.triggerManualBackup = triggerManualBackup;
 window.showSummaryDetail = showSummaryDetail;
+window.showImageEditDetail = showImageEditDetail;
 </script>
 </body>
 </html>

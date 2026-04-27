@@ -380,6 +380,7 @@ const TOOL_DECLARATIONS = [
   { name: 'list_recent_backups',   description: 'הצג גיבויים אחרונים: מתי, גודל, טריגר. Owner only.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'ברירת מחדל: 10' } }, required: [] } },
 
   { name: 'list_recent_summaries', description: 'ALWAYS call when user asks "הצג סיכומים"/"סיכומי מסמכים"/"מה סיכמתי"/"list summaries". Owner only.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'ברירת מחדל: 10' } }, required: [] } },
+  { name: 'list_recent_image_edits', description: 'ALWAYS call when user asks "עריכות תמונה אחרונות"/"מה ערכתי"/"image edits"/"recent image". Owner only.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'ברירת מחדל: 10' } }, required: [] } },
 ];
 
 // ── Split tools: CORE (always sent) vs EXTENDED (sent only when relevant) ────
@@ -437,6 +438,8 @@ const EXTENDED_KEYWORDS = [
   'גבה', 'גיבוי', 'גיבויים', 'backup', 'backups',
   // Document Summaries (#46)
   'סיכום', 'סיכומים', 'מסמך', 'מסמכים', 'summary', 'summaries', 'summarize',
+  // Image Editor (#47)
+  'עריכות', 'תמונה', 'מדבקות', 'גריד', 'הגדל', 'עיגול', 'image', 'crop', 'upscale', 'sticker',
   // Content Writing (#30)
   'פוסט', 'תוכן', 'מייל ללקוח', 'ביו', 'כתוב לי', 'content', 'כותרת', 'כתיבה',
   // Code Generation (#31)
@@ -2013,6 +2016,30 @@ footer{background:#001a33}`,
           return `${icon} <b>${s.filename}</b>\n   ${when}\n   ${preview}${preview.length >= 100 ? '...' : ''}`;
         });
         return `📚 <b>${items.length} סיכומים אחרונים:</b>\n\n${lines.join('\n\n')}`;
+      }
+
+      case 'list_recent_image_edits': {
+        if (String(chatId) !== String(process.env.TELEGRAM_CHAT_ID)) {
+          return '❌ זמין רק לבעלים';
+        }
+        const { listEdits, getMonthlyAiUsage } = require('./image-editor');
+        const limit = Math.min(Number(args.limit) || 10, 30);
+        const items = await listEdits(chatId, limit);
+        const aiUsed = await getMonthlyAiUsage(chatId);
+        if (!items.length) {
+          return '📭 אין עריכות תמונה. שלח תמונה עם caption "חתוך גריד 2x2" לדוגמה.';
+        }
+        const opIcons = {
+          'grid': '✂️', 'upscale': '🤖', 'circle': '⭕',
+          'full-workflow': '🎨', 'detect-circles': '🔍',
+        };
+        const lines = items.map(e => {
+          const when = new Date(e.created_at).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+          const icon = opIcons[e.operation] || '📷';
+          return `${icon} <b>${e.source_filename}</b> (${e.operation})\n   ${when} · ${e.output_count} קבצים`;
+        });
+        return `🎨 <b>${items.length} עריכות אחרונות:</b>\n` +
+               `🤖 AI החודש: ${aiUsed}/30000\n\n${lines.join('\n\n')}`;
       }
 
       default:
