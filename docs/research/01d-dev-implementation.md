@@ -642,17 +642,173 @@ What was attempted:
 
 ---
 
-## Sub-phase 4e — Skill Registration ⏳ PENDING
+## Sub-phase 4e — Skill Registration ✅ COMPLETE
 
-[Section reserved — Amelia will fill in after Phase 4e completes]
+### Inputs consumed
+- `bot/skills-loader.js` (re-read fully — `loadSkills()` auto-scans `skills/`, ignores `_`-prefixed dirs, requires `index.js` exporting `{ name, tools, execute }`)
+- `bot/agent.js` lines 386–410 (`CORE_TOOL_NAMES` allowlist + `EXTENDED_KEYWORDS` matching)
+- `bot/telegram.js` (slash command registration via `bot.onText(/^\/cmd$/, …)`)
+- `skills/web-search/SKILL.md`, `skills/voice/SKILL.md`, `skills/vision/SKILL.md` (format reference)
 
-**Planned scope:**
-- `skills/research/SKILL.md`
-- Verify auto-load by `bot/skills-loader.js` (no `bot/*` changes)
-- Verify `git diff main -- bot/index.js bot/agent.js bot/telegram.js bot/supabase.js bot/skills-loader.js` is **EMPTY**
-- If any `bot/*` file requires changes → **STOP, escalate**
+### Files created (line counts)
 
-**Estimated effort:** 1–2 hours
+**Source code:** none (Phase 4e is verification + 1 doc).
+
+**Documentation:**
+
+| File | LOC |
+|---|---|
+| `skills/research/SKILL.md` | (see file) |
+
+### Tasks 2–5 — Verification results
+
+#### Task 2 — Auto-loading (✅ PASS)
+
+Standalone invocation of the loader:
+
+```
+$ node -e 'require("./bot/skills-loader").loadSkills()'
+
+[Skills] Loaded skill: "news" (0 tool(s))
+[Supabase] Not configured — using JSON fallback
+[Skills] Loaded skill: "research" (4 tool(s))     ← NEW
+[Skills] Loaded skill: "vision" (0 tool(s))
+[Skills] Loaded skill: "voice" (0 tool(s))
+[Skills] Loaded skill: "web-search" (1 tool(s))
+[Skills] 5 skill(s) loaded from /…/skills
+```
+
+`research` discovered automatically. All 4 tools (`search_research`, `subscribe_research_topic`, `get_research_history`, `set_research_profile`) present in `getSkillToolDeclarations(skills)` output. **No `bot/*` modification required.**
+
+(The "Supabase Not configured" log line is local-seat behavior — there is no `SUPABASE_SERVICE_ROLE_KEY` in this seat's `.env`. Render has it. Skill registration is independent of DB connectivity.)
+
+#### Task 3 — CORE/EXTENDED split verification (Q17 → automatic ✅)
+
+`bot/agent.js:386` defines `CORE_TOOL_NAMES` as an explicit `Set`. The 4 research tools are **not** in this set, so the agent treats them as EXTENDED automatically. `EXTENDED_KEYWORDS` already contains `'crps'`, `'כאב'`, `'מחקר'` — meaning the research tools will be sent to the LLM whenever the user message contains any of these (which is exactly the activation condition we want).
+
+```
+$ git diff main..HEAD -- bot/agent.js
+(empty)
+```
+
+**No `bot/agent.js` modification required.** Q17 confirmed: **automatic**.
+
+#### Task 4 — Slash command routing verification (Q26 → free-text fully works; literal `/research` is honest-gap 4e.G1)
+
+```
+$ git diff main..HEAD -- bot/telegram.js bot/index.js
+(empty)
+```
+
+**No `bot/telegram.js` or `bot/index.js` modifications.** ✅
+
+**Q26 (c) free-text Hebrew via agent:** ✅ verified. The agent's EXTENDED keyword matching (`'מחקר'`, `'crps'`, `'כאב'`, `'research'`) routes free-text messages correctly. The user can say `תראה לי מחקר חדש על CRPS` and the agent will activate the research tools.
+
+**Q26 (a) literal `/research` slash command:** ⚠️ **honest gap 4e.G1**. `bot/telegram.js:1072` (`if (...startsWith('/')) return;`) intercepts and silently drops slash commands that don't have a registered `bot.onText(/^\/research/, ...)` handler. There is no such handler. Result: typing the literal string `/research` does nothing (no response, no error). To fix this, a 1-line `bot.onText` registration would be needed in `bot/telegram.js`, which is forbidden in 4e by Hard Constraint #1.
+
+**Recommendation:** since free-text works fully and matches the existing bot UX (Shilo's typical interactions are natural-language Hebrew), defer the literal `/research` registration to Phase 4f or Phase 5+ as a tiny additive change with explicit approval. Alternatively, accept the design that "/research" specifically isn't a registered command — the feature is reachable via natural language exactly as Q26 (c) recommends ("matches existing bot patterns").
+
+#### Task 5 — Existing skills still work (regression check ✅)
+
+Loader output (Task 2) confirms 5 skills present, all with their original tool counts:
+- `news` (0 tools — built-in `get_news` registered in `bot/agent.js`, not a skill tool)
+- `vision` (0 — intercepted at telegram.js transport layer)
+- `voice` (0 — same)
+- `web-search` (1 — `web_search`)
+- `research` (4 — NEW)
+
+No name collisions: `web_search` ≠ `search_research`. `get_news` ≠ `get_research_history`. ✅
+
+#### Bonus — Q18 backup coverage check (honest gap 4e.G2)
+
+`bot/backup.js:6` defines `BACKUP_TABLES` as an explicit whitelist. **The 4 new research tables are NOT in this list**, so the existing daily backup job will not include them. Adding them would require modifying `bot/backup.js`, which is forbidden in 4e.
+
+**Recommendation:** include the 4 new tables in `BACKUP_TABLES` as a Phase 4f or Phase 5+ tiny additive change. Until then, the new tables are not backed up by the bot's own backup job (Supabase native point-in-time recovery still covers them, so it's not a data-loss blocker — just a divergence from the existing pattern).
+
+### Verification table
+
+| # | Check | Method | Result |
+|---|---|---|---|
+| V40 | Loader auto-discovers `research` | standalone `loadSkills()` invocation | `[Skills] Loaded skill: "research" (4 tool(s))` ✅ |
+| V41 | All 4 tool declarations registered | `getSkillToolDeclarations(skills).filter(d => /research/.test(d.function.name))` | 4 declarations ✅ |
+| V42 | `CORE_TOOL_NAMES` does not include any research tool | grep `bot/agent.js:386–410` | confirmed (research tools auto → EXTENDED) ✅ |
+| V43 | `EXTENDED_KEYWORDS` covers research activation | grep | `'crps', 'כאב', 'מחקר', 'research'` already present ✅ |
+| V44 | `bot/skills-loader.js` diff vs main | `git diff main..HEAD --` | 0 lines ✅ |
+| V45 | `bot/agent.js` diff vs main | `git diff main..HEAD --` | 0 lines ✅ |
+| V46 | `bot/telegram.js` diff vs main | `git diff main..HEAD --` | 0 lines ✅ |
+| V47 | `bot/index.js` diff vs main | `git diff main..HEAD --` | 0 lines ✅ |
+| V48 | `bot/supabase.js` diff vs main | `git diff main..HEAD --` | 0 lines ✅ |
+| V49 | 5 skills present, no regression on the 4 existing | loader output | confirmed ✅ |
+
+### DoD §4.5 (Skill Registration) — checklist status
+
+- [x] `skills/research/SKILL.md` written, matches existing format (web-search-style)
+- [x] Loader auto-loads `research` — log line `[Skills] Loaded skill: "research" (4 tool(s))` confirmed
+- [x] `git diff main -- bot/index.js bot/agent.js bot/telegram.js bot/supabase.js bot/skills-loader.js` is **EMPTY** (V44–V48)
+- [x] CORE/EXTENDED split: research tools auto-route to EXTENDED (V42–V43)
+- [x] No name collisions with existing skills (V49 + manual review of `web-search` and `news` tool names)
+
+### Honest gaps documented
+
+**4e.G1 — Literal `/research` slash command requires `bot/telegram.js` registration.**
+
+`bot/telegram.js:1072` filters out messages starting with `/` from the agent path; only commands explicitly registered via `bot.onText(/^\/cmd$/, …)` reach a handler. There is no `/research` registration. Therefore typing literal `/research` produces no response.
+
+**Mitigation in 4e:** none in scope (per Hard Constraint #1). Free-text Hebrew (`מחקר`, `תראה לי מחקר`, etc.) works fully via the agent's EXTENDED keyword routing.
+
+**Suggested follow-up (Phase 4f or 5+):** add a 1-line registration in `bot/telegram.js` mirroring the `/health`, `/tasks` pattern. Estimated 5 LOC. Requires explicit approval.
+
+**4e.G2 — `bot/backup.js` `BACKUP_TABLES` whitelist does not include the 4 new research tables.**
+
+`bot/backup.js:6` is an explicit whitelist (also, by design, it excludes `auth_tokens`, `passwords`, `backups`). The new `research_articles`, `research_topics`, `research_blocked_log`, `research_user_profile` are not listed.
+
+**Mitigation in 4e:** none in scope (per Hard Constraint #1).
+
+**Severity:** low. Supabase native PITR still covers the tables; the divergence is operational-pattern, not data-safety.
+
+**Suggested follow-up (Phase 4f or 5+):** add the 4 names to `BACKUP_TABLES`. Discuss whether `research_user_profile` should be included (PHI — possibly want it in backups; possibly want it explicitly excluded like `passwords`). Requires explicit decision from Shilo.
+
+### Additive-Only Verification (post-4e)
+
+- ✅ **0** changes to `bot/skills-loader.js`, `bot/agent.js`, `bot/telegram.js`, `bot/index.js`, `bot/supabase.js` (V44–V48)
+- ✅ **0** changes to existing tables (DB unchanged since 4a)
+- ✅ **0** changes to scheduler jobs
+- ✅ **0** new env vars
+- ✅ **0** changes to `package.json`
+- ✅ **0** changes to `.env.example`
+- ✅ Pre-existing 7 dirty/untracked files: still unstaged at the moment of this commit
+- ✅ Only files staged for this commit: `skills/research/SKILL.md` + `docs/research/01d-dev-implementation.md`
+
+### STOP-list re-check (per `01a §8.9`)
+
+| # | Trigger | Activated in 4e? |
+|---|---|---|
+| 1 | שינוי schema של טבלה קיימת | ❌ no |
+| 2 | שינוי mechanism של loader/routing קיים | ❌ no — loader picked up the skill without any change; slash routing gap (4e.G1) is logged, not patched |
+| 3 | שדרוג גרסת `@supabase/supabase-js` | ❌ no |
+| 4 | שינוי ב-system prompt הראשי של הבוט | ❌ no |
+| 5 | הוספת cron job | ❌ no |
+| 6 | שינוי `bot/supabase.js` | ❌ no |
+| 7 | שינוי `bot/agent.js` בקטע ה-CORE/EXTENDED | ❌ no — Q17 confirmed automatic |
+
+**0/7 triggers activated.** The two honest gaps (4e.G1, 4e.G2) are flagged for separate approval by Shilo, not patched in 4e.
+
+### Lessons / notes for 4f
+
+1. **The bot's existing EXTENDED_KEYWORDS already include `'crps'`, `'כאב'`, `'מחקר'`.** This was a fortunate prior decision: when Shilo or the agent adds research-related text to a Telegram message, the new tools are automatically included in the prompt. No keyword tuning needed.
+2. **Q18 (backup coverage) and Q26 (literal `/research`) are now the cleanest 4f-or-5+ work items.** Both are 1–5 LOC additive changes to `bot/*` files; both require explicit approval per Hard Constraint discipline.
+3. **Phase 4f live integration** is the next gating moment — that's where Task 7 from 4d (`tests/research_integration.live.js`) will finally run end-to-end on Render with `SUPABASE_SERVICE_ROLE_KEY`, and where smoke tests RT01–RT06 + sample T01–T14 will verify both the new feature and zero regression on existing features.
+
+### Ready for 4f — prerequisites confirmed
+
+- ✅ Skill registered, 4 tools available to the agent
+- ✅ All 5 critical `bot/*` files: 0 diff vs main
+- ✅ Loader output as expected
+- ✅ Two honest gaps (`/research` slash + backup coverage) clearly documented for Shilo's separate approval
+
+### Time spent
+
+**~1.5 hours** (within `01c §8` PRD estimate of "1–2 hours").
 
 ---
 
@@ -683,7 +839,7 @@ Running list — Amelia appends each sub-phase:
 - **4b:** 8 source files (4 adapters + 4 test files = 897 LOC) + 6 fixture files + this doc updated. **Net new top-level dir: `tests/`** (sanctioned by Shilo's 4b brief).
 - **4c:** 4 source files (filter + glossary = 360 LOC) + 4 unit test files (435 LOC, 56 cases) + 1 live runner (165 LOC, 10 cases) + this doc updated. **2 new dirs under `skills/research/`: `filter/`, `i18n/`** (additive, sanctioned scope).
 - **4d:** 5 source files (storage 4 + index = 696 LOC) + 8 unit test files (798 LOC, 79 cases) + 1 live runner (91 LOC, deferred) + this doc updated. **1 new dir under `skills/research/`: `storage/`** (additive). Live integration deferred to 4f (RLS blocked anon write — by design).
-- **4e:** TBD
+- **4e:** 1 doc file (`skills/research/SKILL.md`) + this doc updated. **0 source files changed.** Skill auto-registered by `bot/skills-loader.js`; 0 changes to `bot/*`. Two honest gaps logged for Shilo's separate approval (literal `/research` slash, backup coverage).
 - **4f:** TBD
 
 ### Pre-existing dirty files audit
