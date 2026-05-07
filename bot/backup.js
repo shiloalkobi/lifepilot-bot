@@ -6,6 +6,7 @@ const { supabase, isEnabled } = require('./supabase');
 const BACKUP_TABLES = [
   'tasks', 'habits', 'health_logs', 'expenses',
   'leads', 'memory', 'watchlist',
+  'research_articles', 'research_blocked_log', 'research_topics', 'research_user_profile',
 ];
 
 const OWNER_CHAT_ID = process.env.TELEGRAM_CHAT_ID
