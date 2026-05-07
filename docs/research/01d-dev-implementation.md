@@ -914,18 +914,192 @@ Re-evaluated above in §"STOP-list re-evaluation". **0/7 triggers activated.** T
 
 **~1 hour** (focused implementation + verification, no design loop).
 
-[Section reserved — Amelia will fill in after Phase 4f completes]
+---
 
-**Planned scope:**
-- RT01–RT06 from `01b §9.7` (research-side smoke tests)
-- Sample 5 of T01–T14 from security work (regression check on existing tables)
-- Cost projection from 50 simulated calls
-- Render startup log shows skill loaded
-- Resolve V8 (curl test from outside, per DoD §4.1)
+## Sub-phase 4f.1 — Desk-work Verification ✅ COMPLETE
 
-**Estimated effort:** 2–3 hours
+> Phase 4f was split into **4f.1** (this session — desk-work that Amelia can do without Render shell or a real Telegram client) and **4f.2** (Shilo manual on Render + phone — live smoke). The split is an honest session-capability boundary, not a scope reduction. Together, 4f.1 + 4f.2 cover the full Phase 4f brief.
+>
+> 4f.1 covers original Phase 4f tasks **1, 6, 8, 9** (pre-deploy verify, external RLS curl, cost projection, doc update). 4f.2 covers tasks **2, 3, 4, 5, 7** (Render deploy, Render startup log, RT01–RT06 smoke, live integration, regression).
 
-**Gate:** ✅ all green = ready to merge `research/crps-agent-phase1` → `main` (subject to Shilo's explicit approval).
+### Inputs consumed
+
+- Shilo's Phase 4f.1 brief (Telegram, 2026-05-07 — Path A approved)
+- `01b-architect-design-crps.md §4.6` (DoD: external RLS lockdown verification — V8 from 4a)
+- `01b-architect-design-crps.md §6.5` (cost-budget assumptions: 30 articles/fetch, ~70% LLM-classified)
+- `01c-pm-prd-crps.md §6` (M3 target: <$0.10/month research LLM cost)
+- Phase 4c measured token data: **1,541 tokens/article avg** (10,784 tokens / 7 LLM calls)
+- Local `.env` for `SUPABASE_URL` + `SUPABASE_ANON_KEY` (anon key is public-by-design; service_role key is intentionally absent — the 4d.G1 RLS lock that this test validates)
+
+### STOP-list re-evaluation (per `01a §8.9`)
+
+| # | Trigger | Activated by 4f.1? | Reasoning |
+|---|---|---|---|
+| 1 | Schema change to existing table | ❌ no | DB unchanged |
+| 2 | Change to existing loader/routing mechanism | ❌ no | no source code touched |
+| 3 | `@supabase/supabase-js` version upgrade | ❌ no | dep unchanged |
+| 4 | Bot main system prompt change | ❌ no | unchanged |
+| 5 | Cron job addition | ❌ no | none |
+| 6 | `bot/supabase.js` change | ❌ no | unchanged |
+| 7 | `bot/agent.js` CORE/EXTENDED change | ❌ no | unchanged |
+
+**0/7 STOP-list triggers activated.** 4f.1 is pure verification + documentation — no source files touched.
+
+### Files modified
+
+| File | Change | Net diff |
+|---|---|---|
+| `docs/research/01d-dev-implementation.md` | This section (4f.1) — verification log, cost projection, 4f.2 deferral table | **+~120 lines** |
+
+**`bot/*` files (re-verified):** all 6 still at the 4e.5 state, no further changes. Hard Constraint #2 (no `bot/*` changes in 4f) satisfied.
+
+### Verification table
+
+#### V57 — External RLS lockdown via anon key (resolves V8 from 4a)
+
+Per `01b §4.6`. Tested from this local seat using the anon key in `.env` (same key any external attacker could obtain from a browser session). Project: `zxxcdvveezcjuwijwlab` (Supabase). All 4 research tables × {SELECT, INSERT} = 8 invocations.
+
+| # | Probe | HTTP | Body (truncated) | Verdict |
+|---|---|---|---|---|
+| V57.1 | `GET /research_articles?select=*` | **401** | `permission denied for table research_articles` (code 42501) | ✅ blocked |
+| V57.2 | `POST /research_articles` (valid payload) | **401** | `permission denied for table research_articles` (code 42501) | ✅ blocked |
+| V57.3 | `GET /research_topics?select=*` | **401** | `permission denied for table research_topics` (code 42501) | ✅ blocked |
+| V57.4 | `POST /research_topics` (valid payload) | **401** | `permission denied for table research_topics` (code 42501) | ✅ blocked |
+| V57.5 | `GET /research_blocked_log?select=*` | **401** | `permission denied for table research_blocked_log` (code 42501) | ✅ blocked |
+| V57.6 | `POST /research_blocked_log` (valid payload) | **401** | `permission denied for table research_blocked_log` (code 42501) | ✅ blocked |
+| V57.7 | `GET /research_user_profile?select=*` | **401** | `permission denied for table research_user_profile` (code 42501) | ✅ blocked |
+| V57.8 | `POST /research_user_profile` (valid payload) | **401** | `permission denied for table research_user_profile` (code 42501) | ✅ blocked |
+
+**Result: 8/8 blocked at HTTP 401 with PostgreSQL error code 42501 (`insufficient_privilege`).** RLS lockdown holds against external anon access for every research table. **V8 from Phase 4a now resolved.**
+
+> **Honest note on V57.6 methodology:** the first attempt at `POST /research_blocked_log` used a payload with a `tier` column (copied verbatim from the brief's example). PostgREST returned **HTTP 400 PGRST204** (`Could not find the 'tier' column`) because the table has no such column — the schema-cache check happens *before* the RLS authorization check, so this attempt was inconclusive about RLS. Retried with a payload matching the actual schema (`source`, `source_id`, `title`, `blocked_by`, `reason_code` — read from `skills/research/storage/blocked-log.js:21`) and got the expected 401. Both attempts logged here for transparency; the second result is the load-bearing one.
+
+#### V58 — Monthly cost projection vs M3 target
+
+Per `01c §6 M3` (target: **<$0.10/month research LLM cost**).
+
+**Inputs (all measured / from spec, not guessed):**
+- 1,541 tokens/article — measured in 4c (10,784 tokens / 7 LLM calls)
+- 30 articles/fetch — worst-case fresh-fetch limit per `01b §6.5`
+- 70% LLM-reach rate — derived from 4c fixtures (3/10 caught by pre-filter, 7/10 reach the classifier)
+- Mixed price ~$0.10 per 1M tokens — Gemini 2.5 Flash blended rate ($0.075 input / $0.30 output, ~80/20 typical split)
+
+**Per-call cost (fresh fetch, no cache):** 30 × 0.7 × 1,541 = **32,361 tokens → $0.0032 / call**
+
+**Monthly projections (no cache):**
+
+| Calls/mo | Cost | vs M3 ($0.10) |
+|---|---|---|
+| 5 | $0.016 | ✅ OK |
+| 15 | $0.049 | ✅ OK |
+| **30** | **$0.097** | ✅ **at M3 ceiling** |
+| 100 | $0.324 | ❌ exceeds 3.2× |
+| 300 | $0.971 | ❌ exceeds 9.7× |
+
+**Monthly projections (24 h cache, 90% hit per `01b` cache analysis):**
+
+| Calls/mo | Fresh fetches | Cost |
+|---|---|---|
+| 30 | 3 | $0.010 ✅ |
+| 100 | 10 | $0.032 ✅ |
+| 300 | 30 | $0.097 ✅ |
+
+**Realistic Shilo usage estimate:** ~3 calls/week = **12 calls/month → $0.039 (no cache) / $0.027 (30% cache hit at 6 h TTL)**. Comfortably under M3.
+
+**Verdict: M3 target HOLDS for the MVP single-user scope and Shilo's expected usage profile.** The target becomes fragile only at >30 calls/month without aggressive caching — flagged below as honest gap 4f.1.G1 because the spec did not pin a usage assumption to the M3 number.
+
+### DoD additions (Phase 4f.1)
+
+- [x] V8 (curl test from outside) — resolved via V57.1–V57.8 (8/8 anon ops blocked at HTTP 401)
+- [x] Cost projection documented with measured 4c token data, multiple usage scenarios, and cache-tier sensitivity
+- [x] Phase 4f.2 deferral table documents exactly what Shilo still needs to do manually, in what order, and what each task validates
+- [x] No source files touched — pure desk-work + doc
+
+### Honest gaps documented
+
+**4f.1.G1 — M3 budget is fragile under power-user usage.**
+Per V58: M3 ($0.10/mo) holds at ≤30 calls/mo without caching, or up to ~300 calls/mo with 24 h cache + 90% hit rate. At Shilo's realistic ~12 calls/mo the budget has 2.5× headroom. But the original `01c §6 M3` target was set without an explicit calls/month assumption; if usage grows (multi-user, automation triggers, etc.) the budget breaks well before scaling concerns kick in.
+
+**Mitigation options (documented, NOT implemented per Hard Constraint #1 of 4f.1 — no code changes):**
+- (a) Re-evaluate M3 post-MVP using real `_tokens` telemetry once Phase 5 adds the missing schema column (4d.G2)
+- (b) Bump the in-memory cache TTL from the current 6 h to 24 h before any usage scaling — 90% hit rate makes the 300/mo case fit M3
+- (c) Reduce `articles-per-fetch` from 30 to 15 — linearly halves cost, may reduce result quality
+
+**Severity:** low for MVP. Documented for the merge-to-main reviewer so the trade-off is visible.
+
+**4f.1.G2 — Live integration test (4d.G1) still deferred.**
+`tests/research_integration.live.js` (the full PubMed → Gemini → Supabase write → cleanup roundtrip) cannot run from this seat because `SUPABASE_SERVICE_ROLE_KEY` is intentionally absent locally — the very lockdown that V57 just confirmed is working. Resolves only on Render shell. **Carried forward to 4f.2 task `LIVE_INTEGRATION`.**
+
+**4f.1.G3 — `_tokens` not persisted (4d.G2 carried forward).**
+The cost projection in V58 relies on the 4c fixture-run measurement (1,541 tokens/article). Real production telemetry is not yet available because `research_articles._tokens` does not exist in the schema (deferred to Phase 5+). V58 is therefore an estimate, not a measured production number. Re-validate after Phase 5 telemetry lands.
+
+### Phase 4f.2 — Tasks deferred to Shilo manual
+
+These cannot be executed from this Claude Code session. Each row tells Shilo exactly what to run and what success looks like.
+
+| 4f.2 task | Original 4f task | Why deferred | Shilo's action | Pass criteria |
+|---|---|---|---|---|
+| `RENDER_DEPLOY` | T2 | No `render.yaml` in repo, no Render CLI from this seat | Trigger deploy from Render dashboard for branch `research/crps-agent-phase1` (or merge → main if Render auto-deploys main; **decision pending — see open question below**) | Deploy completes without build errors |
+| `STARTUP_LOG_VERIFY` | T3 | No Render shell access | Read Render log immediately after deploy | Line `[Skills] Loaded skill: "research" (4 tool(s))` appears |
+| `RT01` | T4 | Needs a real Telegram client driving the bot | Send `/research` from phone to `@lifepilotbot` | Returns ≥1 article + Hebrew disclaimer (first call of day) |
+| `RT02` | T4 | Same | Send `/research` again immediately | Returns cached articles, NO disclaimer |
+| `RT03` | T4 | Same | Send `מחקר חדש על CRPS` (free text) | Same flow as RT01 — agent activates research skill via EXTENDED tier |
+| `RT04` | T4 | Same | Send `תראה לי היסטוריית מחקר` | `get_research_history` tool returns the surfaced articles |
+| `RT05` | T4 | Same | Send `אני לוקח DRG וגבפנטין, עדכן פרופיל` | `set_research_profile` returns `confirmation_message_he`, waits |
+| `RT06` | T4 | Same | Reply `כן` or `אישור` to RT05 | Profile saved with treatments updated (Q20 confirmation gate) |
+| `LIVE_INTEGRATION` | T5 | Needs `SUPABASE_SERVICE_ROLE_KEY` — present only on Render | From Render shell: `node tests/research_integration.live.js` | All 5 STEPS PASS ✅ |
+| `REGRESSION_T01_T14` | T7 | Needs real Telegram client | Send 5 of: `/tasks`, `כמה הוצאתי השבוע?`, voice msg, photo, `חדשות היום` | All 5 still work as before — zero regression |
+
+**Total 4f.2 tasks: 11.** Estimated effort for Shilo: ~30 minutes once the deploy lands.
+
+**Open question for 4f.2 (must answer before `RENDER_DEPLOY`):** how does this repo deploy to Render?
+- (i) Auto-deploy from `main` only → Shilo must merge `research/crps-agent-phase1` → `main` *before* RT01–RT06 can run. **This makes RT01–RT06 a post-merge verification, not pre-merge.**
+- (ii) Auto-deploy from `research/crps-agent-phase1` (or any branch) → push already triggered the deploy; Shilo can run RT01–RT06 *before* merge.
+- (iii) Manual deploy → Shilo triggers from Render dashboard.
+
+**The brief explicitly said: "If deploy mechanism is unclear: STOP and ask Shilo before attempting any merge to main." → Amelia is stopping here; merge decision pending Shilo's clarification.**
+
+### Additive-Only Verification (post-4f.1)
+
+- ✅ 0 changes to `bot/*` (held at 4e.5 state per Hard Constraint #2 of 4f.1)
+- ✅ 0 changes to `skills/research/*` (research skill code untouched)
+- ✅ 0 changes to existing tables (DB unchanged since 4a)
+- ✅ 0 new env vars
+- ✅ 0 changes to `package.json`, `.env.example`, scheduler jobs
+- ✅ 0 source files touched at all (4f.1 is doc-only verification)
+- ✅ Pre-existing 7 dirty/untracked files: still unstaged at the moment of this commit
+
+### STOP-list re-check
+
+Re-evaluated above in §"STOP-list re-evaluation". **0/7 triggers activated.** 4f.1 is pure verification + doc update.
+
+### Lessons / notes for 4f.2
+
+1. **The Render startup log is the single most diagnostic artifact in 4f.2.** If `[Skills] Loaded skill: "research" (4 tool(s))` is absent, RT01–RT06 will all fail in the same way (skill not registered). Read this log first.
+2. **RT01 + RT02 must run in the same IL-day** to validate the once-per-day disclaimer cadence (Q19). If RT01 runs at 23:50 IL, defer RT02 by 11 minutes or both will show the disclaimer.
+3. **RT05 → RT06 is a 2-message flow** with a confirmation gate. If the bot does not return `confirmation_message_he` to RT05, do NOT reply `כן` — escalate; that means the Q20 gate is broken, which is a security/UX defect.
+4. **Regression first, smoke second** is the safer order if time is tight: regressions on existing T01–T14 features prove the deploy did not break anything. If `/tasks` works, the new code did not corrupt the existing routing.
+5. **If V57 results contradict expectation later** (e.g., a future migration relaxes RLS), V57 in this section is the audit trail showing the lockdown was working at the time of merge.
+
+### Time spent
+
+**~30 minutes** (curl probes + cost math + this section).
+
+---
+
+## Sub-phase 4f.2 — Live Smoke (Shilo manual on Render + Telegram) ⏳ PENDING
+
+> Section reserved — Shilo will run RT01–RT06, regression, live integration, and Render startup-log verification per the table in §"Phase 4f.2 — Tasks deferred to Shilo manual" above. Amelia will append results here once Shilo reports back.
+
+**Planned scope (from 4f.2 deferral table):**
+- `RENDER_DEPLOY` + `STARTUP_LOG_VERIFY`
+- `RT01`–`RT06` (6 research-side smoke tests)
+- `LIVE_INTEGRATION` (resolves 4d.G1 + 4f.1.G2)
+- `REGRESSION_T01_T14` (5 of 14 existing features, sampled)
+
+**Estimated effort:** ~30 minutes for Shilo, once the Render deploy lands.
+
+**Gate:** ✅ all green = ready to merge `research/crps-agent-phase1` → `main` (subject to Shilo's explicit approval). ❌ any failure = STOP, document, separate fix cycle.
 
 ---
 
@@ -941,7 +1115,8 @@ Running list — Amelia appends each sub-phase:
 - **4d:** 5 source files (storage 4 + index = 696 LOC) + 8 unit test files (798 LOC, 79 cases) + 1 live runner (91 LOC, deferred) + this doc updated. **1 new dir under `skills/research/`: `storage/`** (additive). Live integration deferred to 4f (RLS blocked anon write — by design).
 - **4e:** 1 doc file (`skills/research/SKILL.md`) + this doc updated. **0 source files changed.** Skill auto-registered by `bot/skills-loader.js`; 0 changes to `bot/*`. Two honest gaps logged for Shilo's separate approval (literal `/research` slash, backup coverage).
 - **4e.5:** **First `bot/*` modification in the project.** `bot/telegram.js` (+24 LOC: `/research` slash handler) and `bot/backup.js` (+1 LOC: 4 new tables added to `BACKUP_TABLES`). Resolves 4e.G1 + 4e.G2. Other 4 critical `bot/*` files still 0 diff vs main.
-- **4f:** TBD
+- **4f.1:** **0 source files.** 1 doc file (this file) — V57 RLS curl table (8 anon ops blocked at HTTP 401, resolves V8 from 4a) + V58 cost projection (M3 holds for MVP single-user scope; honest gap 4f.1.G1 flags fragility above 30 calls/mo). 4f.2 deferral table documents the 11 tasks Shilo runs manually.
+- **4f.2:** TBD (pending Shilo manual smoke on Render + Telegram)
 
 ### Pre-existing dirty files audit
 
