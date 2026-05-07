@@ -1187,17 +1187,17 @@ Once Shilo reports results, Amelia will append them to §"Sub-phase 4f.2" below.
 
 **Honest gap meta-note:** This bug ships because Phase 4d's live integration test (4d.G1) was deferred to 4f.2. Unit tests passed because they inject mock supabase clients via the storage modules' `client` parameter, completely bypassing the GRANT layer. **Lesson:** when a storage layer uses an injectable mock pattern, deferring the live integration test = deferring this entire class of bug discovery. Future BMAD phases should treat live-integration deferrals as gating items, not optional.
 
-### Bug 2 — ⏳ PENDING (Commit B, bundled with Bug 4)
+### Bug 2 — ✅ RESOLVED (Commit B, bundled with Bug 4)
 
-Fix: widen `resolveChatId` in `skills/research/index.js` to accept both `ctx.chatId` (agent contract) and `ctx.chat_id` (slash-handler contract). 3-line edit. Skill-only, zero `bot/*` impact. See `01e §2`.
+`resolveChatId` widened in `skills/research/index.js:337-346` to accept `ctx.chatId` (agent contract), `ctx.chat_id` (slash-handler contract), and `args.chat_id` (explicit override). 7-line edit (with explanatory comments). Skill-only, zero `bot/*` impact. Regression coverage: 5 new tests in `tests/research_chat_id_resolution.test.js` (190/190 PASS, zero regression on the existing 185). See `01e §2`.
 
 ### Bug 3 — ⏳ PENDING (Commit C)
 
 Fix: sharpen `search_research` description in `skills/research/index.js:41` with explicit research keywords (`מחקר`, `מאמר`, `trial`, `ניסוי קליני`), source names (PubMed/ClinicalTrials/medRxiv), and `לא לחדשות` anti-instruction — within the 15-word soft cap from `CLAUDE.md`. 1-line description-string edit. Skill-only. See `01e §3`.
 
-### Bug 4 — ⏳ PENDING (Commit B, bundled with Bug 2)
+### Bug 4 — ✅ RESOLVED (Commit B, bundled with Bug 2)
 
-Fix: rewrite `execute()` in `skills/research/index.js:345-360` to return `JSON.stringify(result)` for both success and error paths. Error envelope adds `articles: []`, `_do_not_fabricate: true`, and `_instruction_to_assistant` so Gemini cannot rationalize the result as success data. Skill-only. See `01e §4`.
+`execute()` rewritten in `skills/research/index.js:351-378` to return `JSON.stringify(result)` for both success and error paths. Error envelope carries `articles: []`, `_do_not_fabricate: true`, and `_instruction_to_assistant: '...'` so Gemini cannot rationalize a tool failure as success data. Skill-only. The shape is enforced by case 4 in `tests/research_chat_id_resolution.test.js` (asserts every required field of the envelope). See `01e §4`.
 
 ### Why Bug 2 + Bug 4 bundle (per Hard Constraint #2 escape hatch)
 

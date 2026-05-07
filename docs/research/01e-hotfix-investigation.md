@@ -6,7 +6,7 @@
 **Branch:** `hotfix/4f3-rls-chat-id-routing` (off main `3d524fd`)
 **Trigger:** Shilo's Phase 4f.2 manual smoke surfaced 3 production bugs after the merge to main + Render deploy.
 
-> **Status:** investigation complete. **Bug 1 ✅ RESOLVED** (Supabase MCP migration applied 2026-05-07). Bugs 2/3/4 fixes in flight on this branch — Commits B + C still to land.
+> **Status:** investigation complete. **Bug 1 ✅ RESOLVED** (Supabase MCP migration applied 2026-05-07). **Bug 2 + Bug 4 ✅ RESOLVED** in Commit B (`skills/research/index.js`, +5 regression tests, 190/190 PASS). Bug 3 fix pending in Commit C.
 
 ---
 
@@ -141,6 +141,14 @@ This bug ships because Phase 4d's live integration test (4d.G1) was deferred to 
 ---
 
 ## §2 — Bug 2 investigation: chat_id naming mismatch (camelCase vs snake_case)
+
+### ✅ STATUS: RESOLVED in Commit B (2026-05-07)
+
+`resolveChatId` widened to accept `ctx.chatId` (agent contract), `ctx.chat_id` (slash-handler contract), and `args.chat_id` (explicit override). Skill-only edit at `skills/research/index.js:337-346`. Both prior call sites now resolve correctly. Regression coverage: 5 new tests in `tests/research_chat_id_resolution.test.js` (185/185 → 190/190 PASS, zero regression).
+
+The original investigation below is preserved for the audit trail.
+
+---
 
 ### Symptom
 
@@ -284,6 +292,14 @@ The `get_news` description's `"CRPS"→crps` mapping was added in some earlier p
 ---
 
 ## §4 — Hallucination prevention design
+
+### ✅ STATUS: RESOLVED in Commit B (2026-05-07)
+
+`execute()` rewritten at `skills/research/index.js:351-378` to return `JSON.stringify(result)` for both success and error paths. Error envelope now carries the structurally-unmistakable fields `articles: []`, `_do_not_fabricate: true`, and `_instruction_to_assistant: '...'` so Gemini cannot rationalize a tool failure as success data. Built-in tools always returned strings; this brings the skill into line with that implicit contract. Regression test: case 4 in `tests/research_chat_id_resolution.test.js` asserts the exact envelope shape.
+
+The original investigation below is preserved for the audit trail.
+
+---
 
 ### Symptom
 
