@@ -1159,6 +1159,68 @@ Once Shilo reports results, Amelia will append them to §"Sub-phase 4f.2" below.
 
 ---
 
+## Sub-phase 4f.3 — Post-deploy Hotfix Cycle ⏳ IN PROGRESS
+
+> Phase 4f.2 manual smoke (RT04 free-text + LIVE_INTEGRATION + dashboard logs) surfaced 3 production bugs immediately after the Render deploy of merge `435a7d6`. A 4th bug (hallucination: agent fabricates data when tools error) was discovered during Bug 2 root-cause investigation. **This is exactly what 4f.2 smoke testing was designed to catch — the "honest gap → caught in smoke" loop worked as intended.**
+>
+> Full investigation lives in `docs/research/01e-hotfix-investigation.md` (425 lines, ~25 min investigation time). This section is the dev-log summary; 01e is the audit trail.
+>
+> **Branch:** `hotfix/4f3-rls-chat-id-routing` (off main `3d524fd`).
+> **Plan:** 4 commits — Task 1 investigation (already pushed) + Commit A (Bug 1 docs) + Commit B (Bugs 2+4 bundled) + Commit C (Bug 3). Then `--no-ff` merge to main, one Render redeploy event.
+
+### The 4 bugs
+
+| Bug | Severity | Symptom | Root cause | Fix location |
+|---|---|---|---|---|
+| 1 | CRITICAL | `permission denied for table research_user_profile` (PG code 42501) on every research_* DB op | **GRANT-layer failure**, NOT RLS. research_* tables created in 4a via Supabase MCP without DML grants to `service_role`. 7 working PHI tables had grants from Studio UI defaults. | Supabase MCP migration (no source code) |
+| 2 | HIGH | `chat_id missing` thrown by skill on every agent-routed call | Naming mismatch: `bot/agent.js:2186` passes `ctx.chatId` (camelCase); `skills/research/index.js:337` reads `ctx.chat_id` (snake_case). Slash handler in `bot/telegram.js:583` uses snake_case so it works. | `skills/research/index.js:337-341` (resolveChatId) |
+| 3 | MEDIUM | `מחקר חדש על CRPS` routes to `get_news` not `search_research` | `get_news` description has explicit `"CRPS"→crps` mapping (categorical signal). `search_research` description is generic. Gemini rationally picks the more specific tool. | `skills/research/index.js:41` (description string) |
+| 4 | HIGH | Agent fabricates fake articles when tools error | `bot/skills-registry.js:114` coerces `String(result)` → object becomes `"[object Object]"` → Gemini receives useless string and hallucinates plausible content to fill the void. Existing built-ins return strings; our skill returned objects. | `skills/research/index.js:345-360` (execute() — return JSON-stringified results + structured error envelope) |
+
+### Bug 1 — ✅ RESOLVED via Supabase MCP
+
+**Migration:** `phase_4f3_bug1_grant_service_role_research_tables` (applied 2026-05-07 by Claude via Supabase MCP web-chat, continuing the 4a pattern).
+
+**Effect:** `service_role` now has full DML privileges on all 4 research_* tables. `anon` and `authenticated` grants unchanged (still only `REFERENCES, TRIGGER, TRUNCATE` — DML still blocked).
+
+**V57 re-run skipped** — rationale documented in `01e §1`: RLS policies untouched, anon grants untouched → anon HTTP 401 behavior byte-for-byte preserved. The migration is purely additive on `service_role`.
+
+**Honest gap meta-note:** This bug ships because Phase 4d's live integration test (4d.G1) was deferred to 4f.2. Unit tests passed because they inject mock supabase clients via the storage modules' `client` parameter, completely bypassing the GRANT layer. **Lesson:** when a storage layer uses an injectable mock pattern, deferring the live integration test = deferring this entire class of bug discovery. Future BMAD phases should treat live-integration deferrals as gating items, not optional.
+
+### Bug 2 — ⏳ PENDING (Commit B, bundled with Bug 4)
+
+Fix: widen `resolveChatId` in `skills/research/index.js` to accept both `ctx.chatId` (agent contract) and `ctx.chat_id` (slash-handler contract). 3-line edit. Skill-only, zero `bot/*` impact. See `01e §2`.
+
+### Bug 3 — ⏳ PENDING (Commit C)
+
+Fix: sharpen `search_research` description in `skills/research/index.js:41` with explicit research keywords (`מחקר`, `מאמר`, `trial`, `ניסוי קליני`), source names (PubMed/ClinicalTrials/medRxiv), and `לא לחדשות` anti-instruction — within the 15-word soft cap from `CLAUDE.md`. 1-line description-string edit. Skill-only. See `01e §3`.
+
+### Bug 4 — ⏳ PENDING (Commit B, bundled with Bug 2)
+
+Fix: rewrite `execute()` in `skills/research/index.js:345-360` to return `JSON.stringify(result)` for both success and error paths. Error envelope adds `articles: []`, `_do_not_fabricate: true`, and `_instruction_to_assistant` so Gemini cannot rationalize the result as success data. Skill-only. See `01e §4`.
+
+### Why Bug 2 + Bug 4 bundle (per Hard Constraint #2 escape hatch)
+
+Investigation §4 in `01e` shows Bug 4 (hallucination) is structurally enabled by the `String(obj)` coercion in `bot/skills-registry.js:114`. **Bug 2 is the trigger that makes Bug 4 visible** — when Bug 2 throws "chat_id missing", the catch block in our skill's `execute()` returns an object → registry coerces to "[object Object]" → Gemini hallucinates. Fixing Bug 2 alone leaves the door open for ANY future skill error to trigger fabrication; fixing Bug 4 alone leaves chat_id resolution still broken. They are conceptually one fix in one file (`skills/research/index.js`). Per Q4 approval, bundled in Commit B.
+
+### Cross-cutting (4f.3 specific)
+
+- ✅ 0 changes to `bot/*` across all 4 commits (held at 4e.5 state, Hard Constraint #2 + #5)
+- ✅ All fixes localized to `skills/research/index.js` + Supabase migration (4f.3 = "skill + DB only" mirror of 4e's "0 bot/* changes" discipline)
+- ✅ Tests gated: 185+regression must pass after each commit
+- ⏳ Final merge `hotfix/4f3-rls-chat-id-routing` → `main` is gated on Shilo's explicit approval after Commit C lands
+
+### Estimated time
+
+- Investigation (Task 1): ~25 min ✅ done
+- Commit A (Bug 1 docs): ~10 min
+- Commit B (Bugs 2+4): ~30 min
+- Commit C (Bug 3): ~5 min
+- Final merge + redeploy: ~10 min
+- **Total 4f.3:** ~80 min, plus Shilo's re-run of failing 4f.2 smoke tests (~10 min) to confirm resolution.
+
+---
+
 ## Cross-cutting concerns (updated each sub-phase)
 
 ### Files modified across all of Phase 4

@@ -6,11 +6,36 @@
 **Branch:** `hotfix/4f3-rls-chat-id-routing` (off main `3d524fd`)
 **Trigger:** Shilo's Phase 4f.2 manual smoke surfaced 3 production bugs after the merge to main + Render deploy.
 
-> **Status:** investigation complete. No code touched yet. Awaiting Shilo's fix-plan approval before Tasks 2/3/4 (one commit per bug).
+> **Status:** investigation complete. **Bug 1 ✅ RESOLVED** (Supabase MCP migration applied 2026-05-07). Bugs 2/3/4 fixes in flight on this branch — Commits B + C still to land.
 
 ---
 
 ## §1 — Bug 1 investigation: RLS/GRANT denying service_role
+
+### ✅ STATUS: RESOLVED (2026-05-07)
+
+**Migration name:** `phase_4f3_bug1_grant_service_role_research_tables`
+**Channel:** Supabase MCP via Anthropic web-chat (continuing the 4a pattern — no SQL files in this repo)
+**Applied:** 2026-05-07
+
+**Hypothesis CONFIRMED.** Pre-fix: research_* tables had only `REFERENCES, TRIGGER, TRUNCATE` for `service_role` (no DML). Working tables (`tasks`, `expenses`) had full grants. Exact gap predicted in this section's hypothesis.
+
+**Post-fix verification (Shilo's Supabase MCP query):**
+
+| role | table | privileges |
+|---|---|---|
+| service_role | research_articles | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ✅ |
+| service_role | research_blocked_log | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ✅ |
+| service_role | research_topics | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ✅ |
+| service_role | research_user_profile | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ✅ |
+| anon | research_* | REFERENCES, TRIGGER, TRUNCATE (unchanged — still blocked) ✅ |
+| authenticated | research_* | REFERENCES, TRIGGER, TRUNCATE (unchanged — still blocked) ✅ |
+
+**V57 re-run skipped** (rationale): RLS policies and `anon` grants both unchanged → `anon` HTTP 401 behavior is byte-for-byte preserved. Re-running the 8 curl probes would test nothing the migration could have affected. Hard Constraint #7 ("anon must STILL be blocked") is satisfied by the verification table above showing `anon` grants unchanged.
+
+The original investigation below is preserved for the audit trail.
+
+---
 
 ### Symptom
 
