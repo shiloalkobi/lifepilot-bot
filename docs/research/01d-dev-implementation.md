@@ -1087,19 +1087,75 @@ Re-evaluated above in §"STOP-list re-evaluation". **0/7 triggers activated.** 4
 
 ---
 
+## Sub-phase 4f.M — Merge to main ✅ COMPLETE
+
+**Merge commit:** `435a7d6` (full SHA `435a7d65e6dc0c49450f5db5281aeb49d20cfe31`)
+**Strategy:** `--no-ff` (preserves BMAD phase history in `git log --first-parent`)
+**Pushed:** 2026-05-07 13:08 IDT (10:08 UTC)
+**Source branch:** `research/crps-agent-phase1` (10 commits across phases 4a–4f.1)
+**Target:** `main` (`abb2044` → `435a7d6`)
+**Diff size:** 44 files changed, 7,467 insertions, 0 deletions
+
+### Pre-merge sanity checks (all PASS)
+
+1. ✅ Branch confirmed `research/crps-agent-phase1`
+2. ✅ Branch in sync with `origin/research/crps-agent-phase1`
+3. ✅ Tests: 185/185 PASS, 0 fail
+4. ✅ No staged work
+5. ✅ Pre-existing 7 dirty files: still unstaged
+6. ✅ 10 commits to merge enumerated
+7. ✅ `origin/main` tip (`abb2044`) — no divergence
+
+### Render auto-deploy
+
+Render is configured to auto-deploy from `main`. The push to `main` immediately triggered a build. **Phase 4f.2 is now LIVE-PENDING** — verification of the deployed binary happens via Shilo's manual smoke test.
+
+### Phase 4f.2 user guide
+
+Created `docs/research/04f-2-shilo-smoke-test-guide.md` — a phone-friendly Hebrew checklist for Shilo to follow on Telegram + Render dashboard. Covers:
+- Step 1: Render deploy verify + `STARTUP_LOG_VERIFY`
+- Step 2: 5 regression checks (existing features still work)
+- Step 3: RT01–RT06 (research smoke)
+- Step 4: `LIVE_INTEGRATION` from Render shell
+- Step 5: Done summary + summary message format for Claude
+
+### Hard Constraint compliance (merge phase)
+
+- ✅ No new source code in this session (merge + 4f.2 guide only)
+- ✅ `--no-ff` merge mandatory (used)
+- ✅ STOP on any pre-merge check fail (none failed)
+- ✅ 4f.2 guide written for Shilo in friendly Hebrew with clear pass/fail
+- ✅ No `bot/*` changes (held at 4e.5 state)
+
+### Time spent
+
+**~15 minutes** (sanity checks + merge + guide + this note).
+
+### Open items pending Shilo
+
+1. `STARTUP_LOG_VERIFY` — confirm `[Skills] Loaded skill: "research" (4 tool(s))` in Render log
+2. RT01–RT06 results
+3. Regression sample 5/14 results
+4. `LIVE_INTEGRATION` result (resolves 4d.G1 + 4f.1.G2)
+
+Once Shilo reports results, Amelia will append them to §"Sub-phase 4f.2" below.
+
+---
+
 ## Sub-phase 4f.2 — Live Smoke (Shilo manual on Render + Telegram) ⏳ PENDING
 
-> Section reserved — Shilo will run RT01–RT06, regression, live integration, and Render startup-log verification per the table in §"Phase 4f.2 — Tasks deferred to Shilo manual" above. Amelia will append results here once Shilo reports back.
+> Section reserved — Shilo will run RT01–RT06, regression, live integration, and Render startup-log verification per `docs/research/04f-2-shilo-smoke-test-guide.md`. Amelia will append results here once Shilo reports back.
 
 **Planned scope (from 4f.2 deferral table):**
-- `RENDER_DEPLOY` + `STARTUP_LOG_VERIFY`
-- `RT01`–`RT06` (6 research-side smoke tests)
-- `LIVE_INTEGRATION` (resolves 4d.G1 + 4f.1.G2)
-- `REGRESSION_T01_T14` (5 of 14 existing features, sampled)
+- `RENDER_DEPLOY` ✅ done (push triggered Render auto-deploy at 2026-05-07 13:08 IDT)
+- `STARTUP_LOG_VERIFY` ⏳ Shilo to verify `[Skills] Loaded skill: "research" (4 tool(s))`
+- `RT01`–`RT06` ⏳ (6 research-side smoke tests)
+- `LIVE_INTEGRATION` ⏳ (resolves 4d.G1 + 4f.1.G2 — runs from Render shell)
+- `REGRESSION_T01_T14` ⏳ (5 of 14 existing features, sampled)
 
-**Estimated effort:** ~30 minutes for Shilo, once the Render deploy lands.
+**Estimated effort:** ~30 minutes for Shilo, once the Render deploy completes.
 
-**Gate:** ✅ all green = ready to merge `research/crps-agent-phase1` → `main` (subject to Shilo's explicit approval). ❌ any failure = STOP, document, separate fix cycle.
+**Gate:** ✅ all green = project ready to declare DONE. ❌ any failure = STOP, document, separate fix cycle (no "while-I-fix-it" patches per Hard Constraint).
 
 ---
 
@@ -1116,7 +1172,8 @@ Running list — Amelia appends each sub-phase:
 - **4e:** 1 doc file (`skills/research/SKILL.md`) + this doc updated. **0 source files changed.** Skill auto-registered by `bot/skills-loader.js`; 0 changes to `bot/*`. Two honest gaps logged for Shilo's separate approval (literal `/research` slash, backup coverage).
 - **4e.5:** **First `bot/*` modification in the project.** `bot/telegram.js` (+24 LOC: `/research` slash handler) and `bot/backup.js` (+1 LOC: 4 new tables added to `BACKUP_TABLES`). Resolves 4e.G1 + 4e.G2. Other 4 critical `bot/*` files still 0 diff vs main.
 - **4f.1:** **0 source files.** 1 doc file (this file) — V57 RLS curl table (8 anon ops blocked at HTTP 401, resolves V8 from 4a) + V58 cost projection (M3 holds for MVP single-user scope; honest gap 4f.1.G1 flags fragility above 30 calls/mo). 4f.2 deferral table documents the 11 tasks Shilo runs manually.
-- **4f.2:** TBD (pending Shilo manual smoke on Render + Telegram)
+- **4f.M:** **Merge to main.** `--no-ff` merge of `research/crps-agent-phase1` (`abb2044` → `435a7d6`), 44 files, 7,467 insertions. Render auto-deploy triggered at 2026-05-07 13:08 IDT. `bot/*` final state: `bot/telegram.js` +24, `bot/backup.js` +1, all other `bot/*` files unchanged from `main`. **0 source files added in 4f.M itself** (merge commit + 1 new doc file `04f-2-shilo-smoke-test-guide.md` + this section update).
+- **4f.2:** TBD (pending Shilo manual smoke on Render + Telegram per `04f-2-shilo-smoke-test-guide.md`)
 
 ### Pre-existing dirty files audit
 
