@@ -578,6 +578,30 @@ function startBot(token, webhookUrl = null) {
 
   bot.onText(/\/dashboard/, (msg) => sendDashboard(msg.chat.id));
 
+  // /research — CRPS research with hope filter (skill: skills/research)
+  bot.onText(/^\/research$/, async (msg) => {
+    try {
+      const research = require('../skills/research');
+      const result = await research.execute('search_research', {}, { chat_id: msg.chat.id });
+      if (!result.ok) {
+        return bot.sendMessage(msg.chat.id, `⚠️ ${result.error || 'שגיאה במחקר.'}`);
+      }
+      const header = `🔬 <b>מחקר CRPS</b> (${result.articles.length} מאמרים${result.blocked_count ? `, סוננו ${result.blocked_count}` : ''})`;
+      const items = result.articles.map((a, i) => {
+        const lines = [`${i + 1}. ${a.title_he}`];
+        if (a.summary_he) lines.push(`   <i>${a.summary_he}</i>`);
+        lines.push(`   <a href="${a.url}">${a.source}</a>`);
+        return lines.join('\n');
+      });
+      const body = items.length ? items.join('\n\n') : 'לא נמצא מחקר חדש העונה לקריטריונים.';
+      const tail = result.disclaimer_he ? `\n\n${result.disclaimer_he}` : '';
+      bot.sendMessage(msg.chat.id, `${header}\n\n${body}${tail}`, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/research]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה במחקר.');
+    }
+  });
+
   // Handle all non-command messages
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
