@@ -6,7 +6,7 @@
 **Branch:** `hotfix/4f4-slash-dates-pubmed-quality` (off main `bda01c1`)
 **Trigger:** Shilo's second post-deploy smoke (after the 4f.3 hotfix cycle merged at `b858401`/`bda01c1`) surfaced 3 new production issues.
 
-> **Status:** investigation in progress; **0/3 issues resolved**. This doc is read-only Task 1 output. Code fixes follow as Commits A/B/C pending Shilo's approval of the fix plan in §5.
+> **Status:** **1/3 issues resolved.** Issue #2 ✅ RESOLVED in Commit A (2026-05-11). Issues #1 and #3 fixes follow as Commits B and C pending Shilo's approval.
 
 ---
 
@@ -121,6 +121,14 @@ Two surgical changes:
 ---
 
 ## §2 — Issue #2: ClinicalTrials.gov partial dates crash `upsertArticle`
+
+### ✅ STATUS: RESOLVED in Commit A (2026-05-11)
+
+`normalizeStartDate(raw)` added in `skills/research/sources/clinicaltrials.js` (handles ISO / `YYYY-MM-DD` / `YYYY-MM` / `YYYY`; returns null for unparseable input). `parseStudy` line ~52 now feeds the helper. `fetchImpl` filters articles whose date can't be normalized with `console.warn('[research] clinicaltrials/<NCT> skipped: missing publication date')` per Q2. Tests: 190 prior + 7 new (5 normalize cases + 1 NCT01338129 fixture + 1 fetchImpl skip case) = **197/197 PASS**. Backfill: not required — natural 6h cache refresh re-inserts the 6 previously-failing trials, including Rabin's vitamin-C CRPS (NCT01338129).
+
+The original investigation below is preserved for the audit trail.
+
+---
 
 ### Symptom (from Render logs)
 

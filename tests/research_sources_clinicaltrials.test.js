@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ct = require('../skills/research/sources/clinicaltrials');
-const { parseStudy, studiesUrl } = ct;
+const { parseStudy, studiesUrl, normalizeStartDate } = ct;
 
 const FIX_DIR = path.join(__dirname, 'fixtures', 'clinicaltrials');
 
@@ -101,7 +101,7 @@ test('fetchImpl dedups studies appearing in both queries (mocked fetch)', async 
   const sample = (nctId) => ({
     protocolSection: {
       identificationModule: { nctId, briefTitle: `t-${nctId}` },
-      statusModule:         { overallStatus: 'RECRUITING' },
+      statusModule:         { overallStatus: 'RECRUITING', startDateStruct: { date: '2024-01-15' } },
       contactsLocationsModule: { locations: [{ country: 'Israel' }] },
     },
   });
@@ -132,4 +132,99 @@ test('fetchImpl throws on HTTP error', async (t) => {
 
 test('parseId returns source_id', () => {
   assert.equal(ct.parseId({ source_id: 'NCT12345' }), 'NCT12345');
+});
+
+// ── Phase 4f.4 Issue #2: partial-date normalization ──────────────────────────
+
+test('normalizeStartDate handles YYYY-MM-DD', () => {
+  assert.equal(normalizeStartDate('2015-04-15'), '2015-04-15T00:00:00Z');
+});
+
+test('normalizeStartDate handles YYYY-MM (CT.gov partial — Rabin NCT01338129 shape)', () => {
+  assert.equal(normalizeStartDate('2011-04'), '2011-04-01T00:00:00Z');
+});
+
+test('normalizeStartDate handles YYYY-only (placeholder shape — 2099)', () => {
+  assert.equal(normalizeStartDate('2099'), '2099-01-01T00:00:00Z');
+});
+
+test('normalizeStartDate passes through full ISO timestamp unchanged', () => {
+  const iso = '2020-06-15T12:34:56Z';
+  assert.equal(normalizeStartDate(iso), iso);
+});
+
+test('normalizeStartDate returns null on null / non-string / garbage', () => {
+  assert.equal(normalizeStartDate(null), null);
+  assert.equal(normalizeStartDate(undefined), null);
+  assert.equal(normalizeStartDate(''), null);
+  assert.equal(normalizeStartDate(20240115), null);
+  assert.equal(normalizeStartDate('not a date'), null);
+  assert.equal(normalizeStartDate('2024/01/15'), null);
+});
+
+test('parseStudy with NCT01338129-shaped partial-date fixture (Rabin vitamin-C CRPS) returns normalized ISO', () => {
+  // This is the exact failing trial from Shilo's smoke logs: "2011-04" caused
+  // PG 22007 on upsert. After fix, parseStudy must yield a valid ISO timestamp.
+  const rabin = {
+    protocolSection: {
+      identificationModule: {
+        nctId:      'NCT01338129',
+        briefTitle: 'Vitamin C for Complex Regional Pain Syndrome',
+      },
+      statusModule: {
+        overallStatus:    'COMPLETED',
+        startDateStruct:  { date: '2011-04' },
+      },
+      contactsLocationsModule: {
+        locations: [{ country: 'Israel' }],
+      },
+    },
+  };
+  const a = parseStudy(rabin);
+  assert.ok(a, 'parseStudy returned a result');
+  assert.equal(a.source_id, 'NCT01338129');
+  assert.equal(a.published_at, '2011-04-01T00:00:00Z');
+  assert.equal(a._meta.israel, true);
+});
+
+test('fetchImpl skips studies whose date cannot be normalized (per Q2 — honest signal)', async (t) => {
+  const original = globalThis.fetch;
+  const warns = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => { warns.push(args.join(' ')); };
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    studies: [
+      // Valid date → should be kept
+      {
+        protocolSection: {
+          identificationModule: { nctId: 'NCT00000001', briefTitle: 'has date' },
+          statusModule:         { overallStatus: 'RECRUITING', startDateStruct: { date: '2024-06' } },
+          contactsLocationsModule: { locations: [{ country: 'Israel' }] },
+        },
+      },
+      // No date at all → should be skipped with warn
+      {
+        protocolSection: {
+          identificationModule: { nctId: 'NCT00000002', briefTitle: 'no date' },
+          statusModule:         { overallStatus: 'RECRUITING' },
+          contactsLocationsModule: { locations: [{ country: 'Israel' }] },
+        },
+      },
+    ],
+  }), { status: 200 });
+
+  t.after(() => {
+    globalThis.fetch = original;
+    console.warn      = originalWarn;
+  });
+
+  const out = await ct.fetch(null, null);
+  const ids = out.map(a => a.source_id);
+  assert.ok(ids.includes('NCT00000001'), 'dated study kept');
+  assert.ok(!ids.includes('NCT00000002'), 'dateless study filtered out');
+  assert.ok(
+    warns.some(w => /NCT00000002/.test(w) && /missing publication date/.test(w)),
+    'console.warn fired with the expected NCT id and reason',
+  );
 });
