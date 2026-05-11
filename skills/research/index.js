@@ -38,7 +38,7 @@ const description = 'CRPS research search — emotionally filtered, Hebrew-summa
 const tools = [
   {
     name:        'search_research',
-    description: 'מחקר CRPS מסונן רגשית. כותרת/נושא/רענון.',
+    description: 'מחקר רפואי מדעי על CRPS - PubMed/ClinicalTrials/medRxiv. עבור "מחקר", "מאמר", "trial", "ניסוי קליני". לא לחדשות.',
     parameters: {
       type: 'object',
       properties: {
@@ -335,27 +335,45 @@ async function setProfile(args, ctx, deps = {}) {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function resolveChatId(ctx, args) {
-  if (ctx && (ctx.chat_id != null)) return ctx.chat_id;
-  if (args && (args.chat_id != null)) return args.chat_id;
+  // Accept BOTH naming conventions:
+  //  • ctx.chatId   — bot/agent.js:2186 contract (camelCase, agent-routed tools)
+  //  • ctx.chat_id  — bot/telegram.js:583 /research slash handler (snake_case)
+  //  • args.chat_id — explicit override (e.g., admin tooling, tests)
+  if (ctx  && ctx.chatId  != null) return ctx.chatId;
+  if (ctx  && ctx.chat_id != null) return ctx.chat_id;
+  if (args && args.chat_id != null) return args.chat_id;
   return null;
 }
 
 // ── execute() — skill loader entry point ─────────────────────────────────────
 
 async function execute(toolName, args = {}, ctx = {}) {
+  // Returns a JSON STRING (not an object) — bot/skills-registry.js:114 does
+  // String(result), so returning an object becomes "[object Object]" and
+  // Gemini fabricates plausible content to fill the void (Phase 4f.3 Bug 4).
+  // Built-in tools in bot/agent.js return strings; this matches that contract.
   try {
+    let result;
     switch (toolName) {
-      case 'search_research':          return await searchResearch(args, ctx);
-      case 'subscribe_research_topic': return await subscribeTopic(args, ctx);
-      case 'get_research_history':     return await getHistory(args, ctx);
-      case 'set_research_profile':     return await setProfile(args, ctx);
+      case 'search_research':          result = await searchResearch(args, ctx); break;
+      case 'subscribe_research_topic': result = await subscribeTopic(args, ctx); break;
+      case 'get_research_history':     result = await getHistory(args, ctx); break;
+      case 'set_research_profile':     result = await setProfile(args, ctx); break;
       default:
-        return { ok: false, error: `Unknown tool "${toolName}" in skill "${name}"` };
+        result = { ok: false, error: `Unknown tool "${toolName}" in skill "${name}"` };
     }
+    return JSON.stringify(result);
   } catch (err) {
     // PHI hygiene: only the err.message goes out, never the raw args object.
     console.error(`[research] ${toolName} error: ${err.message}`);
-    return { ok: false, error: `${toolName} failed: ${err.message}` };
+    return JSON.stringify({
+      ok: false,
+      error: `${toolName} failed: ${err.message}`,
+      articles: [],
+      _do_not_fabricate: true,
+      _instruction_to_assistant:
+        'Tool returned an error. Tell the user the operation failed; do NOT make up articles or any other data.',
+    });
   }
 }
 
