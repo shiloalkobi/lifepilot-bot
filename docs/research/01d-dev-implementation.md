@@ -1236,6 +1236,7 @@ Running list — Amelia appends each sub-phase:
 - **4f.1:** **0 source files.** 1 doc file (this file) — V57 RLS curl table (8 anon ops blocked at HTTP 401, resolves V8 from 4a) + V58 cost projection (M3 holds for MVP single-user scope; honest gap 4f.1.G1 flags fragility above 30 calls/mo). 4f.2 deferral table documents the 11 tasks Shilo runs manually.
 - **4f.M:** **Merge to main.** `--no-ff` merge of `research/crps-agent-phase1` (`abb2044` → `435a7d6`), 44 files, 7,467 insertions. Render auto-deploy triggered at 2026-05-07 13:08 IDT. `bot/*` final state: `bot/telegram.js` +24, `bot/backup.js` +1, all other `bot/*` files unchanged from `main`. **0 source files added in 4f.M itself** (merge commit + 1 new doc file `04f-2-shilo-smoke-test-guide.md` + this section update).
 - **4f.2:** TBD (pending Shilo manual smoke on Render + Telegram per `04f-2-shilo-smoke-test-guide.md`)
+- **4f.3.M (Merge):** `--no-ff` merge of `hotfix/4f3-rls-chat-id-routing` → `main` (`b858401`). 4 bugs resolved (1 DB migration via Supabase MCP + 3 code commits: `fc251df`, `6d1d4a4`, `7d12aed`). 190/190 tests. `bot/*` zero diff vs `main` pre-merge. Triggers Render auto-redeploy. Final verification gated on Shilo's RT01–RT06 retest.
 
 ### Pre-existing dirty files audit
 
