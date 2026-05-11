@@ -6,7 +6,7 @@
 **Branch:** `hotfix/4f3-rls-chat-id-routing` (off main `3d524fd`)
 **Trigger:** Shilo's Phase 4f.2 manual smoke surfaced 3 production bugs after the merge to main + Render deploy.
 
-> **Status:** investigation complete. **Bug 1 ✅ RESOLVED** (Supabase MCP migration applied 2026-05-07). **Bug 2 + Bug 4 ✅ RESOLVED** in Commit B (`skills/research/index.js`, +5 regression tests, 190/190 PASS). Bug 3 fix pending in Commit C.
+> **Status:** investigation complete. **All 4 bugs ✅ RESOLVED** — Bug 1 via Supabase MCP migration (2026-05-07); Bugs 2+4 in Commit B (`6d1d4a4`); Bug 3 in Commit C (this commit). Branch ready for `--no-ff` merge to main per Shilo's approval.
 
 ---
 
@@ -232,6 +232,14 @@ Per Hard Constraint #5: STOP if any fix requires `bot/agent.js` mod. The skill-s
 ---
 
 ## §3 — Bug 3 investigation: free-text routes to `get_news` instead of `search_research`
+
+### ✅ STATUS: RESOLVED in Commit C (2026-05-07)
+
+`search_research` description rewritten in `skills/research/index.js:41` to include explicit research keywords (מחקר/מאמר/trial/ניסוי קליני), source names (PubMed/ClinicalTrials/medRxiv), and "לא לחדשות" anti-instruction. Stays within 15-word soft cap. `get_news` description in `bot/agent.js` untouched (Hard Constraint #5). Live verification deferred to post-merge smoke (Shilo's RT03 re-run).
+
+The original investigation below is preserved for the audit trail.
+
+---
 
 ### Symptom
 

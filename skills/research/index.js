@@ -38,7 +38,7 @@ const description = 'CRPS research search — emotionally filtered, Hebrew-summa
 const tools = [
   {
     name:        'search_research',
-    description: 'מחקר CRPS מסונן רגשית. כותרת/נושא/רענון.',
+    description: 'מחקר רפואי מדעי על CRPS - PubMed/ClinicalTrials/medRxiv. עבור "מחקר", "מאמר", "trial", "ניסוי קליני". לא לחדשות.',
     parameters: {
       type: 'object',
       properties: {

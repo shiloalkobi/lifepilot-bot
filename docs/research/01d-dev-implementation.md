@@ -1159,7 +1159,7 @@ Once Shilo reports results, Amelia will append them to §"Sub-phase 4f.2" below.
 
 ---
 
-## Sub-phase 4f.3 — Post-deploy Hotfix Cycle ⏳ IN PROGRESS
+## Sub-phase 4f.3 — Post-deploy Hotfix Cycle ✅ ALL 4 BUGS RESOLVED (pending final merge)
 
 > Phase 4f.2 manual smoke (RT04 free-text + LIVE_INTEGRATION + dashboard logs) surfaced 3 production bugs immediately after the Render deploy of merge `435a7d6`. A 4th bug (hallucination: agent fabricates data when tools error) was discovered during Bug 2 root-cause investigation. **This is exactly what 4f.2 smoke testing was designed to catch — the "honest gap → caught in smoke" loop worked as intended.**
 >
@@ -1191,9 +1191,9 @@ Once Shilo reports results, Amelia will append them to §"Sub-phase 4f.2" below.
 
 `resolveChatId` widened in `skills/research/index.js:337-346` to accept `ctx.chatId` (agent contract), `ctx.chat_id` (slash-handler contract), and `args.chat_id` (explicit override). 7-line edit (with explanatory comments). Skill-only, zero `bot/*` impact. Regression coverage: 5 new tests in `tests/research_chat_id_resolution.test.js` (190/190 PASS, zero regression on the existing 185). See `01e §2`.
 
-### Bug 3 — ⏳ PENDING (Commit C)
+### Bug 3 — ✅ RESOLVED (Commit C)
 
-Fix: sharpen `search_research` description in `skills/research/index.js:41` with explicit research keywords (`מחקר`, `מאמר`, `trial`, `ניסוי קליני`), source names (PubMed/ClinicalTrials/medRxiv), and `לא לחדשות` anti-instruction — within the 15-word soft cap from `CLAUDE.md`. 1-line description-string edit. Skill-only. See `01e §3`.
+`search_research` description rewritten in `skills/research/index.js:41` with explicit research keywords (`מחקר`, `מאמר`, `trial`, `ניסוי קליני`), source names (PubMed/ClinicalTrials/medRxiv), and `לא לחדשות` anti-instruction — within the 15-word soft cap from `CLAUDE.md`. 1-line description-string edit. Skill-only. Tests: 190/190 PASS (descriptions aren't asserted; no test changes). Live verification deferred to post-merge smoke (Shilo's RT03 re-run). See `01e §3`.
 
 ### Bug 4 — ✅ RESOLVED (Commit B, bundled with Bug 2)
 
