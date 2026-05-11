@@ -6,7 +6,7 @@
 **Branch:** `hotfix/4f4-slash-dates-pubmed-quality` (off main `bda01c1`)
 **Trigger:** Shilo's second post-deploy smoke (after the 4f.3 hotfix cycle merged at `b858401`/`bda01c1`) surfaced 3 new production issues.
 
-> **Status:** **1/3 issues resolved.** Issue #2 ✅ RESOLVED in Commit A (2026-05-11). Issues #1 and #3 fixes follow as Commits B and C pending Shilo's approval.
+> **Status:** **2/3 issues resolved.** Issue #2 ✅ RESOLVED in Commit A (2026-05-11). Issue #3 ✅ RESOLVED in Commit B (2026-05-11). Issue #1 fix follows as Commit C pending Shilo's approval.
 
 ---
 
@@ -210,6 +210,14 @@ Add to `tests/research_sources_clinicaltrials.test.js`:
 ---
 
 ## §3 — Issue #3: PubMed returns irrelevant articles
+
+### ✅ STATUS: RESOLVED in Commit B (2026-05-11)
+
+`SEARCH_QUERY` in `skills/research/sources/pubmed.js` updated to remove the bare `"RSD"[Title/Abstract]` clause (the false-positive engine — RSD matches "Relative Standard Deviation" in chemistry abstracts) and add the spelled-out `"complex regional pain syndrome"[Title/Abstract]` phrase. Added `isCrpsRelevant(article)` post-filter applied in `fetchImpl` after `parseEfetchXml`. Articles failing the whitelist (`CRPS | complex regional pain | causalgia | reflex sympathetic dystrophy | \bRSD\b`) are rejected at adapter level with `console.warn`. Per Q3 moderate strictness — title OR abstract must match. Tests: 197 prior + 8 new = **205/205 PASS**. Existing DB rows cleaned up by separate SQL via Supabase MCP (per Q5).
+
+The original investigation below is preserved for the audit trail.
+
+---
 
 ### Symptom (from Render logs)
 

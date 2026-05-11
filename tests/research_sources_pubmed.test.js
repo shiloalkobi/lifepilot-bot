@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const pubmed = require('../skills/research/sources/pubmed');
-const { parseEfetchXml, parseAuthors, parsePublishedAt, decodeXml } = pubmed;
+const { parseEfetchXml, parseAuthors, parsePublishedAt, decodeXml, isCrpsRelevant } = pubmed;
 
 const FIX_DIR = path.join(__dirname, 'fixtures', 'pubmed');
 
@@ -120,4 +120,62 @@ test('fetchImpl throws on esearch HTTP error', async (t) => {
   globalThis.fetch = async () => new Response('rate limited', { status: 429 });
   t.after(() => { globalThis.fetch = original; });
   await assert.rejects(pubmed.fetch(null, new Date()), /esearch failed: HTTP 429/);
+});
+
+// ── Phase 4f.4 Issue #3: CRPS-relevance post-filter ──────────────────────────
+
+test('isCrpsRelevant: true when CRPS in title', () => {
+  assert.equal(isCrpsRelevant({
+    title:    'TMS for Complex Regional Pain Syndrome',
+    abstract: 'Background: Pain in...',
+  }), true);
+});
+
+test('isCrpsRelevant: true when complex regional pain in abstract', () => {
+  assert.equal(isCrpsRelevant({
+    title:    'A novel approach',
+    abstract: 'We studied complex regional pain syndrome patients...',
+  }), true);
+});
+
+test('isCrpsRelevant: true when causalgia mentioned', () => {
+  assert.equal(isCrpsRelevant({
+    title:    'Causalgia following injury',
+    abstract: 'A retrospective review...',
+  }), true);
+});
+
+test('isCrpsRelevant: true when reflex sympathetic dystrophy mentioned', () => {
+  assert.equal(isCrpsRelevant({
+    title:    'Reflex sympathetic dystrophy treatment',
+    abstract: '...',
+  }), true);
+});
+
+test('isCrpsRelevant: true when RSD as standalone word (CRPS sense)', () => {
+  assert.equal(isCrpsRelevant({
+    title:    'RSD: treatment outcomes',
+    abstract: '...',
+  }), true);
+});
+
+test('isCrpsRelevant: false for chemistry RSDA% (Goji berry example)', () => {
+  assert.equal(isCrpsRelevant({
+    title:    'In-depth exploration of spermidines in Goji berry',
+    abstract: 'identification with RSDA below 5%, microplastics detection...',
+  }), false);
+});
+
+test('isCrpsRelevant: false for unrelated chemistry paper (Fe-MOF example)', () => {
+  assert.equal(isCrpsRelevant({
+    title:    'Fe-MOF-based fluorescent nanoprobe for alpha-lipomycin',
+    abstract: 'Sensitive detection of...',
+  }), false);
+});
+
+test('isCrpsRelevant: false on empty/null inputs', () => {
+  assert.equal(isCrpsRelevant(null), false);
+  assert.equal(isCrpsRelevant(undefined), false);
+  assert.equal(isCrpsRelevant({}), false);
+  assert.equal(isCrpsRelevant({ title: '', abstract: '' }), false);
 });
