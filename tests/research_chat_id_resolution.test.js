@@ -106,3 +106,20 @@ test('execute() returns JSON error envelope on unknown tool name', async () => {
   assert.ok(String(parsed.error).includes('Unknown tool'),
     `expected "Unknown tool" in error; got: ${parsed.error}`);
 });
+
+// ── Phase 4f.4 Issue #1: contract-guard for consumers of execute() ──────────
+
+test('execute() returns JSON-parseable string (consumer contract regression guard)', async () => {
+  // This protects future consumers (like bot/telegram.js /research slash handler)
+  // from silently breaking when execute()'s return contract changes.
+  // Phase 4f.3 Commit B changed it from object → JSON string; the /research
+  // handler wasn't migrated and silently no-op'd in production for days.
+  // This test ensures the string contract is enforced going forward.
+  installStubs();
+  try {
+    const result = await skill.execute('get_research_history', {}, { chatId: 'contract-test' });
+    assert.equal(typeof result, 'string', 'execute() must return a string');
+    const parsed = JSON.parse(result);  // throws if not JSON
+    assert.ok('ok' in parsed, 'envelope must have ok field');
+  } finally { restoreStubs(); }
+});

@@ -6,11 +6,25 @@
 **Branch:** `hotfix/4f4-slash-dates-pubmed-quality` (off main `bda01c1`)
 **Trigger:** Shilo's second post-deploy smoke (after the 4f.3 hotfix cycle merged at `b858401`/`bda01c1`) surfaced 3 new production issues.
 
-> **Status:** **2/3 issues resolved.** Issue #2 ✅ RESOLVED in Commit A (2026-05-11). Issue #3 ✅ RESOLVED in Commit B (2026-05-11). Issue #1 fix follows as Commit C pending Shilo's approval.
+> **Status:** **ALL 3 ISSUES ✅ RESOLVED.** Issue #2 in Commit A (2026-05-11); Issue #3 in Commit B (2026-05-11); Issue #1 in Commit C (2026-05-11). Branch ready for `--no-ff` merge to main per Shilo's approval.
 
 ---
 
 ## §1 — Issue #1: `/research` slash command silently no-op
+
+### ✅ STATUS: RESOLVED in Commit C (2026-05-11)
+
+`/research` slash handler at `bot/telegram.js:582` updated with three surgical changes per 4f.4 §1 / Q1 approval (minimal-surface within authorized scope):
+
+1. Regex widened to `^/research(?:@\w+)?(?:\s+.*)?$` (accepts `@botname` suffix, trailing whitespace, and ignored args per Q4).
+2. JSON.parse added with `typeof` guard: `const result = typeof raw === 'string' ? JSON.parse(raw) : raw;` — fixes the primary regression introduced by 4f.3 Commit B (`6d1d4a4`) when `execute()` migrated from object to JSON-string return.
+3. Entry log added: `console.log('[/research] invoked by chat', msg.chat.id);` so future regressions are observable in Render logs.
+
+Tests: 205 prior + 1 contract-guard = **206/206 PASS**. STOP-list: 0/7 (single-handler edit, Q1-authorized). Live verification deferred to Shilo's post-merge RT01 retest.
+
+The original investigation below is preserved for the audit trail.
+
+---
 
 ### Symptom (from Shilo's smoke + Render logs)
 
