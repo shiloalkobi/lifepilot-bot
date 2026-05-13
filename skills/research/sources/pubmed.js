@@ -5,12 +5,31 @@ const { assertAdapter } = require('./_adapter');
 const NCBI_API_KEY = process.env.NCBI_API_KEY || null;
 const BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
 
+// Phase 4f.4 Issue #3: removed bare "RSD"[Title/Abstract] — matched
+// "Relative Standard Deviation" in chemistry abstracts (Goji berry, Fe-MOF
+// nanoprobes, etc.). The MeSH clause still routes legitimate RSD-acronym
+// papers via the disambiguated CRPS sense. Added the spelled-out phrase
+// so papers that don't use the acronym still hit.
 const SEARCH_QUERY =
   '"Complex Regional Pain Syndromes"[MeSH] OR ' +
+  '"complex regional pain syndrome"[Title/Abstract] OR ' +
   '"CRPS"[Title/Abstract] OR ' +
-  '"RSD"[Title/Abstract] OR ' +
   '"causalgia"[Title/Abstract] OR ' +
   '"reflex sympathetic dystrophy"[Title/Abstract]';
+
+// CRPS-relevance whitelist — title OR abstract must match one of:
+//   CRPS | complex regional pain | causalgia | reflex sympathetic dystrophy | RSD (whole word)
+// Rationale: drops PubMed false positives where the query matched a different
+// meaning (e.g., "RSD" = relative standard deviation in chemistry abstracts).
+// Per Phase 4f.4 §3 / Q3 approval (moderate strictness).
+const CRPS_RELEVANCE_RE =
+  /(CRPS|complex regional pain|causalgia|reflex sympathetic dystrophy|\bRSD\b)/i;
+
+function isCrpsRelevant(article) {
+  if (!article) return false;
+  const haystack = `${article.title || ''}\n${article.abstract || ''}`;
+  return CRPS_RELEVANCE_RE.test(haystack);
+}
 
 function buildUrl(path, params) {
   const u = new URL(`${BASE}/${path}`);
@@ -144,7 +163,16 @@ async function fetchImpl(query, since) {
   const fRes = await fetch(fetchUrl);
   if (!fRes.ok) throw new Error(`PubMed efetch failed: HTTP ${fRes.status}`);
   const xml = await fRes.text();
-  return parseEfetchXml(xml);
+  const parsed = parseEfetchXml(xml);
+  // Phase 4f.4 Issue #3 — adapter-level relevance gate. Reject (not Tier-3
+  // downgrade) so research_blocked_log stays focused on real emotional-safety
+  // blocks rather than search-result false positives.
+  const relevant = parsed.filter(a => {
+    if (isCrpsRelevant(a)) return true;
+    console.warn(`[research] pubmed/${a.source_id} dropped: not CRPS-relevant`);
+    return false;
+  });
+  return relevant;
 }
 
 const adapter = {
@@ -172,3 +200,4 @@ module.exports.parseEfetchXml = parseEfetchXml;
 module.exports.parseAuthors = parseAuthors;
 module.exports.parsePublishedAt = parsePublishedAt;
 module.exports.decodeXml = decodeXml;
+module.exports.isCrpsRelevant = isCrpsRelevant;

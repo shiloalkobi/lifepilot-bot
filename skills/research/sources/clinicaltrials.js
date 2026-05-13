@@ -12,6 +12,18 @@ function studiesUrl(params) {
   return u.toString();
 }
 
+// CT.gov v2 returns startDateStruct.date in one of: ISO timestamp, "YYYY-MM-DD",
+// "YYYY-MM" (day unknown), or "YYYY" (older studies). PostgreSQL timestamptz
+// rejects the partial forms (error 22007). Normalize all to ISO before upsert.
+function normalizeStartDate(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw))   return raw;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw))   return `${raw}T00:00:00Z`;
+  if (/^\d{4}-\d{2}$/.test(raw))         return `${raw}-01T00:00:00Z`;
+  if (/^\d{4}$/.test(raw))               return `${raw}-01-01T00:00:00Z`;
+  return null;
+}
+
 function parseStudy(s) {
   const ps = s?.protocolSection;
   if (!ps) return null;
@@ -40,7 +52,7 @@ function parseStudy(s) {
     abstract: desc.briefSummary || null,
     url: `https://clinicaltrials.gov/study/${nctId}`,
     authors: investigators,
-    published_at: sm.startDateStruct?.date || null,
+    published_at: normalizeStartDate(sm.startDateStruct?.date),
     _meta: {
       recruiting: sm.overallStatus === 'RECRUITING',
       israel:     isIsrael,
@@ -82,6 +94,10 @@ async function fetchImpl(query, _since) {
     for (const s of studies) {
       const a = parseStudy(s);
       if (!a) continue;
+      if (!a.published_at) {
+        console.warn(`[research] clinicaltrials/${a.source_id} skipped: missing publication date`);
+        continue;
+      }
       if (seen.has(a.source_id)) continue;
       seen.add(a.source_id);
       out.push(a);
@@ -115,3 +131,4 @@ assertAdapter(adapter);
 module.exports = adapter;
 module.exports.parseStudy = parseStudy;
 module.exports.studiesUrl = studiesUrl;
+module.exports.normalizeStartDate = normalizeStartDate;

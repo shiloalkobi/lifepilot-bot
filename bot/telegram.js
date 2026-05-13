@@ -579,10 +579,16 @@ function startBot(token, webhookUrl = null) {
   bot.onText(/\/dashboard/, (msg) => sendDashboard(msg.chat.id));
 
   // /research — CRPS research with hope filter (skill: skills/research)
-  bot.onText(/^\/research$/, async (msg) => {
+  // Phase 4f.4 Issue #1: widened regex (accept @botname suffix + trailing
+  // whitespace + ignored args per Q4); JSON.parse with typeof guard because
+  // 4f.3 Commit B changed execute() to return a JSON string (was an object);
+  // entry log so future regressions are observable in Render logs.
+  bot.onText(/^\/research(?:@\w+)?(?:\s+.*)?$/, async (msg) => {
+    console.log('[/research] invoked by chat', msg.chat.id);
     try {
       const research = require('../skills/research');
-      const result = await research.execute('search_research', {}, { chat_id: msg.chat.id });
+      const raw = await research.execute('search_research', {}, { chat_id: msg.chat.id });
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (!result.ok) {
         return bot.sendMessage(msg.chat.id, `⚠️ ${result.error || 'שגיאה במחקר.'}`);
       }
