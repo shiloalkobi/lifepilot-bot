@@ -608,6 +608,27 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
+  // /digest_now — CRPS-10 owner-only manual trigger for the weekly digest
+  // (live smoke test without waiting for Sunday 09:00 IL cron).
+  bot.onText(/^\/digest_now(?:@\w+)?(?:\s+.*)?$/, async (msg) => {
+    const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (!ownerId || msg.chat.id !== ownerId) {
+      console.log('[/digest_now] denied — chat', msg.chat.id, 'is not owner');
+      return;
+    }
+    console.log('[/digest_now] invoked by owner', msg.chat.id);
+    try {
+      const { sendWeeklyDigest } = require('./research-digest');
+      const result = await sendWeeklyDigest(bot, msg.chat.id);
+      if (!result.sent) {
+        bot.sendMessage(msg.chat.id, `ℹ️ Digest skipped — ${result.reason}`);
+      }
+    } catch (err) {
+      console.error('[/digest_now]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה ב-digest.');
+    }
+  });
+
   // Handle all non-command messages
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;

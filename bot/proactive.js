@@ -5,6 +5,7 @@ const { getShabbatTimes, setShabbatWindow } = require('./shabbat');
 const { getOpenTasks }  = require('./tasks');
 const { getTodayHealth, getWeekRawStats } = require('./health');
 const { checkAlerts, initDefaultWatchlist } = require('./stocks');
+const { sendWeeklyDigest } = require('./research-digest');
 
 // Pikud HaOref alert keywords — these always bypass Shabbat mode
 const PIKUD_KEYWORDS = ['פיקוד העורף', 'אזעקה', 'ירי', 'רקטות', 'alert'];
@@ -172,7 +173,16 @@ function startProactiveScheduler(bot, chatId) {
     } catch (e) { console.warn('[Proactive] lead reminder error:', e.message); }
   }, { timezone: 'Asia/Jerusalem' });
 
-  console.log('[Proactive] Scheduler started — 3 jobs (Shabbat eve, health reminder, weekly plan) + stock alerts + lead reminders every 30min');
+  // ── SUNDAY 09:00 IL — CRPS weekly research digest (CRPS-10) ────────────────
+  cron.schedule('0 9 * * 0', async () => {
+    try {
+      await sendWeeklyDigest(bot, chatId);
+    } catch (e) {
+      console.error('[Proactive] digest error:', e.message);
+    }
+  }, { timezone: 'Asia/Jerusalem' });
+
+  console.log('[Proactive] Scheduler started — 4 jobs (Shabbat eve, health reminder, weekly plan, research digest) + stock alerts + lead reminders every 30min');
 }
 
 module.exports = { startProactiveScheduler, isPikudAlert };

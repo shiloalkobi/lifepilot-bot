@@ -314,3 +314,62 @@ Shilo answers Q1–Q7. On approval, Phase B implementation will:
 - Update `docs/research/01h-weekly-digest-design.md` with final answers + any deviations from this design.
 
 **Until Q1–Q7 are answered: zero code changes.**
+
+---
+
+## §8 Phase B Implementation Log (2026-05-17)
+
+### §8.1 Approved answers (from Shilo's Phase B greenlight)
+
+| Q | Answer |
+|---|--------|
+| Q1 | Sunday 09:00 IL — `'0 9 * * 0'` + `{ timezone: 'Asia/Jerusalem' }` |
+| Q2 | Top 5, Tier-1 prioritized (3×T1 + 2×T2 with fallback) |
+| Q3 | Silent skip — no message, just `console.log('[Digest] 0 unsurfaced — skipping')` |
+| Q4 | Existing DB only — no fresh fetch. Revisit in ~5 weeks if backlog runs dry. |
+| Q5 | Yes — `markSurfaced(id, chatId)` AFTER successful send |
+| Q6 | Yes — defensive `if (isShabbatPrecise()) return;` at top of handler |
+| Q7 | Dedicated thin wrapper — zero touch to `search_research` |
+
+### §8.2 Honest Gap #6 — Option B chosen (duplication, not `_internals` import)
+
+Shilo selected **Option B: duplicate the ranking helpers (~25 LOC)** into `bot/research-digest.js` rather than importing from `skills/research/index.js._internals`.
+
+Rationale: keeps digest fully independent of the `/research` path; if `pickTop5`/`rankArticles` evolve in `search_research`, the digest will NOT silently inherit the change. Code comment in `bot/research-digest.js` (lines 13–25) documents the intentional duplication and points to the source-of-truth.
+
+### §8.3 What was built
+
+| File | Type | LOC | Purpose |
+|------|------|-----|---------|
+| `skills/research/storage/articles.js` | modified (added 1 export) | +17 | `findUnsurfaced(chatId, limit, client)` — sibling to `findFreshUnseen`, no `fetched_at` gate |
+| `bot/research-digest.js` | **new** | 132 | `buildDigestMessage` + `sendWeeklyDigest` + duplicated helpers |
+| `bot/proactive.js` | modified (added import + 1 cron block) | +10 | Sunday 09:00 IL registration; existing blocks untouched |
+| `bot/telegram.js` | modified (added 1 handler) | +19 | `/digest_now` owner-gated manual trigger; `/research` handler byte-unchanged |
+| `tests/research_digest.test.js` | **new** | 217 | 11 tests (10 from §5 + 1 sanity for duplication contract) |
+
+**Total: +395 LOC added (132 + 217 in new files; 46 across existing modifications).**
+
+### §8.4 Test results
+
+- New `tests/research_digest.test.js`: **11/11 pass** (10 §5 cases + 1 duplication-contract sanity).
+- Full research suite `tests/research_*.test.js`: **217/217 pass** (206 prior + 11 new). **Zero regression.**
+
+### §8.5 STOP-list compliance
+
+All 8 STOP-list items in §4 honored:
+1. ✅ No schema change to `research_articles`.
+2. ✅ `searchResearch` in `skills/research/index.js` byte-unchanged.
+3. ✅ `/research` handler in `bot/telegram.js` byte-unchanged (the new `/digest_now` is a separate handler, per B.4).
+4. ✅ Hope Filter / classifier untouched.
+5. ✅ `bot/agent.js` untouched.
+6. ✅ No new npm dependencies.
+7. ✅ `bot/scheduler.js` untouched (digest lives in proactive.js, the behavioral scheduler).
+8. ✅ `bot/shabbat.js` untouched (we only consume `isShabbatPrecise()`).
+
+### §8.6 Open items — awaiting live smoke test
+
+- Shilo to run `/digest_now` in Telegram → verify message renders correctly, articles match the 31-backlog claim.
+- Post smoke-test: PR `feature/crps-10-weekly-digest` → `main`.
+- After merge: first natural fire on Sunday 2026-05-24 09:00 IL (no manual trigger needed).
+
+**Branch state at end of Phase B: `feature/crps-10-weekly-digest` — pending Shilo's live verification before merge.**

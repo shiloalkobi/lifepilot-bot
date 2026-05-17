@@ -1382,4 +1382,21 @@ This is Phase 4c Hope Filter + Phase 4d profile storage working as designed.
 
 ---
 
+## CRPS-10 Weekly Digest — Phase B Implementation (2026-05-17)
+
+**Status:** Implemented on `feature/crps-10-weekly-digest`. **Pending merge.**
+
+Sunday 09:00 IL proactive Telegram digest of unsurfaced Tier-1/2 CRPS articles
+(currently 31 in DB backlog per Supabase MCP verification: 26 CT.gov + 5 PubMed).
+
+**Files (3 new behaviors, STOP-list compliant — see `01h-weekly-digest-design.md` §8.5):**
+- `skills/research/storage/articles.js` — `findUnsurfaced(chatId, limit)` sibling to `findFreshUnseen` (no 6h `fetched_at` gate; backlog visible)
+- `bot/research-digest.js` — NEW. `buildDigestMessage` + `sendWeeklyDigest`. Duplicates ranking helpers from `skills/research/index.js` (Option B — intentional, see file header comment)
+- `bot/proactive.js` — registers Sunday 09:00 IL cron with `Asia/Jerusalem` timezone
+- `bot/telegram.js` — adds `/digest_now` owner-gated manual trigger; `/research` handler untouched
+
+**Tests:** `tests/research_digest.test.js` — 11/11 pass; full research suite 217/217 pass (zero regression vs prior 206).
+
+**Awaiting:** Shilo's live `/digest_now` smoke test before PR merge.
+
 — Amelia 💻
