@@ -373,3 +373,54 @@ All 8 STOP-list items in §4 honored:
 - After merge: first natural fire on Sunday 2026-05-24 09:00 IL (no manual trigger needed).
 
 **Branch state at end of Phase B: `feature/crps-10-weekly-digest` — pending Shilo's live verification before merge.**
+
+---
+
+## §9 Phase C Smoke Result (2026-05-18)
+
+### §9.1 What was tested
+
+A **local live smoke against the real production DB was not possible** from this workstation — `.env` carries only `SUPABASE_ANON_KEY`, and per `project_supabase_security_model.md` the `research_articles` table is RLS deny-by-default for `anon`. Honest gap was surfaced to Shilo (BMAD discipline: stop, don't guess). Shilo selected **Option 3: structural dry-run with stubbed pool** — mechanism proof here; real-content verification is covered by Claude (web) via Supabase MCP separately (31 articles: 7 T1 + 24 T2).
+
+### §9.2 Method
+
+Throwaway script `scripts/digest-dryrun.js` (NOT committed — deleted in C.3) constructed an 8-article stub pool mirroring the shape of `findUnsurfaced` return rows (4 Tier-1 including 1 Israeli-recruiting; 4 Tier-2 with mixed `framing_he` presence). Injected via dependency injection: `buildDigestMessage(758752313, { articlesStore: { findUnsurfaced: async () => STUB_POOL } })`. No real DB call, no Telegram send, no mutation.
+
+### §9.3 Results — all 9 mechanism checks pass
+
+| Check | Result |
+|---|---|
+| Exactly 5 of 8 selected | ✅ true |
+| 3 Tier-1 + 2 Tier-2 ratio | ✅ true (3 T1 + 2 T2) |
+| Israeli-recruiting article ranks first | ✅ `stub-il-01` at position 1 |
+| 🇮🇱 prefix renders in title | ✅ `🇮🇱 מגייס בישראל • …` present |
+| Hebrew header renders | ✅ `🔬 <b>מחקרי CRPS השבוע</b> — מצאתי 5 מאמרים חדשים` |
+| `framing_he` rendered in italics when present | ✅ true |
+| `<i>` opens/closes balanced | ✅ true |
+| `<a>` opens/closes balanced | ✅ true |
+| `<b>` opens/closes balanced | ✅ true |
+
+### §9.4 Selection order (verifies ranking logic)
+
+1. `stub-il-01` — T1, `_meta.israel=true` (+30 bonus → first)
+2. `stub-t1-pubmed-recent` — T1, 2026-04-15
+3. `stub-t1-medrxiv` — T1, 2026-04-10
+4. `stub-t2-pubmed-newest` — T2, 2026-04-20
+5. `stub-t2-ct-recent` — T2, 2026-04-12
+
+Articles excluded (3): `stub-t1-pubmed-older` (4th T1 dropped — `pickTop5` slices first 3), `stub-t2-medrxiv-noframing`, `stub-t2-pubmed-oldest` (T2 cap of 2 reached).
+
+This confirms the documented behavior: **Tier-1 priority beats Tier-2 recency** — `stub-t1-pubmed-older` (2026-04-05) was excluded even though `stub-t2-pubmed-newest` (2026-04-20) was 15 days more recent. That's by design (per `pickTop5`).
+
+### §9.5 Mechanism assessment
+
+✅ **Mechanism proven.** Ranking, `pickTop5` slicing, Israeli-recruiting boost, Hebrew header, `framing_he` rendering, and HTML balance all behave correctly against a realistic stub. Combined with the 11 unit tests (217/217 pass overall — Phase B), this is sufficient confidence that the Sunday cron will render correctly when it fires against the real 31-article backlog.
+
+**Residual risk** (low, accepted by stub-only approach): the real backlog could contain rows with unexpected nullness or special characters that the stub didn't exercise. Mitigated by `sendWeeklyDigest`'s outer try/catch in `bot/proactive.js` (cron logs error and proceeds — does not crash the bot process).
+
+### §9.6 Phase C state
+
+- ✅ Throwaway `scripts/digest-dryrun.js` deleted; `scripts/` directory removed; `git status` clean of any C-artifact.
+- ✅ Branch still `feature/crps-10-weekly-digest`; only this §9 commit added to it during Phase C.
+- ✅ Pre-existing 7 dirty files: unstaged, untouched.
+- ✅ **No merge to main.** Awaiting Shilo's literal "approved, merge to main".
