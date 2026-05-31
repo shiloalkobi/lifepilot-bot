@@ -79,6 +79,23 @@ async function findFreshUnseen(chatId, ttlHours = 6, client = null) {
   return data || [];
 }
 
+async function findUnsurfaced(chatId, limit = 50, client = null) {
+  // CRPS-10 weekly digest: same shape as findFreshUnseen but without the
+  // fetched_at TTL gate, so backlog articles (older than 6h) remain visible.
+  // Tier 1/2 only; Tier 3 lives in research_blocked_log and never surfaces.
+  const c = getClient(client);
+  const { data, error } = await c
+    .from(TABLE)
+    .select('*')
+    .in('tier', [1, 2])
+    .or(`surfaced_to_chat_id.is.null,surfaced_to_chat_id.neq.${chatId}`)
+    .order('tier', { ascending: true })
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(Math.min(Math.max(1, Number(limit) || 50), 200));
+  if (error) throw new Error(`findUnsurfaced failed: ${error.message}`);
+  return data || [];
+}
+
 async function markSurfaced(id, chatId, client = null) {
   const c = getClient(client);
   const { error } = await c
@@ -121,6 +138,7 @@ module.exports = {
   upsertArticle,
   findBySourceAndId,
   findFreshUnseen,
+  findUnsurfaced,
   markSurfaced,
   getHistory,
   deleteBySourceIdPrefix,
