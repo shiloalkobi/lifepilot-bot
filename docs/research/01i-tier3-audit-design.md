@@ -348,3 +348,35 @@ No live Supabase, no live Telegram.
 Design complete. The only file written is this design doc; no source/feature code was created or modified.
 Awaiting Shilo's answers to **Q1–Q9** before any implementation. Before Phase 3, the implementer must clear §7
 item 2 (`blocked_at` format + IL formatter) — everything else is already verified against live source.
+
+---
+
+## §8 Merge record (CRPS-13.M)
+
+Merged to `main` via `--no-ff`, merge SHA **`e23719c`**, on 2026-05-31 (Asia/Jerusalem).
+Fourth and final CRPS Phase 5+ enhancement.
+
+Branch `feature/crps-13-tier3-audit`:
+- `1623fb4` feat — `/blocked` command (3 prod files + 2 tests, +455 LOC)
+- `74f4d0a` docs — this design doc
+
+Decisions (all architect leans accepted): Q1 `/blocked`; Q2 grouped summary + last 10 titles;
+Q3 both; Q4 isolation file `bot/research-audit.js`; Q5 fallback bucket `אחר / לא מסווג`;
+Q6 space→underscore normalize (yes); Q7 optional count arg (default 10, clamp 1-100);
+Q8 no date filter v1; Q9 silent denial.
+
+QA (Phase 5): GO. 244/244 tests (217 prior + 27 new), zero regression. 23-row fixture smoke
+confirmed bucket tally 11/4/4/2/1/1=23, fallback bucket, HTML escaping, null-rationale safety,
+⚙️/🤖 legend, message length 1343/4096. Owner-gate verbatim from `/digest_now` (silent denial).
+0 STOP-list violations — Hope Filter, `/research`, `/digest_now`, `research-digest.js`,
+`articles.js`, the `appendBlocked` call site, and the 3 existing `blocked-log` functions all untouched.
+
+§7 gap #2 cleared: `blocked_at` is a server-default ISO-UTC timestamp; rendered via `formatTimeIL`
+(`bot/reminders.js:33`, exported :217), which handles the `Z` suffix and renders in Asia/Jerusalem.
+
+Non-blocking follow-up candidates (not done): verbose IL date format vs the compact `dd/mm` §3 mock
+(cosmetic); pagination if the table grows to hundreds (§7 item 8); latent HTML-escaping gap in the
+existing `/research` + digest output (STOP-listed here, would be its own ticket).
+
+Live verification pending: `/blocked` round-trip against the live bot + real Supabase row
+(owner chat_id 758752313) after the next Render redeploy.
