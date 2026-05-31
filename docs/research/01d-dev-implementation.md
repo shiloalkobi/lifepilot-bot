@@ -1400,3 +1400,11 @@ Sunday 09:00 IL proactive Telegram digest of unsurfaced Tier-1/2 CRPS articles
 **Awaiting:** Shilo's live `/digest_now` smoke test before PR merge.
 
 — Amelia 💻
+
+### CRPS-10.M (Merge) — 2026-05-17
+
+`--no-ff` merge of `feature/crps-10-weekly-digest` → `main`.
+3 commits merged (A: `80ad476`, B: `13f4012`, C: `2f60df4`).
+217/217 tests pass on main. Triggers Render auto-redeploy.
+First Sunday cron fire: 2026-05-24 09:00 IL.
+Manual `/digest_now` available for owner post-deploy.
