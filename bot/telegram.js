@@ -629,6 +629,33 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
+  // /blocked — CRPS-13 owner-only Tier 3 audit dashboard. Read-only view of
+  // the Hope Filter's blocked rows, grouped by reason. Optional count arg
+  // (e.g. "/blocked 20") overrides the default 10-title limit. Owner-gate
+  // copied VERBATIM from /digest_now (silent return on denial — no reply).
+  bot.onText(/^\/blocked(?:@\w+)?(?:\s+(\d+))?$/, async (msg, match) => {
+    const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (!ownerId || msg.chat.id !== ownerId) {
+      console.log('[/blocked] denied — chat', msg.chat.id, 'is not owner');
+      return;
+    }
+    console.log('[/blocked] invoked by owner', msg.chat.id);
+    try {
+      const arg = match && match[1] ? parseInt(match[1], 10) : 10;
+      const titleLimit = Math.min(Math.max(1, Number.isFinite(arg) ? arg : 10), 100);
+      const { listBlocked } = require('../skills/research/storage/blocked-log');
+      const { buildAuditMessage } = require('./research-audit');
+      // Fetch enough rows to cover the requested title window (+headroom for
+      // an accurate grouped summary), clamped at 100 by listBlocked itself.
+      const rows = await listBlocked(Math.max(titleLimit, 25));
+      const text = buildAuditMessage(rows, { titleLimit });
+      bot.sendMessage(msg.chat.id, text, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/blocked]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בדוח החסימות.');
+    }
+  });
+
   // Handle all non-command messages
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;

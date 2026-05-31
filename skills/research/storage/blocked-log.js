@@ -58,9 +58,23 @@ async function deleteBySourceIdPrefix(prefix, client = null) {
   if (error) throw new Error(`deleteBySourceIdPrefix failed: ${error.message}`);
 }
 
+// CRPS-13 — read-only audit query. Returns newest-first blocked rows,
+// capped + clamped at `limit` (1..100). Pure SELECT; never mutates rows.
+async function listBlocked(limit = 25, client = null) {
+  const c = getClient(client);
+  const { data, error } = await c
+    .from(TABLE)
+    .select('source, source_id, title, url, blocked_at, blocked_by, reason_code, classifier_rationale')
+    .order('blocked_at', { ascending: false })
+    .limit(Math.min(Math.max(1, Number(limit) || 25), 100));
+  if (error) throw new Error(`listBlocked failed: ${error.message}`);
+  return data || [];
+}
+
 module.exports = {
   appendBlocked,
   countSince,
   deleteBySourceIdPrefix,
+  listBlocked,
   TABLE,
 };

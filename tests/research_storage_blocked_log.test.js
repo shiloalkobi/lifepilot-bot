@@ -115,3 +115,72 @@ test('deleteBySourceIdPrefix uses .like(source_id, prefix%)', async () => {
   const likeCall = ops.find(o => o[0] === 'like');
   assert.equal(likeCall[2], 'test-%');
 });
+
+// ── CRPS-13 — listBlocked (§5.1) ─────────────────────────────────────────────
+
+function blockedRow(i) {
+  return {
+    source: 'pubmed', source_id: `p${i}`, title: `t${i}`, url: `u${i}`,
+    blocked_at: `2026-05-${String(i).padStart(2, '0')}T00:00:00Z`,
+    blocked_by: 'pre_filter', reason_code: 'off_topic', classifier_rationale: null,
+  };
+}
+
+test('listBlocked — orders newest-first by blocked_at', async () => {
+  const client = mockClient({ research_blocked_log: { _default: { data: [], error: null } } });
+  await blocked.listBlocked(25, client);
+  const ops = client._calls[0].ops;
+  const orderCall = ops.find(o => o[0] === 'order');
+  assert.ok(orderCall, '.order() should be invoked');
+  assert.equal(orderCall[1], 'blocked_at');
+  assert.deepEqual(orderCall[2], { ascending: false });
+});
+
+test('listBlocked — applies a .limit() (clamped)', async () => {
+  const rows = Array.from({ length: 23 }, (_, i) => blockedRow(i + 1));
+  const client = mockClient({ research_blocked_log: { _default: { data: rows.slice(0, 5), error: null } } });
+  const out = await blocked.listBlocked(5, client);
+  assert.ok(out.length <= 5);
+  const ops = client._calls[0].ops;
+  const limitCall = ops.find(o => o[0] === 'limit');
+  assert.ok(limitCall, '.limit() should be invoked');
+  assert.equal(limitCall[1], 5);
+});
+
+test('listBlocked — clamps absurd limit to 100', async () => {
+  const client = mockClient({ research_blocked_log: { _default: { data: [], error: null } } });
+  await blocked.listBlocked(9999, client);
+  const limitCall = client._calls[0].ops.find(o => o[0] === 'limit');
+  assert.equal(limitCall[1], 100);
+});
+
+test('listBlocked — empty table returns [] (not null)', async () => {
+  const client = mockClient({ research_blocked_log: { _default: { data: null, error: null } } });
+  const out = await blocked.listBlocked(25, client);
+  assert.deepEqual(out, []);
+});
+
+test('listBlocked — Supabase error rejects with listBlocked failed', async () => {
+  const client = mockClient({
+    research_blocked_log: { _default: { data: null, error: { message: 'boom' } } },
+  });
+  await assert.rejects(blocked.listBlocked(25, client), /listBlocked failed/);
+});
+
+test('listBlocked — selects exactly the 8 audit columns', async () => {
+  const client = mockClient({ research_blocked_log: { _default: { data: [], error: null } } });
+  await blocked.listBlocked(25, client);
+  const selectCall = client._calls[0].ops.find(o => o[0] === 'select');
+  assert.equal(
+    selectCall[1],
+    'source, source_id, title, url, blocked_at, blocked_by, reason_code, classifier_rationale',
+  );
+});
+
+test('listBlocked — honors the injected client', async () => {
+  const rows = [blockedRow(1)];
+  const client = mockClient({ research_blocked_log: { _default: { data: rows, error: null } } });
+  const out = await blocked.listBlocked(25, client);
+  assert.equal(client._calls.length, 1, 'injected client was used');
+  assert.deepEqual(out, rows);
+});
