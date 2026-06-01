@@ -397,3 +397,37 @@ otherwise document as manual-smoke (see §7 live-check). (Q: acceptable?)
 
 Design complete. Awaiting Shilo's answers to Q1-Q8 before writing any code.
 No source files were modified; only this design doc was written.
+
+---
+
+## §8 Merge record (CRPS-11.M)
+
+Merged to `main` via `--no-ff`, merge SHA **`297da80`**, on 2026-06-01 (Asia/Jerusalem).
+
+Branch `feature/crps-11-topic-subscriptions`:
+- `59d7a4e` feat — `/topics` + digest boost (3 prod files + 2 tests, +440/-4)
+- `a9a26ee` docs — this design doc
+
+Decisions (all architect leans accepted): Q1 `/topics` list + `/topics remove N` (→ `deactivate`,
+reversible); Q2 `TOPIC_BOOST=25` (below Israeli +30, never flips tiers); Q3 digest-only divergence
+(boost NOT mirrored to `skills/research/index.js`, documented in research-digest.js header);
+Q4 match `title` + `framing_he` only (not abstract); Q5 `MIN_KEYWORD_LEN=2`; Q6 isolation file
+`bot/research-topics.js`; Q7 label-as-keyword (load-bearing); Q8 🎯 marker on boosted items.
+
+QA (Phase 5): GO. 270/270 tests (244 prior + 26 new), zero regression. Behavioral smoke confirmed
+matchesTopic (Hebrew + English, null-safe, MIN_LEN, no boundary-span), buildKeywordSet label-only
+fallback (Q7), buildTopicsMessage (list + empty + HTML escaping), and digest boost end-to-end:
++25 exact, 🎯 rendered, and crucially NO tier-flip (T2+topic=75 < plain T1=100). scoreOf stays a
+pure `(a)→number`; `_topicMatch` tagged before scoring. 0 STOP-list violations — Hope Filter,
+`/research`, `/digest_now`, `/blocked`, `research-audit.js`, `articles.js`, `blocked-log.js`,
+`topics.js`, and `skills/research/index.js` scoreOf all untouched.
+
+`framing_he` confirmed real column (articles.js:39, carried by `findUnsurfaced`'s `select('*')`).
+
+Carry-forward (not blockers, no follow-up scheduled):
+- `subscribe_research_topic` never verified live (0 rows) — recommend one manual `/topics`
+  round-trip (NL subscribe → `/topics` → `/topics remove N`) on staging before relying in prod.
+- Hebrew prefix/nikud false-negatives (plain substring, no stemmer) — known/accepted MVP limitation.
+
+Live verification pending: the topic-boost first fires in the Sunday 09:00 IL digest after the next
+Render redeploy (owner chat_id 758752313), and only if at least one topic has been subscribed.
