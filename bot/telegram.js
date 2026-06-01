@@ -656,6 +656,49 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
+  // /topics — CRPS-11 owner-only topic subscriptions. `/topics` lists active
+  // subscriptions; `/topics remove N` deactivates the N-th topic (1-based,
+  // created_at asc — same order getActiveByChatId returns). REMOVE = deactivate
+  // (reversible, audit-friendly). Owner-gate copied VERBATIM from /blocked
+  // (silent return on denial — no reply).
+  bot.onText(/^\/topics(?:@\w+)?(?:\s+remove\s+(\d+))?$/, async (msg, match) => {
+    const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (!ownerId || msg.chat.id !== ownerId) {
+      console.log('[/topics] denied — chat', msg.chat.id, 'is not owner');
+      return;
+    }
+    console.log('[/topics] invoked by owner', msg.chat.id);
+    try {
+      const { getActiveByChatId, deactivate } = require('../skills/research/storage/topics');
+      const { buildTopicsMessage } = require('./research-topics');
+      const removeIdx = match && match[1] ? parseInt(match[1], 10) : null;
+
+      const topics = await getActiveByChatId(ownerId);
+
+      if (removeIdx === null) {
+        // List path.
+        const text = buildTopicsMessage(topics);
+        return bot.sendMessage(msg.chat.id, text, { parse_mode: 'HTML' });
+      }
+
+      // Remove path — resolve 1-based index against the active list.
+      const target = topics[removeIdx - 1];
+      if (!target) {
+        return bot.sendMessage(
+          msg.chat.id,
+          `⚠️ אין נושא במספר ${removeIdx}. שלח /topics לרשימה.`,
+        );
+      }
+      await deactivate(ownerId, target.topic);
+      const remaining = await getActiveByChatId(ownerId);
+      const text = `✅ הוסר מהמעקב: ${target.topic}\n\n${buildTopicsMessage(remaining)}`;
+      return bot.sendMessage(msg.chat.id, text, { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[/topics]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה בניהול הנושאים.');
+    }
+  });
+
   // Handle all non-command messages
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;

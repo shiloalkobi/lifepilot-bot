@@ -82,6 +82,13 @@ function mockClient(routes) {
   };
 }
 
+// ── topicsStore stub for CRPS-11 boost tests ────────────────────────────────
+function makeTopicsStub(topicRows = []) {
+  return {
+    async getActiveByChatId(_chatId) { return topicRows; },
+  };
+}
+
 // ── §5.1 — 0 unsurfaced → silent-skip contract ───────────────────────────────
 test('buildDigestMessage — 0 unsurfaced returns null message', async () => {
   const { store } = makeStoreStub({ unsurfaced: [] });
@@ -265,4 +272,60 @@ test('research-digest duplicates ranking helpers from skills/research', () => {
   assert.equal(typeof _internals.maybePrefixFlag, 'function');
   assert.equal(typeof _internals.scoreOf, 'function');
   assert.equal(typeof _internals.isIsraeliRecruiting, 'function');
+});
+
+// ── CRPS-11 — topic boost floats a matching Tier-2 above plain Tier-2 ─────────
+test('buildDigestMessage — subscribed keyword floats a matching Tier-2 + shows 🎯', async () => {
+  const rows = [
+    { id: 'plain1', tier: 2, title: 'Physiotherapy outcomes', framing_he: 'פיזיותרפיה', url: 'u', source: 'pubmed', published_at: '2026-04-05' },
+    { id: 'plain2', tier: 2, title: 'Surgery review',          framing_he: 'ניתוח',      url: 'u', source: 'pubmed', published_at: '2026-04-04' },
+    { id: 'match',  tier: 2, title: 'Ketamine infusion trial', framing_he: 'מחקר על קטמין', url: 'u', source: 'pubmed', published_at: '2026-04-01' },
+  ];
+  const { store } = makeStoreStub({ unsurfaced: rows });
+  const topicsStore = makeTopicsStub([{ topic: 'ketamine', keywords: ['ketamine'] }]);
+  const out = await buildDigestMessage(CHAT_ID, { articlesStore: store, topicsStore });
+  // The matching article is the OLDEST (worst recency) yet must rank first
+  // because +25 beats the recency tiebreaker among same-tier articles.
+  assert.equal(out.articleIds[0], 'match');
+  // 🎯 marker present on the boosted item.
+  assert.match(out.message, /🎯 Ketamine infusion trial/);
+});
+
+// ── CRPS-11 — Hebrew-label-only subscription matches via framing_he (Q7) ──────
+test('buildDigestMessage — label-only subscription (empty keywords) still matches', async () => {
+  const rows = [
+    { id: 'plain', tier: 2, title: 'Surgery review',   framing_he: 'ניתוח', url: 'u', source: 'pubmed', published_at: '2026-04-05' },
+    { id: 'match', tier: 2, title: 'CRPS pain study',   framing_he: 'מחקר על קטמין לכאב', url: 'u', source: 'pubmed', published_at: '2026-04-01' },
+  ];
+  const { store } = makeStoreStub({ unsurfaced: rows });
+  // No explicit keywords[] — only the Hebrew label, which must count (Q7).
+  const topicsStore = makeTopicsStub([{ topic: 'קטמין', keywords: [] }]);
+  const out = await buildDigestMessage(CHAT_ID, { articlesStore: store, topicsStore });
+  assert.equal(out.articleIds[0], 'match');
+  assert.match(out.message, /🎯/);
+});
+
+// ── CRPS-11 — zero subscriptions → byte-identical to pre-CRPS-11 ordering ─────
+test('buildDigestMessage — empty subscriptions is a no-op (no 🎯, original order)', async () => {
+  const rows = [
+    { id: 't1', tier: 1, title: 'Ketamine T1',  framing_he: 'קטמין', url: 'u', source: 'pubmed', published_at: '2026-04-01' },
+    { id: 't2', tier: 2, title: 'Ketamine T2',  framing_he: 'קטמין', url: 'u', source: 'pubmed', published_at: '2026-04-02' },
+  ];
+  const { store } = makeStoreStub({ unsurfaced: rows });
+  const topicsStore = makeTopicsStub([]); // no active subscriptions
+  const out = await buildDigestMessage(CHAT_ID, { articlesStore: store, topicsStore });
+  // Tier wins; no boost applied; no marker rendered.
+  assert.equal(out.articleIds[0], 't1');
+  assert.doesNotMatch(out.message, /🎯/);
+});
+
+// ── CRPS-11 — scoreOf stays pure: +25 with _topicMatch, base without ─────────
+test('scoreOf — _topicMatch adds exactly TOPIC_BOOST (25); absent field = no boost', () => {
+  // No _topicMatch field → unchanged (proves scoreOf stayed pure).
+  assert.equal(_internals.scoreOf({ tier: 1 }), 100);
+  assert.equal(_internals.scoreOf({ tier: 2 }), 50);
+  // With the pre-tagged flag → +25.
+  assert.equal(_internals.scoreOf({ tier: 2, _topicMatch: true }), 75);
+  // Boost never flips tier ordering: T2+topic (75) < plain T1 (100).
+  assert.ok(_internals.scoreOf({ tier: 2, _topicMatch: true }) < _internals.scoreOf({ tier: 1 }));
 });
