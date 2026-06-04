@@ -40,6 +40,7 @@ const { getExpenses, saveInvoice, getExpenseSummary, exportToCSV } = require('./
 const { fetchStockPrice, formatPrice, addToWatchlist, removeFromWatchlist, formatWatchlist } = require('./stocks');
 const { buildPainChartUrl, buildExpenseChartUrl, buildHabitChartUrl } = require('./charts');
 const { generateQuote } = require('./quote-generator');
+const { fetchHeroImage } = require('./unsplash');
 const { savePassword, getPassword, listPasswords, deletePassword } = require('./password-manager');
 const { generateTTS } = require('./tts');
 
@@ -1558,6 +1559,7 @@ FAQ_2_Q: <common question about ${bizName}>
 FAQ_2_A: <clear answer, 1-2 sentences>
 FAQ_3_Q: <common question about ${bizName}>
 FAQ_3_A: <clear answer, 1-2 sentences>
+IMAGE_QUERY: <2-4 English search words describing this business for a stock photo — MUST be in ENGLISH, e.g. "coffee shop interior" or "dental clinic">
 
 CREATIVITY RULES:
 - Hero headline must NOT start with 'ברוכים הבאים' or contain 'מובילה' / 'מקצועית' / 'איכותית'
@@ -1603,6 +1605,8 @@ HERO STYLE: ${heroStyle}`;
         const faq2A   = extractLine('FAQ_2_A') || 'אנחנו מתחילים בתוך 48 שעות ממועד אישור ההזמנה.';
         const faq3Q   = extractLine('FAQ_3_Q') || 'האם יש אחריות?';
         const faq3A   = extractLine('FAQ_3_A') || 'בהחלט — אנו עומדים מאחורי כל עבודה עם אחריות מלאה.';
+        // Unsplash hero search query (English; generic fallback if Gemini omits it)
+        const imageQuery = extractLine('IMAGE_QUERY') || 'modern business office';
 
         const colorMap = {
           blue:   { primary: '#1a73e8', dark: '#0d47a1', light: '#e8f0fe', gradient: 'linear-gradient(135deg, #1a73e8, #0d47a1)' },
@@ -1620,6 +1624,25 @@ HERO STYLE: ${heroStyle}`;
           lpTemplateName = tplOpts[Math.floor(Math.random() * tplOpts.length)];
         }
         console.log(`[LandingPage] Using template: ${lpTemplateName}`);
+
+        // ── Unsplash hero background (graceful: null → gradient fallback) ─────
+        // Never throws, never hangs (~5s AbortController inside fetchHeroImage).
+        const heroImageUrl = await fetchHeroImage(imageQuery); // string | null
+        // Light-hero templates use dark hero text → force white when a photo loads
+        const lightHeroTemplates = ['minimal', 'elegant', 'ecommerce'];
+        let heroImageCss = '';
+        if (heroImageUrl) {
+          const safeUrl = String(heroImageUrl).replace(/'/g, '%27');
+          // Final highest-priority rule appended AFTER the template <style> so it
+          // wins over the 5 template .hero{background:...!important} overrides.
+          heroImageCss = `\n  <style>/* hero image overlay */\n.hero{background:linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.45)), url('${safeUrl}') center/cover no-repeat !important;}\n`
+            + (lightHeroTemplates.includes(lpTemplateName)
+                ? `.hero, .hero h1, .hero p{color:#fff !important; text-shadow:none !important;}\n`
+                : '')
+            + `  </style>`;
+        }
+        // MANDATORY fallback: heroImageUrl null → heroImageCss '' → page is
+        // byte-identical to today's gradient output (nothing injected).
 
         const landingTplCss = {
           minimal: `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -1858,29 +1881,29 @@ footer{background:#11111a}`,
     .nav-cta { background: ${c.primary}; color: #fff; padding: 10px 24px; border-radius: 25px; font-weight: 600; font-size: 0.95rem; transition: opacity 0.2s; }
     .nav-cta:hover { opacity: 0.85; }
     /* Hero */
-    .hero { background: ${c.gradient}; color: #fff; padding: 110px 40px; text-align: center; }
-    .hero h1 { font-size: 3rem; font-weight: 800; margin-bottom: 20px; line-height: 1.2; }
+    .hero { background: ${c.gradient}; color: #fff; padding: 124px 40px; text-align: center; }
+    .hero h1 { font-size: 3.3rem; font-weight: 800; margin-bottom: 22px; line-height: 1.18; }
     .hero p { font-size: 1.2rem; opacity: 0.9; max-width: 620px; margin: 0 auto 38px; }
     .hero-btn { background: #fff; color: ${c.primary}; padding: 16px 44px; border-radius: 32px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s, box-shadow 0.2s; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
     .hero-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,0.2); }
     /* Container */
     .container { max-width: 1100px; margin: 0 auto; }
-    section h2 { text-align: center; font-size: 2rem; color: ${c.primary}; margin-bottom: 44px; }
+    section h2 { text-align: center; font-size: 2.2rem; color: ${c.primary}; margin-bottom: 48px; }
     /* Values */
-    .values { padding: 80px 40px; background: #f8f9fa; }
-    .values-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; }
-    .value-card { background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 2px 16px rgba(0,0,0,0.06); border-top: 4px solid ${c.primary}; }
+    .values { padding: 96px 40px; background: #f8f9fa; }
+    .values-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 30px; }
+    .value-card { background: #fff; border-radius: 16px; padding: 34px; box-shadow: 0 10px 32px rgba(0,0,0,0.05); border-top: 4px solid ${c.primary}; }
     .value-card h3 { color: ${c.primary}; font-size: 1.2rem; margin-bottom: 12px; }
     .value-card p { color: #555; line-height: 1.65; }
     /* Services */
-    .services { padding: 64px 40px; background: #fff; }
-    .services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .service-card { background: ${c.light}; border-radius: 12px; padding: 20px 24px; display: flex; align-items: center; gap: 12px; font-size: 1rem; font-weight: 500; border: 1px solid ${c.primary}22; }
+    .services { padding: 80px 40px; background: #fff; }
+    .services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+    .service-card { background: ${c.light}; border-radius: 12px; padding: 22px 26px; display: flex; align-items: center; gap: 12px; font-size: 1rem; font-weight: 500; border: 1px solid ${c.primary}22; box-shadow: 0 6px 20px rgba(0,0,0,0.04); }
     .service-card .icon { color: ${c.primary}; font-size: 1.1rem; font-weight: 800; }
     /* Testimonials */
-    .testimonials { padding: 80px 40px; background: ${c.light}; }
-    .testimonials-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
-    .testimonial-card { background: #fff; border-radius: 16px; padding: 28px 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); position: relative; }
+    .testimonials { padding: 96px 40px; background: ${c.light}; }
+    .testimonials-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 26px; }
+    .testimonial-card { background: #fff; border-radius: 16px; padding: 30px 34px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); position: relative; }
     .testimonial-card::before { content: '"'; font-size: 4rem; color: ${c.primary}; opacity: 0.15; position: absolute; top: 10px; right: 24px; line-height: 1; font-family: Georgia, serif; }
     .testimonial-quote { color: #444; line-height: 1.7; margin-bottom: 20px; font-style: italic; }
     .testimonial-author { display: flex; align-items: center; gap: 12px; }
@@ -1888,7 +1911,7 @@ footer{background:#11111a}`,
     .author-name { font-weight: 700; color: #222; font-size: 0.95rem; }
     .author-role { color: #888; font-size: 0.82rem; }
     /* FAQ */
-    .faq { padding: 80px 40px; background: #fff; }
+    .faq { padding: 96px 40px; background: #fff; }
     .faq-list { max-width: 800px; margin: 0 auto; }
     .faq-item { border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
     .faq-q { padding: 18px 24px; font-weight: 600; cursor: pointer; display: flex; justify-content: space-between; align-items: center; color: #222; transition: background 0.2s; }
@@ -1898,13 +1921,13 @@ footer{background:#11111a}`,
     .faq-item.open .faq-a { display: block; }
     .faq-item.open .arrow { transform: rotate(180deg); }
     /* CTA */
-    .cta-section { background: ${c.gradient}; color: #fff; padding: 80px 40px; text-align: center; }
-    .cta-section h2 { font-size: 2.2rem; margin-bottom: 16px; color: #fff; }
+    .cta-section { background: ${c.gradient}; color: #fff; padding: 96px 40px; text-align: center; }
+    .cta-section h2 { font-size: 2.4rem; margin-bottom: 16px; color: #fff; }
     .cta-section p { font-size: 1.1rem; opacity: 0.9; margin-bottom: 32px; }
     .cta-btn { background: #fff; color: ${c.primary}; padding: 16px 48px; border-radius: 32px; font-size: 1.1rem; font-weight: 700; display: inline-block; transition: transform 0.2s; }
     .cta-btn:hover { transform: translateY(-2px); }
     /* Contact */
-    .contact { padding: 64px 40px; background: #f8f9fa; text-align: center; }
+    .contact { padding: 80px 40px; background: #f8f9fa; text-align: center; }
     .contact h2 { color: ${c.primary}; margin-bottom: 28px; }
     .contact-form { max-width: 480px; margin: 0 auto; }
     .contact-form input, .contact-form textarea { width: 100%; border: 2px solid #e0e6ef; border-radius: 10px; padding: 12px 16px; font-size: 1rem; margin-bottom: 14px; font-family: inherit; direction: rtl; transition: border-color 0.2s; }
@@ -1918,7 +1941,7 @@ footer{background:#11111a}`,
     footer { background: #1f2937; color: #9ca3af; text-align: center; padding: 24px; font-size: 0.9rem; }
     @media (max-width: 768px) { .hero h1 { font-size: 2.1rem; } nav { padding: 14px 20px; } .hero, .values, .testimonials, .faq, .cta-section, .contact { padding: 56px 20px; } }
   </style>
-  ${landingTplCss ? `<style>/* template: ${lpTemplateName} */\n${landingTplCss}\n  </style>` : ''}
+  ${landingTplCss ? `<style>/* template: ${lpTemplateName} */\n${landingTplCss}\n  </style>` : ''}${heroImageCss}
 </head>
 <body>
   <nav>
