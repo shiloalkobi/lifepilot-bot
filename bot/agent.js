@@ -372,7 +372,7 @@ const TOOL_DECLARATIONS = [
   { name: 'search_leads',   description: 'חפש לידים לפי שם, מייל, טלפון, או הערה.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'leads_summary',  description: 'סיכום סטטיסטי של לידים: כמה חדשים, נסגרו, השבוע, אחוז המרה.', parameters: { type: 'object', properties: {}, required: [] } },
   // Landing Page Generator (#27)
-  { name: 'generate_landing_page', description: 'ALWAYS call when asked for a landing page. צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] }, template: { type: 'string', enum: ['minimal','bold','elegant','tech','corporate','random'], description: 'סגנון עיצוב — random לאקראי' } }, required: ['business_name'] } },
+  { name: 'generate_landing_page', description: 'ALWAYS call when asked for a landing page. צור דף נחיתה HTML מקצועי לעסק או מוצר.', parameters: { type: 'object', properties: { business_name: { type: 'string' }, description: { type: 'string' }, services: { type: 'array', items: { type: 'string' } }, cta_text: { type: 'string' }, color: { type: 'string', enum: ['blue','green','purple','orange','dark'] }, template: { type: 'string', enum: ['minimal','bold','elegant','tech','corporate','ecommerce','random'], description: 'סגנון עיצוב — random לאקראי' } }, required: ['business_name'] } },
   // Dashboard Access (Security Level 2+)
   { name: 'get_dashboard_access', description: 'ALWAYS call when user asks for dashboard/login/כניסה. Generates secure 24h token. Owner only.', parameters: { type: 'object', properties: {}, required: [] } },
   // Backup System (owner only)
@@ -1616,7 +1616,7 @@ HERO STYLE: ${heroStyle}`;
         // ── Landing page template selection ──────────────────────────────────
         let lpTemplateName = args.template;
         if (!lpTemplateName || lpTemplateName === 'random') {
-          const tplOpts = ['minimal','bold','elegant','tech','corporate'];
+          const tplOpts = ['minimal','bold','elegant','tech','corporate','ecommerce'];
           lpTemplateName = tplOpts[Math.floor(Math.random() * tplOpts.length)];
         }
         console.log(`[LandingPage] Using template: ${lpTemplateName}`);
@@ -1638,15 +1638,56 @@ section h2{color:#000!important}
 .testimonials{background:#fff}
 .testimonial-card{border-radius:0!important;box-shadow:none!important;border:1px solid #eee}
 .testimonial-card::before{color:#000!important}
+.faq{background:#f9f9f9}
+.faq-item{border:1px solid #e5e5e5!important;border-radius:0!important}
+.faq-q{color:#000!important;font-weight:600!important}
+.faq-q:hover{background:#fff!important}
+.faq-q .arrow{color:#000!important}
+.faq-a{color:#555!important}
 .cta-section{background:#111!important}
+.cta-section h2{color:#fff!important}
+.cta-btn{background:#fff!important;color:#000!important;border-radius:2px!important}
+.contact{background:#fff}
+.contact h2{color:#000!important}
+.contact-form button{background:#000!important;border-radius:2px!important}
 footer{background:#111}`,
           bold: `@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700;900&display=swap');
-body{font-family:'Poppins',sans-serif!important}
-.hero{padding:120px 40px}
-.hero h1{font-size:5rem;font-weight:900}
-.value-card{background:${c.primary}!important;color:#fff;border-radius:24px!important;border:none!important;box-shadow:0 8px 32px rgba(0,0,0,0.15)!important}
-.value-card h3{color:#fff!important}
-.value-card p{color:rgba(255,255,255,0.85)!important}`,
+body{font-family:'Poppins',sans-serif!important;background:#fff;color:#111}
+nav{background:#111!important;box-shadow:none!important;border-bottom:4px solid ${c.primary}!important}
+.logo{color:#fff!important;font-weight:900!important;text-transform:uppercase;letter-spacing:1px}
+.nav-cta{background:${c.primary}!important;color:#fff!important;border-radius:0!important;font-weight:900!important;text-transform:uppercase;letter-spacing:1px}
+.hero{background:${c.gradient}!important;color:#fff;padding:130px 40px}
+.hero h1{font-size:5rem;font-weight:900;line-height:1.05;text-transform:uppercase;letter-spacing:-1px;text-shadow:0 4px 24px rgba(0,0,0,0.25)}
+.hero p{color:rgba(255,255,255,0.92);font-weight:700}
+.hero-btn{background:#111!important;color:#fff!important;border-radius:0!important;font-weight:900!important;text-transform:uppercase;letter-spacing:1px;box-shadow:8px 8px 0 rgba(0,0,0,0.25)!important}
+section h2{color:#111!important;font-weight:900!important;text-transform:uppercase;letter-spacing:-0.5px}
+.values{background:#fff}
+.value-card{background:${c.primary}!important;color:#fff;border-radius:0!important;border:none!important;border-bottom:8px solid #111!important;box-shadow:10px 10px 0 rgba(0,0,0,0.12)!important}
+.value-card h3{color:#fff!important;font-weight:900!important;text-transform:uppercase}
+.value-card p{color:rgba(255,255,255,0.9)!important;font-weight:600}
+.testimonials{background:#111}
+.testimonials h2{color:#fff!important}
+.testimonial-card{background:#1d1d1d!important;border:none!important;border-right:6px solid ${c.primary}!important;border-radius:0!important;box-shadow:none!important}
+.testimonial-card::before{color:${c.primary}!important;opacity:0.5!important}
+.testimonial-quote{color:#eaeaea!important;font-weight:600!important}
+.author-name{color:#fff!important;font-weight:900!important}
+.author-role{color:#999!important}
+.faq{background:#fff}
+.faq-item{border:3px solid #111!important;border-radius:0!important;margin-bottom:16px}
+.faq-q{color:#111!important;font-weight:900!important;text-transform:uppercase}
+.faq-q:hover{background:${c.primary}!important;color:#fff!important}
+.faq-q .arrow{color:${c.primary}!important}
+.faq-a{color:#444!important;font-weight:500}
+.cta-section{background:#111!important}
+.cta-section h2{color:#fff!important}
+.cta-section p{color:rgba(255,255,255,0.85)!important;opacity:1!important}
+.cta-btn{background:${c.primary}!important;color:#fff!important;border-radius:0!important;font-weight:900!important;text-transform:uppercase;letter-spacing:1px;box-shadow:8px 8px 0 rgba(255,255,255,0.15)!important}
+.contact{background:#f2f2f2}
+.contact h2{color:#111!important}
+.contact-form button{background:#111!important;border-radius:0!important;font-weight:900!important;text-transform:uppercase;letter-spacing:1px}
+.service-card{background:#111!important;color:#fff!important;border:none!important;border-radius:0!important;font-weight:700}
+.service-card .icon{color:${c.primary}!important}
+footer{background:#111;border-top:4px solid ${c.primary}}`,
           elegant: `@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap');
 body{font-family:'Playfair Display',Georgia,serif!important;background:#faf7f2;color:#2c1810}
 .hero{background:#faf7f2!important;color:#2c1810;padding:140px 40px}
@@ -1663,7 +1704,20 @@ section h2{color:#8b6f47!important}
 .testimonials{background:#fff}
 .testimonial-card{background:#faf7f2!important;border-radius:4px!important;box-shadow:none!important;border:1px solid #e8ddd0}
 .testimonial-card::before{color:#8b6f47!important}
+.faq{background:#faf7f2}
+.faq-item{border:1px solid #e8ddd0!important;border-radius:4px!important}
+.faq-q{color:#2c1810!important}
+.faq-q:hover{background:#fff!important}
+.faq-q .arrow{color:#8b6f47!important}
+.faq-a{color:#6b4c3b!important}
 .cta-section{background:#2c1810!important}
+.cta-section h2{color:#fff!important}
+.cta-btn{background:#8b6f47!important;color:#fff!important;border-radius:4px!important}
+.contact{background:#fff}
+.contact h2{color:#8b6f47!important}
+.contact-form input:focus,.contact-form textarea:focus{border-color:#8b6f47!important}
+.contact-form button{background:#8b6f47!important;border-radius:4px!important}
+.service-card .icon{color:#8b6f47!important}
 footer{background:#2c1810}`,
           tech: `@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;800&display=swap');
 body{font-family:'Space Grotesk',sans-serif!important;background:#0a0e27;color:#e0e8ff}
@@ -1717,8 +1771,64 @@ section h2{color:#003366!important}
 .testimonials{background:#eef2f7}
 .testimonial-card{border-radius:4px!important}
 .testimonial-card::before{color:#003366!important}
+.faq{background:#fff}
+.faq-item{border:1px solid #d8e0ea!important;border-radius:4px!important}
+.faq-q{color:#003366!important}
+.faq-q:hover{background:#f5f7fa!important}
+.faq-q .arrow{color:#003366!important}
+.faq-a{color:#555!important}
 .cta-section{background:#003366!important}
+.cta-section h2{color:#fff!important}
+.cta-btn{background:#fff!important;color:#003366!important;border-radius:4px!important}
+.contact{background:#f5f7fa}
+.contact h2{color:#003366!important}
+.contact-form input:focus,.contact-form textarea:focus{border-color:#003366!important}
+.contact-form button{background:#003366!important;border-radius:4px!important}
+.service-card .icon{color:#003366!important}
 footer{background:#001a33}`,
+          ecommerce: `@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+body{font-family:'Manrope',sans-serif!important;background:#fff;color:#1a1a2e}
+nav{background:#fff!important;box-shadow:0 2px 14px rgba(0,0,0,0.06)!important;border-bottom:1px solid #f0f0f5}
+.logo{color:#1a1a2e!important;font-weight:800!important}
+.nav-cta{background:${c.primary}!important;color:#fff!important;border-radius:10px!important;font-weight:700!important;box-shadow:0 4px 14px ${c.primary}55!important}
+.hero{background:linear-gradient(135deg,${c.light} 0%,#fff 100%)!important;color:#1a1a2e;padding:100px 40px}
+.hero h1{font-size:3.6rem;font-weight:800;color:#1a1a2e;text-shadow:none}
+.hero p{color:#555;font-weight:600}
+.hero-btn{background:${c.gradient}!important;color:#fff!important;border-radius:12px!important;font-weight:800!important;box-shadow:0 8px 24px ${c.primary}55!important}
+.hero-btn::after{content:' 🛒'}
+section h2{color:#1a1a2e!important;font-weight:800!important}
+.values{background:#fafafe}
+.values-grid{gap:24px}
+.value-card{background:#fff!important;border:1px solid #ececf5!important;border-top:none!important;border-radius:18px!important;box-shadow:0 6px 24px rgba(0,0,0,0.05)!important;transition:transform 0.2s,box-shadow 0.2s;position:relative;overflow:hidden}
+.value-card:hover{transform:translateY(-6px);box-shadow:0 14px 36px rgba(0,0,0,0.1)!important}
+.value-card::before{content:'★ פופולרי';position:absolute;top:14px;left:14px;background:${c.primary};color:#fff;font-size:0.68rem;font-weight:800;padding:4px 12px;border-radius:999px}
+.value-card h3{color:#1a1a2e!important;font-weight:800!important}
+.value-card p{color:#555!important}
+.service-card{background:#fff!important;border:1px solid #ececf5!important;border-radius:12px!important;font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,0.04)}
+.service-card .icon{color:${c.primary}!important}
+.testimonials{background:#fff}
+.testimonial-card{background:#fafafe!important;border:1px solid #ececf5!important;border-radius:18px!important;box-shadow:0 4px 18px rgba(0,0,0,0.04)!important}
+.testimonial-card::before{color:${c.primary}!important;opacity:0.25!important}
+.testimonial-quote{color:#333!important;font-style:normal!important;font-weight:600!important}
+.testimonial-quote::before{content:'★★★★★';display:block;color:#fbbf24;font-size:1rem;letter-spacing:2px;margin-bottom:10px;font-style:normal}
+.author-name{color:#1a1a2e!important;font-weight:800!important}
+.author-role{color:#888!important}
+.faq{background:#fafafe}
+.faq-item{border:1px solid #ececf5!important;border-radius:14px!important;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,0.03)}
+.faq-q{color:#1a1a2e!important;font-weight:700!important}
+.faq-q:hover{background:${c.light}!important}
+.faq-q .arrow{color:${c.primary}!important}
+.faq-a{color:#555!important}
+.cta-section{background:${c.gradient}!important}
+.cta-section h2{color:#fff!important}
+.cta-section p{color:rgba(255,255,255,0.92)!important;opacity:1!important}
+.cta-btn{background:#fff!important;color:${c.primary}!important;border-radius:12px!important;font-weight:800!important;box-shadow:0 8px 24px rgba(0,0,0,0.2)!important}
+.cta-btn::after{content:' ←'}
+.contact{background:#fff}
+.contact h2{color:#1a1a2e!important}
+.contact-form input:focus,.contact-form textarea:focus{border-color:${c.primary}!important}
+.contact-form button{background:${c.gradient}!important;border-radius:12px!important;font-weight:800!important;box-shadow:0 6px 18px ${c.primary}44!important}
+footer{background:#11111a}`,
         }[lpTemplateName] || '';
 
         const servicesSection = services.length > 0
