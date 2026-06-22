@@ -13,6 +13,17 @@
  * This file is the explicit placeholder so the gate is never silently skipped.
  * The body below is intentionally `test.skip` — it documents exactly what the
  * human runs before merge.
+ *
+ * ── GATE RESULT (recorded 2026-06-22) ───────────────────────────────────────
+ * RUN: tests/_r1_live_harness.js — 5 English airport-staff clips synthesized via
+ * TTS, converted to ogg/opus (matching real Telegram voice notes + the hardcoded
+ * audio/ogg mime), served over local HTTPS, run end-to-end through the REAL
+ * transcribeFlightVoice(fileUrl) against live gemini-3-flash-preview.
+ * VERDICT: PASS ✅ — G1 verbatim 5/5, G2 Hebrew 5/5, G3 two-field parse 5/5,
+ * G4 lang=EN 5/5. Single-call implementation SHIPPED; 2-call fallback NOT needed.
+ * Caveat: TTS clips are clean (no airport background noise) — verifies the
+ * transcribe+translate+parse pipeline, not noise robustness. Re-run the harness
+ * with real noisy field audio if/when available.
  */
 
 const test = require('node:test');
