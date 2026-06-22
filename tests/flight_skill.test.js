@@ -20,6 +20,7 @@ const {
   lookupSection,
   menuObject,
   parseFlightResponse,
+  deriveTranslatedTo,
   MEDICAL_LEGAL_SECTIONS,
   SECTIONS,
   MENU_HE,
@@ -187,19 +188,64 @@ test('FLIGHT_MODE_TTL_MS is exactly 3 hours', () => {
 
 // ── Part B — response parsing (C1.2 / C2.1) ─────────────────────────────────────
 
-test('parseFlightResponse splits the delimited two-field response', () => {
-  const raw = 'LANG: en\nVERBATIM: Please go to gate 12.\nHEBREW: אנא לך לשער 12.';
+test('parseFlightResponse splits the delimited two-field response (EN→HE)', () => {
+  const raw = 'LANG: en\nVERBATIM: Please go to gate 12.\nTRANSLATION: אנא לך לשער 12.';
   const out = parseFlightResponse(raw);
   assert.equal(out.detected_lang, 'en');
   assert.equal(out.transcript_verbatim, 'Please go to gate 12.');
-  assert.equal(out.translation_he, 'אנא לך לשער 12.');
+  assert.equal(out.translation, 'אנא לך לשער 12.');
+  assert.equal(out.translated_to, 'he', 'English spoken → translate to Hebrew');
 });
 
-test('parseFlightResponse keeps multi-line verbatim + hebrew blocks intact', () => {
-  const raw = 'LANG: English\nVERBATIM: Line one.\nLine two.\nHEBREW: שורה אחת.\nשורה שתיים.';
+test('parseFlightResponse handles the Hebrew→English direction (v2)', () => {
+  const raw = 'LANG: he\nVERBATIM: אנא לך לשער 12.\nTRANSLATION: Please go to gate 12.';
+  const out = parseFlightResponse(raw);
+  assert.equal(out.detected_lang, 'he');
+  assert.equal(out.transcript_verbatim, 'אנא לך לשער 12.');
+  assert.equal(out.translation, 'Please go to gate 12.');
+  assert.equal(out.translated_to, 'en', 'Hebrew spoken → translate to English');
+});
+
+test('parseFlightResponse derives translated_to=en for Hebrew label variants', () => {
+  for (const label of ['he', 'heb', 'Hebrew', 'HEBREW', 'iw', 'עברית', 'he-IL']) {
+    const raw = `LANG: ${label}\nVERBATIM: שלום.\nTRANSLATION: Hello.`;
+    const out = parseFlightResponse(raw);
+    assert.equal(out.translated_to, 'en', `label "${label}" must derive translated_to=en`);
+  }
+});
+
+test('parseFlightResponse derives translated_to=he for English label variants', () => {
+  for (const label of ['en', 'eng', 'English', 'EN', 'en-US']) {
+    const raw = `LANG: ${label}\nVERBATIM: Hello.\nTRANSLATION: שלום.`;
+    const out = parseFlightResponse(raw);
+    assert.equal(out.translated_to, 'he', `label "${label}" must derive translated_to=he`);
+  }
+});
+
+test('parseFlightResponse defaults ambiguous/unknown detected_lang to he (v1 preserved)', () => {
+  // Unknown/blank/other language → assume English input, target Hebrew.
+  for (const label of ['', 'fr', 'Spanish', 'und', 'xyz']) {
+    const raw = `LANG: ${label}\nVERBATIM: foo.\nTRANSLATION: bar.`;
+    const out = parseFlightResponse(raw);
+    assert.equal(out.translated_to, 'he', `ambiguous label "${label}" must default to he`);
+  }
+});
+
+test('deriveTranslatedTo maps source language to opposite-language target', () => {
+  assert.equal(deriveTranslatedTo('he'), 'en');
+  assert.equal(deriveTranslatedTo('Hebrew'), 'en');
+  assert.equal(deriveTranslatedTo('עברית'), 'en');
+  assert.equal(deriveTranslatedTo('en'), 'he');
+  assert.equal(deriveTranslatedTo('English'), 'he');
+  assert.equal(deriveTranslatedTo(''), 'he');
+  assert.equal(deriveTranslatedTo(undefined), 'he');
+});
+
+test('parseFlightResponse keeps multi-line verbatim + translation blocks intact', () => {
+  const raw = 'LANG: English\nVERBATIM: Line one.\nLine two.\nTRANSLATION: שורה אחת.\nשורה שתיים.';
   const out = parseFlightResponse(raw);
   assert.equal(out.transcript_verbatim, 'Line one.\nLine two.');
-  assert.equal(out.translation_he, 'שורה אחת.\nשורה שתיים.');
+  assert.equal(out.translation, 'שורה אחת.\nשורה שתיים.');
 });
 
 test('parseFlightResponse never drops content on parse failure (C2.1)', () => {
@@ -207,20 +253,21 @@ test('parseFlightResponse never drops content on parse failure (C2.1)', () => {
   // translation signals "could not separate" to the caller (never dropped).
   const out = parseFlightResponse('Boarding is now complete.');
   assert.equal(out.transcript_verbatim, 'Boarding is now complete.');
-  assert.equal(out.translation_he, '');
+  assert.equal(out.translation, '');
 });
 
 test('parseFlightResponse tolerates a verbatim-only structured reply', () => {
   const out = parseFlightResponse('VERBATIM: Gate change to 7.');
   assert.equal(out.transcript_verbatim, 'Gate change to 7.');
-  assert.equal(out.translation_he, '');
+  assert.equal(out.translation, '');
 });
 
 test('parseFlightResponse on empty input returns empty fields, no throw', () => {
   const out = parseFlightResponse('');
   assert.equal(out.transcript_verbatim, '');
-  assert.equal(out.translation_he, '');
+  assert.equal(out.translation, '');
   assert.equal(out.detected_lang, '');
+  assert.equal(out.translated_to, 'he', 'empty input defaults to v1 English→Hebrew target');
 });
 
 // ── Part B — separate-function guarantee (C1.5 / STOP-list) ─────────────────────

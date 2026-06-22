@@ -12,12 +12,15 @@
  *     no network, no LLM. Mirrors the /research direct-execute contract
  *     (bot/telegram.js:596 — typeof raw === 'string' ? JSON.parse).
  *
- *   Part B — Live voice help (≤1 Gemini call/note):
+ *   Part B — Live voice help (≤1 Gemini call/note), bidirectional (v2):
  *     transcribeFlightVoice(fileUrl) downloads a Telegram voice note and asks
- *     Gemini to transcribe VERBATIM in the original spoken language, then
- *     translate to Hebrew — one generateContent call, multilingual (NOT
- *     Hebrew-locked). Returns { transcript_verbatim, translation_he,
- *     detected_lang }. This is a SEPARATE function from
+ *     Gemini to detect the spoken language, transcribe VERBATIM in that original
+ *     language, then translate to the OPPOSITE language (English→Hebrew /
+ *     Hebrew→English) — one generateContent call, multilingual (NOT
+ *     Hebrew-locked). Returns { transcript_verbatim, translation, detected_lang,
+ *     translated_to }. translated_to is 'en' when Hebrew was spoken, otherwise
+ *     'he' (ambiguous/unknown detected_lang defaults to 'he', preserving the v1
+ *     English→Hebrew behavior). This is a SEPARATE function from
  *     skills/voice/index.js transcribeVoice (STOP-list); that Hebrew path is
  *     never imported, edited, or wrapped here.
  *
@@ -125,69 +128,94 @@ function downloadBuffer(url) {
   });
 }
 
-// ── Part B — verbatim multilingual transcribe + Hebrew translation ────────────
+// ── Part B — verbatim multilingual transcribe + bidirectional translation ─────
 
-// Multilingual (NOT Hebrew-locked) system instruction. Mirrors the Gemini-audio
-// call mechanics of skills/voice/index.js but asks for a delimited two-field
-// response: verbatim original (any language) + Hebrew translation. No
-// summarising, no answering, no added content.
+// Multilingual, direction-NEUTRAL (NOT Hebrew-locked) system instruction.
+// Mirrors the Gemini-audio call mechanics of skills/voice/index.js but asks for
+// a delimited two-field response: verbatim original (any language) + translation
+// into the OPPOSITE language. No summarising, no answering, no added content.
 const FLIGHT_SYSTEM_INSTRUCTION =
   'You are a verbatim multilingual transcription and translation service. ' +
-  'Transcribe exactly what is said in its original spoken language, word for word. ' +
-  'Then translate that transcription into Hebrew. ' +
+  'Detect the spoken language. Transcribe exactly what is said in its original ' +
+  'spoken language, word for word. Then translate that transcription into the ' +
+  'OPPOSITE language: if the speech is English, translate to Hebrew; if the ' +
+  'speech is Hebrew, translate to English. ' +
   'Do not summarise, do not answer, do not add or omit any content.';
 
 const FLIGHT_PROMPT =
-  'Transcribe this audio verbatim in the original spoken language, then translate it to Hebrew.\n' +
+  'Detect the spoken language, transcribe this audio verbatim in that original ' +
+  'language, then translate it to the OPPOSITE language.\n' +
   'Reply in EXACTLY this format, nothing else:\n' +
   'LANG: <ISO language code or language name of the original speech>\n' +
   'VERBATIM: <the exact words spoken, in the original language>\n' +
-  'HEBREW: <the Hebrew translation>';
+  'TRANSLATION: <the translation in the OPPOSITE language of LANG — Hebrew if LANG is English, English if LANG is Hebrew>';
 
 /**
- * Parse Gemini's delimited response into the three fields. On parse failure
- * (e.g. only one block returned) the raw text is preserved in
- * transcript_verbatim and translation_he is left empty — content is never
- * dropped (C2.1 / design §3.3). The caller notes that translation couldn't be
- * separated.
+ * Decide the translation target language from the detected source language.
+ * Hebrew was spoken → translation is English ('en'). Anything else (English or
+ * ambiguous/unknown) → translation is Hebrew ('he'), preserving v1 behavior.
+ * Robust to ISO codes and language names: 'he','heb','hebrew','iw','עברית'.
+ *
+ * @param {string} detectedLang
+ * @returns {'en'|'he'}
+ */
+function deriveTranslatedTo(detectedLang) {
+  const l = String(detectedLang || '').trim().toLowerCase();
+  const isHebrew = /^(he|heb|hebrew|iw)\b/.test(l)
+    || l === 'he-il'
+    || /\bhebrew\b/.test(l)
+    || /[֐-׿]/.test(detectedLang || ''); // Hebrew script in the label itself
+  return isHebrew ? 'en' : 'he';
+}
+
+/**
+ * Parse Gemini's delimited response into the fields. On parse failure (e.g.
+ * only one block returned) the raw text is preserved in transcript_verbatim and
+ * translation is left empty — content is never dropped (C2.1 / design §3.3).
+ * The caller notes that translation couldn't be separated.
+ *
+ * translated_to is derived from detected_lang: Hebrew spoken → 'en', otherwise
+ * 'he' (ambiguous/unknown defaults to 'he', preserving v1 English→Hebrew).
  *
  * @param {string} raw
- * @returns {{ transcript_verbatim: string, translation_he: string, detected_lang: string }}
+ * @returns {{ transcript_verbatim: string, translation: string, detected_lang: string, translated_to: 'en'|'he' }}
  */
 function parseFlightResponse(raw) {
   const text = (raw || '').trim();
 
-  const langMatch     = text.match(/^\s*LANG:\s*(.*)$/im);
-  const verbatimMatch = text.match(/VERBATIM:\s*([\s\S]*?)(?:\n\s*HEBREW:|$)/i);
-  const hebrewMatch   = text.match(/HEBREW:\s*([\s\S]*)$/i);
+  const langMatch        = text.match(/^\s*LANG:\s*(.*)$/im);
+  const verbatimMatch    = text.match(/VERBATIM:\s*([\s\S]*?)(?:\n\s*TRANSLATION:|$)/i);
+  const translationMatch = text.match(/TRANSLATION:\s*([\s\S]*)$/i);
 
-  const verbatim = verbatimMatch ? verbatimMatch[1].trim() : '';
-  const hebrew   = hebrewMatch   ? hebrewMatch[1].trim()   : '';
-  const lang     = langMatch     ? langMatch[1].trim()     : '';
+  const verbatim    = verbatimMatch    ? verbatimMatch[1].trim()    : '';
+  const translation = translationMatch ? translationMatch[1].trim() : '';
+  const lang        = langMatch        ? langMatch[1].trim()        : '';
+  const translatedTo = deriveTranslatedTo(lang);
 
   // Clean two-field parse succeeded.
-  if (verbatim && hebrew) {
-    return { transcript_verbatim: verbatim, translation_he: hebrew, detected_lang: lang };
+  if (verbatim && translation) {
+    return { transcript_verbatim: verbatim, translation, detected_lang: lang, translated_to: translatedTo };
   }
 
   // Fallback: only one usable block (or unstructured output). Never drop
   // content — surface the raw model text as the verbatim original and signal
-  // (empty translation_he) that the translation couldn't be separated.
-  const fallback = verbatim || hebrew || text;
-  return { transcript_verbatim: fallback, translation_he: '', detected_lang: lang };
+  // (empty translation) that the translation couldn't be separated.
+  const fallback = verbatim || translation || text;
+  return { transcript_verbatim: fallback, translation: '', detected_lang: lang, translated_to: translatedTo };
 }
 
 /**
- * Download a Telegram voice file and transcribe-verbatim + translate-to-Hebrew
- * via ONE Gemini generateContent call.
+ * Download a Telegram voice file and transcribe-verbatim + translate to the
+ * OPPOSITE language (English↔Hebrew, auto-detected) via ONE Gemini
+ * generateContent call.
  *
- * Designed so the R1 2-call fallback (verbatim call + translate call) is an
+ * Designed so the 2-call fallback (verbatim call + translate call) is an
  * internal swap later: the signature and return shape stay identical —
- * transcribeFlightVoice(fileUrl) -> { transcript_verbatim, translation_he,
- * detected_lang } — so bot/telegram.js never changes (C6.2).
+ * transcribeFlightVoice(fileUrl) -> { transcript_verbatim, translation,
+ * detected_lang, translated_to } — so bot/telegram.js never changes (C6.2).
  *
  * @param {string} fileUrl  Full Telegram file URL (includes bot token)
- * @returns {Promise<{ transcript_verbatim: string, translation_he: string, detected_lang: string }>}
+ * @returns {Promise<{ transcript_verbatim: string, translation: string, detected_lang: string, translated_to: 'en'|'he' }>}
  * @throws on download/Gemini failure (caller maps to the Hebrew error message)
  */
 async function transcribeFlightVoice(fileUrl) {
@@ -240,6 +268,7 @@ module.exports = {
     lookupSection,
     menuObject,
     parseFlightResponse,
+    deriveTranslatedTo,
     DISCLAIMER_HE,
     DISCLAIMER_EN,
     MEDICAL_LEGAL_SECTIONS,
