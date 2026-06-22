@@ -33,9 +33,9 @@ skills/
 
 | Function | Purpose |
 |----------|---------|
-| `getSkillDeclarations(builtInNames)` | Returns skill tool declarations, filtered for conflicts |
-| `isSkillTool(toolName)` | Checks if a name belongs to a skill |
-| `executeSkillTool(toolName, args, ctx)` | Runs the skill handler |
+| `initRegistry(toolDeclarations, executeToolFn)` | Registers the built-ins, loads skills, filters name conflicts. Called once at startup. |
+| `getAllToolDeclarations()` | Returns the unified OpenAI-format tool list (built-ins + skills) |
+| `executeAnyTool(toolName, args, ctx)` | Dispatches any tool — skill tools run their handler, everything else is forwarded to the built-in executor |
 | `reloadSkills()` | Hot-reloads all skills without restarting |
 | `getRegistryStatus()` | Returns loaded skill count and tool list |
 
@@ -119,9 +119,9 @@ Or just delete the directory.
 
 ---
 
-## Integration checklist (when wiring into agent.js)
+## Integration checklist (already wired into agent.js)
 
-- [ ] Import `skills-registry.js`
-- [ ] Append `getSkillDeclarations(builtInNames)` to `TOOLS` array
-- [ ] In `executeTool`: check `isSkillTool(name)` before the `default` case
-- [ ] Call `executeSkillTool(name, args, ctx)` for skill tools
+- [x] Import `{ initRegistry, getAllToolDeclarations, executeAnyTool }` from `skills-registry.js`
+- [x] Call `initRegistry(TOOL_DECLARATIONS, executeTool)` once at startup
+- [x] Use `getAllToolDeclarations()` for the unified tool list sent to the LLM
+- [x] Dispatch every tool through `executeAnyTool(name, args, ctx)` — it routes skill tools to their handler and forwards the rest to the built-in executor

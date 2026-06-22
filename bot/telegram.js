@@ -354,6 +354,11 @@ function startBot(token, webhookUrl = null) {
   });
 
   bot.onText(/^\/usage$/, (msg) => {
+    const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (!ownerId || msg.chat.id !== ownerId) {
+      console.log('[/usage] denied — chat', msg.chat.id, 'is not owner');
+      return;
+    }
     bot.sendMessage(msg.chat.id, formatUsage(), { parse_mode: 'HTML' });
   });
 

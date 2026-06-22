@@ -9,7 +9,7 @@ const LNG = 34.7925;
 async function getShabbatTimes() {
   return new Promise((resolve, reject) => {
     const url = `https://www.hebcal.com/shabbat?cfg=json&latitude=${LAT}&longitude=${LNG}&tzid=Asia/Jerusalem&m=50`;
-    https.get(url, (res) => {
+    const req = https.get(url, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -27,7 +27,11 @@ async function getShabbatTimes() {
           });
         } catch (e) { reject(e); }
       });
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    // No timeout ⇒ a hung connection never settles and freezes the Friday cron's
+    // await forever. Destroy + reject so the caller try/catch falls back cleanly.
+    req.setTimeout(7000, () => { req.destroy(new Error('Hebcal request timed out')); });
   });
 }
 

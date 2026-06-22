@@ -1,5 +1,15 @@
 'use strict';
 
+// TODO (next session, after 2026-05-01):
+//   1. cropGrid: when cellW/cellH < 1 (tiny image + large grid), Sharp throws
+//      a raw "extract_area: parameter width not set" — wrap with friendly
+//      Hebrew error like "תמונה קטנה מדי לגריד הזה".
+//   2. Telegram caption with multiple ops (e.g. both "גריד" and "הגדל") —
+//      first match in the if-chain wins silently. Either document the
+//      precedence or warn the user when ambiguous.
+//   3. "חתוך גריד" without dimensions silently defaults to 2x2.
+//      Consider prompting for dimensions or echoing the chosen default.
+
 const sharp = require('sharp');
 const { supabase, isEnabled } = require('./supabase');
 
