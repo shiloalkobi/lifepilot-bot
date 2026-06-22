@@ -862,7 +862,15 @@ function startBot(token, webhookUrl = null) {
               try {
                 const { generateTTS } = require('./tts');
                 const mp3Path = await generateTTS(translation, 'en');
-                await bot.sendVoice(chatId, require('fs').createReadStream(mp3Path));
+                // Explicit fileOptions (4th arg) sets the content-type so
+                // node-telegram-bot-api does not emit the octet-stream
+                // DeprecationWarning. generateTTS always returns mp3.
+                await bot.sendVoice(
+                  chatId,
+                  require('fs').createReadStream(mp3Path),
+                  {},
+                  { contentType: 'audio/mpeg', filename: 'flight.mp3' },
+                );
               } catch (ttsErr) {
                 console.error('[Flight] voice output:', ttsErr.message);
               }

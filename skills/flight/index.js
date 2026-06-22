@@ -140,11 +140,25 @@ const FLIGHT_SYSTEM_INSTRUCTION =
   'spoken language, word for word. Then translate that transcription into the ' +
   'OPPOSITE language: if the speech is English, translate to Hebrew; if the ' +
   'speech is Hebrew, translate to English. ' +
+  'This is speech at an AIRPORT — context is travel, security, boarding, ' +
+  'check-in, wheelchair/mobility assistance, baggage, documents/passport, ' +
+  'gates. Use this domain context to disambiguate unclear words. ' +
+  'If a word is acoustically unclear, prefer the most contextually-likely word ' +
+  'for an airport/travel setting over a literal phonetic guess that makes no ' +
+  'sense in context. Do NOT invent content that wasn\'t said — only ' +
+  'disambiguate genuinely unclear words. ' +
   'Do not summarise, do not answer, do not add or omit any content.';
 
 const FLIGHT_PROMPT =
   'Detect the spoken language, transcribe this audio verbatim in that original ' +
   'language, then translate it to the OPPOSITE language.\n' +
+  'This is speech at an AIRPORT — context is travel, security, boarding, ' +
+  'check-in, wheelchair/mobility assistance, baggage, documents/passport, ' +
+  'gates. Use this domain context to disambiguate unclear words. If a word is ' +
+  'acoustically unclear, prefer the most contextually-likely word for an ' +
+  'airport/travel setting over a literal phonetic guess that makes no sense in ' +
+  'context. Do NOT invent content that wasn\'t said — only disambiguate ' +
+  'genuinely unclear words.\n' +
   'Reply in EXACTLY this format, nothing else:\n' +
   'LANG: <ISO language code or language name of the original speech>\n' +
   'VERBATIM: <the exact words spoken, in the original language>\n' +
