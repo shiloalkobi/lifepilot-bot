@@ -44,6 +44,22 @@ const { fetchHeroImage } = require('./unsplash');
 const { savePassword, getPassword, listPasswords, deletePassword } = require('./password-manager');
 const { generateTTS } = require('./tts');
 
+// ── HTML escaping for generated pages (XSS hardening) ────────────────────────
+// User/LLM-derived values are interpolated into HTML text AND attribute contexts
+// in the form/landing/presentation generators. Escape & < > " ' so a value can
+// never break out of a text node OR an attribute. Superset of the repo's
+// research-* escapeHtml (which only handles & < >) — needed because we also
+// inject into attributes like name="${f}". For JS string-literal contexts inside
+// <script> blocks this is INSUFFICIENT — use JSON.stringify there instead.
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 console.log('[Agent] Groq key present:', !!process.env.GROQ_API_KEY);
 console.log('[Agent] Gemini key present:', !!process.env.GEMINI_API_KEY);
 const groq = new OpenAI({
@@ -1072,11 +1088,12 @@ button{border-radius:4px!important;font-weight:700;letter-spacing:0.3px}`,
           const isDate    = /תאריך|date/i.test(f);
           const isNumber  = /גיל|מספר|כמות/i.test(f);
           let inputType = isEmail ? 'email' : isPhone ? 'tel' : isDate ? 'date' : isNumber ? 'number' : 'text';
+          const fEsc = escapeHtml(f);
           if (isMessage) {
-            return `<div class="field"><label>${f} <span class="required">*</span></label><textarea name="${f}" rows="4" placeholder="${f}..." required></textarea></div>`;
+            return `<div class="field"><label>${fEsc} <span class="required">*</span></label><textarea name="${fEsc}" rows="4" placeholder="${fEsc}..." required></textarea></div>`;
           }
           const validationAttr = isEmail ? 'pattern="[^@]+@[^@]+\\.[^@]+"' : isPhone ? 'pattern="[0-9+\\-\\s]{7,15}"' : '';
-          return `<div class="field"><label>${f} <span class="required">*</span></label><input type="${inputType}" name="${f}" placeholder="${f}..." required ${validationAttr} /></div>`;
+          return `<div class="field"><label>${fEsc} <span class="required">*</span></label><input type="${inputType}" name="${fEsc}" placeholder="${fEsc}..." required ${validationAttr} /></div>`;
         }).join('\n      ');
 
         const formHtml = `<!DOCTYPE html>
@@ -1084,7 +1101,7 @@ button{border-radius:4px!important;font-weight:700;letter-spacing:0.3px}`,
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${formTitle}</title>
+  <title>${escapeHtml(formTitle)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: ${style.bg}; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -1113,12 +1130,12 @@ button{border-radius:4px!important;font-weight:700;letter-spacing:0.3px}`,
     <div class="progress-bar" id="progressBar"></div>
     <div class="form-header">
       <div class="form-icon">${style.icon}</div>
-      <h1>${formTitle}</h1>
+      <h1>${escapeHtml(formTitle)}</h1>
       <p class="subtitle">${style.subtitle}</p>
     </div>
     <form id="mainForm" novalidate>
       ${fieldsHtml}
-      <button type="submit">${submitText}</button>
+      <button type="submit">${escapeHtml(submitText)}</button>
     </form>
     <div class="success" id="successMsg">${style.successMsg}</div>
   </div>
@@ -1142,7 +1159,7 @@ button{border-radius:4px!important;font-weight:700;letter-spacing:0.3px}`,
         await fetch('https://lifepilot-bot.onrender.com/api/form-submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: '${formTitle}', data, chatId: '${chatId}' })
+          body: JSON.stringify({ title: ${JSON.stringify(String(formTitle))}, data, chatId: ${JSON.stringify(String(chatId))} })
         });
       } catch(err) { /* silent fail — form still shows success */ }
       this.style.display = 'none';
@@ -1306,28 +1323,28 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
           const isActive = idx === 0 ? ' active' : '';
           if (s.type === 'title') {
             return `<div class="slide title-slide${isActive}" data-index="${idx}">
-      <div class="slide-label">${isRtl ? presTitle : presTitle}</div>
-      <h1>${s.title}</h1>
-      <p class="title-sub">${s.subtitle}</p>
+      <div class="slide-label">${escapeHtml(presTitle)}</div>
+      <h1>${escapeHtml(s.title)}</h1>
+      <p class="title-sub">${escapeHtml(s.subtitle)}</p>
       <div class="slide-number">${idx+1} / ${total}</div>
-      <div class="speaker-notes">${s.notes}</div>
+      <div class="speaker-notes">${escapeHtml(s.notes)}</div>
     </div>`;
           }
           if (s.type === 'thankyou') {
             return `<div class="slide thankyou-slide${isActive}" data-index="${idx}">
-      <h1>${s.title}</h1>
-      <p class="title-sub">${s.subtitle}</p>
+      <h1>${escapeHtml(s.title)}</h1>
+      <p class="title-sub">${escapeHtml(s.subtitle)}</p>
       <div class="slide-number">${idx+1} / ${total}</div>
       <div class="speaker-notes"></div>
     </div>`;
           }
           return `<div class="slide${isActive}" data-index="${idx}">
       <div class="slide-number">${idx+1} / ${total}</div>
-      <h2>${s.title}</h2>
+      <h2>${escapeHtml(s.title)}</h2>
       <ul>
-        ${s.bullets.map(b => `<li>${b}</li>`).join('\n        ')}
+        ${s.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('\n        ')}
       </ul>
-      <div class="speaker-notes">${s.notes}</div>
+      <div class="speaker-notes">${escapeHtml(s.notes)}</div>
     </div>`;
         };
 
@@ -1338,7 +1355,7 @@ li::before{content:'—'!important;color:#d4a853!important;font-size:0.9rem!impo
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${presTitle}</title>
+  <title>${escapeHtml(presTitle)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a18; color: #fff; height: 100vh; overflow: hidden; }
@@ -1855,7 +1872,7 @@ footer{background:#11111a}`,
         }[lpTemplateName] || '';
 
         const servicesSection = services.length > 0
-          ? `<section class="services"><div class="container"><h2>השירותים שלנו</h2><div class="services-grid">${services.map(s => `<div class="service-card"><span class="icon">✓</span><span>${s}</span></div>`).join('')}</div></div></section>`
+          ? `<section class="services"><div class="container"><h2>השירותים שלנו</h2><div class="services-grid">${services.map(s => `<div class="service-card"><span class="icon">✓</span><span>${escapeHtml(s)}</span></div>`).join('')}</div></div></section>`
           : '';
 
         const landingHtml = `<!DOCTYPE html>
@@ -1863,11 +1880,11 @@ footer{background:#11111a}`,
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${bizName} — ${heroSubtitle}</title>
-  <meta name="description" content="${heroSubtitle}">
-  <meta name="keywords" content="${bizName}, ${services.slice(0,3).join(', ')}">
-  <meta property="og:title" content="${bizName}">
-  <meta property="og:description" content="${heroSubtitle}">
+  <title>${escapeHtml(bizName)} — ${escapeHtml(heroSubtitle)}</title>
+  <meta name="description" content="${escapeHtml(heroSubtitle)}">
+  <meta name="keywords" content="${escapeHtml(bizName)}, ${escapeHtml(services.slice(0,3).join(', '))}">
+  <meta property="og:title" content="${escapeHtml(bizName)}">
+  <meta property="og:description" content="${escapeHtml(heroSubtitle)}">
   <meta property="og:type" content="website">
   <!-- Google Analytics placeholder -->
   <!-- <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script> -->
@@ -1945,23 +1962,23 @@ footer{background:#11111a}`,
 </head>
 <body>
   <nav>
-    <span class="logo">${bizName}</span>
-    <a href="#contact" class="nav-cta">${ctaText}</a>
+    <span class="logo">${escapeHtml(bizName)}</span>
+    <a href="#contact" class="nav-cta">${escapeHtml(ctaText)}</a>
   </nav>
 
   <section class="hero">
-    <h1>${heroHeadline}</h1>
-    <p>${heroSubtitle}</p>
-    <a href="#contact" class="hero-btn">${ctaText} &rsaquo;</a>
+    <h1>${escapeHtml(heroHeadline)}</h1>
+    <p>${escapeHtml(heroSubtitle)}</p>
+    <a href="#contact" class="hero-btn">${escapeHtml(ctaText)} &rsaquo;</a>
   </section>
 
   <section class="values">
     <div class="container">
       <h2>למה לבחור בנו?</h2>
       <div class="values-grid">
-        <div class="value-card"><h3>${val1Title}</h3><p>${val1Text}</p></div>
-        <div class="value-card"><h3>${val2Title}</h3><p>${val2Text}</p></div>
-        <div class="value-card"><h3>${val3Title}</h3><p>${val3Text}</p></div>
+        <div class="value-card"><h3>${escapeHtml(val1Title)}</h3><p>${escapeHtml(val1Text)}</p></div>
+        <div class="value-card"><h3>${escapeHtml(val2Title)}</h3><p>${escapeHtml(val2Text)}</p></div>
+        <div class="value-card"><h3>${escapeHtml(val3Title)}</h3><p>${escapeHtml(val3Text)}</p></div>
       </div>
     </div>
   </section>
@@ -1973,24 +1990,24 @@ footer{background:#11111a}`,
       <h2>מה הלקוחות אומרים</h2>
       <div class="testimonials-grid">
         <div class="testimonial-card">
-          <p class="testimonial-quote">${t1Quote}</p>
+          <p class="testimonial-quote">${escapeHtml(t1Quote)}</p>
           <div class="testimonial-author">
-            <div class="author-avatar">${t1Name.charAt(0)}</div>
-            <div><div class="author-name">${t1Name}</div><div class="author-role">${t1Role}</div></div>
+            <div class="author-avatar">${escapeHtml(t1Name.charAt(0))}</div>
+            <div><div class="author-name">${escapeHtml(t1Name)}</div><div class="author-role">${escapeHtml(t1Role)}</div></div>
           </div>
         </div>
         <div class="testimonial-card">
-          <p class="testimonial-quote">${t2Quote}</p>
+          <p class="testimonial-quote">${escapeHtml(t2Quote)}</p>
           <div class="testimonial-author">
-            <div class="author-avatar">${t2Name.charAt(0)}</div>
-            <div><div class="author-name">${t2Name}</div><div class="author-role">${t2Role}</div></div>
+            <div class="author-avatar">${escapeHtml(t2Name.charAt(0))}</div>
+            <div><div class="author-name">${escapeHtml(t2Name)}</div><div class="author-role">${escapeHtml(t2Role)}</div></div>
           </div>
         </div>
         <div class="testimonial-card">
-          <p class="testimonial-quote">${t3Quote}</p>
+          <p class="testimonial-quote">${escapeHtml(t3Quote)}</p>
           <div class="testimonial-author">
-            <div class="author-avatar">${t3Name.charAt(0)}</div>
-            <div><div class="author-name">${t3Name}</div><div class="author-role">${t3Role}</div></div>
+            <div class="author-avatar">${escapeHtml(t3Name.charAt(0))}</div>
+            <div><div class="author-name">${escapeHtml(t3Name)}</div><div class="author-role">${escapeHtml(t3Role)}</div></div>
           </div>
         </div>
       </div>
@@ -2001,17 +2018,17 @@ footer{background:#11111a}`,
     <div class="container">
       <h2>שאלות נפוצות</h2>
       <div class="faq-list">
-        <div class="faq-item"><div class="faq-q">${faq1Q}<span class="arrow">▼</span></div><div class="faq-a">${faq1A}</div></div>
-        <div class="faq-item"><div class="faq-q">${faq2Q}<span class="arrow">▼</span></div><div class="faq-a">${faq2A}</div></div>
-        <div class="faq-item"><div class="faq-q">${faq3Q}<span class="arrow">▼</span></div><div class="faq-a">${faq3A}</div></div>
+        <div class="faq-item"><div class="faq-q">${escapeHtml(faq1Q)}<span class="arrow">▼</span></div><div class="faq-a">${escapeHtml(faq1A)}</div></div>
+        <div class="faq-item"><div class="faq-q">${escapeHtml(faq2Q)}<span class="arrow">▼</span></div><div class="faq-a">${escapeHtml(faq2A)}</div></div>
+        <div class="faq-item"><div class="faq-q">${escapeHtml(faq3Q)}<span class="arrow">▼</span></div><div class="faq-a">${escapeHtml(faq3A)}</div></div>
       </div>
     </div>
   </section>
 
   <section class="cta-section">
-    <h2>${ctaHeadline}</h2>
-    <p>${bizDesc || 'אנחנו כאן כדי לעזור לך להצליח'}</p>
-    <a href="#contact" class="cta-btn">${ctaText}</a>
+    <h2>${escapeHtml(ctaHeadline)}</h2>
+    <p>${escapeHtml(bizDesc || 'אנחנו כאן כדי לעזור לך להצליח')}</p>
+    <a href="#contact" class="cta-btn">${escapeHtml(ctaText)}</a>
   </section>
 
   <section class="contact" id="contact">
@@ -2021,11 +2038,11 @@ footer{background:#11111a}`,
       <input type="email" placeholder="אימייל" required />
       <input type="tel" placeholder="טלפון" />
       <textarea rows="4" placeholder="איך נוכל לעזור?"></textarea>
-      <button id="contactBtn">${ctaText}</button>
+      <button id="contactBtn">${escapeHtml(ctaText)}</button>
     </div>
   </section>
 
-  <footer>&copy; ${new Date().getFullYear()} ${bizName}. כל הזכויות שמורות.</footer>
+  <footer>&copy; ${new Date().getFullYear()} ${escapeHtml(bizName)}. כל הזכויות שמורות.</footer>
 
   <!-- WhatsApp floating button -->
   <a href="https://wa.me/972500000000" class="whatsapp-btn" target="_blank" title="WhatsApp">💬</a>
@@ -2051,7 +2068,7 @@ footer{background:#11111a}`,
         await fetch('https://lifepilot-bot.onrender.com/api/form-submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: 'יצירת קשר — ${bizName}', data, chatId: '${chatId}' })
+          body: JSON.stringify({ title: ${JSON.stringify('יצירת קשר — ' + String(bizName))}, data, chatId: ${JSON.stringify(String(chatId))} })
         });
       } catch(e) {}
       this.textContent = '✅ נשלח! נחזור אליך בהקדם 🙏';
@@ -2366,4 +2383,4 @@ async function handleMessage(bot, chatId, text) {
   return reply;
 }
 
-module.exports = { handleMessage, _resetToolCalls, _getToolCalls };
+module.exports = { handleMessage, _resetToolCalls, _getToolCalls, escapeHtml };

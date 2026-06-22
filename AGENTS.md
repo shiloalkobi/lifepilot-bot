@@ -51,7 +51,7 @@ user: שילה אלקובי
 | CMS | WordPress, Elementor |
 | אוטומציות | Make |
 | No-Code | Bubble |
-| AI | Claude, Lovable |
+| AI | Codex, Lovable |
 | בדיקות | Postman |
 | IDE | VS Code |
 

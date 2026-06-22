@@ -5,3 +5,12 @@ google_token.json
 _bmad/
 .claude/
 drafts/
+.agents/
+
+# Personal runtime data — never commit (seed data like english-words/quotes/medications stays tracked)
+data/health-log.json
+data/expenses.json
+data/tasks.json
+data/habits.json
+data/passwords.json
+data/stock-watchlist.json
