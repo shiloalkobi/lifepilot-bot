@@ -704,6 +704,108 @@ function startBot(token, webhookUrl = null) {
     }
   });
 
+  // ── Disability Flight Companion (skill: skills/flight) — owner-only ──────────
+  // Part A: /flight returns researched HE+EN pre-flight content with 0 LLM
+  // tokens (pure string constants from skills/flight/content.js), via the same
+  // direct-execute pattern as /research (typeof raw === 'string' ? JSON.parse,
+  // mirrors :596). Sections are reachable by typed arg (/flight rights) AND by
+  // tapping an inline keyboard (Q6) — keyboard taps re-render the same section
+  // via the callback_query handler below. Owner-gate copied from /digest_now
+  // (silent return on denial). Regex hardened like /research (:591).
+  const FLIGHT_SECTION_LABELS = {
+    checklist:  '✅ צ׳ק-ליסט',
+    docs:       '📋 מסמכים',
+    wheelchair: '🦽 כיסא וסוללות',
+    rights:     '🎫 זכויות',
+    security:   '🏥 הצהרת CRPS',
+    phrases:    '🗣️ משפטים',
+  };
+
+  // Build the inline keyboard mapping each section to a callback (2 per row).
+  function flightKeyboard() {
+    const keys = Object.keys(FLIGHT_SECTION_LABELS);
+    const rows = [];
+    for (let i = 0; i < keys.length; i += 2) {
+      rows.push(keys.slice(i, i + 2).map((k) => ({
+        text: FLIGHT_SECTION_LABELS[k],
+        callback_data: `flight_${k}`,
+      })));
+    }
+    return { inline_keyboard: rows };
+  }
+
+  // Render a Part A section (or the menu) for a chat. Shared by the typed
+  // command and the inline-keyboard callback so tap and type are byte-identical
+  // (A3.1). Pure data: 0 LLM tokens. Appends the co-located disclaimer (HE+EN)
+  // unconditionally when needs_disclaimer === true (A4.3).
+  async function sendFlightSection(targetChatId, section) {
+    const flight = require('../skills/flight');
+    const raw = await flight.execute('flight_section', { section }, { chat_id: targetChatId });
+    const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+    if (result.section === 'menu') {
+      return bot.sendMessage(targetChatId, result.body_he, {
+        parse_mode: 'HTML',
+        reply_markup: flightKeyboard(),
+      });
+    }
+
+    const lines = [];
+    if (result.title_he) lines.push(`<b>${result.title_he}</b>`);
+    if (result.body_he)  lines.push(result.body_he);
+    if (result.body_en)  lines.push(`\n— EN —\n${result.body_en}`);
+    if (result.needs_disclaimer) {
+      if (result.disclaimer_he) lines.push(`\n${result.disclaimer_he}`);
+      if (result.disclaimer_en) lines.push(result.disclaimer_en);
+    }
+    return bot.sendMessage(targetChatId, lines.join('\n'), { parse_mode: 'HTML' });
+  }
+
+  bot.onText(/^\/flight(?:@\w+)?(?:\s+(\w+))?$/, async (msg, match) => {
+    const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (!ownerId || msg.chat.id !== ownerId) {
+      console.log('[/flight] denied — chat', msg.chat.id, 'is not owner');
+      return;
+    }
+    console.log('[/flight] invoked by owner', msg.chat.id, 'section:', (match && match[1]) || '(menu)');
+    try {
+      await sendFlightSection(msg.chat.id, match && match[1]);
+    } catch (err) {
+      console.error('[/flight]', err.message);
+      bot.sendMessage(msg.chat.id, '⚠️ שגיאה במלווה הטיסה.');
+    }
+  });
+
+  // /flight_on ÷ /flight_off — per-session flight-mode toggle (Epic B). State is
+  // in-memory only with 3h auto-expire (skills/flight setFlightMode/isFlightMode).
+  // 0 LLM tokens. Owner-gate copied from /digest_now.
+  bot.onText(/^\/flight_on(?:@\w+)?(?:\s+.*)?$/, async (msg) => {
+    const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (!ownerId || msg.chat.id !== ownerId) {
+      console.log('[/flight_on] denied — chat', msg.chat.id, 'is not owner');
+      return;
+    }
+    console.log('[/flight_on] invoked by owner', msg.chat.id);
+    const { setFlightMode } = require('../skills/flight');
+    setFlightMode(msg.chat.id, true);
+    bot.sendMessage(
+      msg.chat.id,
+      'מצב טיסה פעיל — שלח הקלטה ואתרגם מילה במילה (אנגלית→עברית). /flight_off לכיבוי. (כבוי אוטומטית אחרי 3 שעות.)',
+    );
+  });
+
+  bot.onText(/^\/flight_off(?:@\w+)?(?:\s+.*)?$/, async (msg) => {
+    const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (!ownerId || msg.chat.id !== ownerId) {
+      console.log('[/flight_off] denied — chat', msg.chat.id, 'is not owner');
+      return;
+    }
+    console.log('[/flight_off] invoked by owner', msg.chat.id);
+    const { setFlightMode } = require('../skills/flight');
+    setFlightMode(msg.chat.id, false);
+    bot.sendMessage(msg.chat.id, 'מצב טיסה כובה. הקלטות קוליות חוזרות להתנהגות הרגילה.');
+  });
+
   // Handle all non-command messages
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
@@ -725,6 +827,41 @@ function startBot(token, webhookUrl = null) {
     // ── Voice messages ───────────────────────────────────────────────────────
     if (msg.voice) {
       bot.sendChatAction(chatId, 'typing');
+
+      // Flight mode (Part B) — owner-only verbatim+Hebrew translate of airline
+      // staff speech, sent DIRECTLY (never via handleMessage/the agent). Sits at
+      // the TOP of the voice block, AFTER the Shabbat gate above (:711-723) so it
+      // inherits Shabbat blocking (D2). Uses a SEPARATE transcribeFlightVoice
+      // (skills/voice/transcribeVoice is untouched — STOP-list). When flight mode
+      // is OFF (or expired), this branch is skipped entirely and the existing
+      // Hebrew path below runs byte-identical (C5.2).
+      {
+        const { isFlightMode } = require('../skills/flight');
+        const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+        if (ownerId && chatId === ownerId && isFlightMode(chatId)) {
+          try {
+            const { transcribeFlightVoice } = require('../skills/flight');
+            const file    = await bot.getFile(msg.voice.file_id);
+            const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+            console.log('[Flight] Transcribing flight voice note...');
+            const out = await transcribeFlightVoice(fileUrl);
+            const verbatim = (out.transcript_verbatim || '').trim() || '(ייתכן שהקול לא היה ברור)';
+            let reply = `🎙️ מקור (verbatim): ${verbatim}`;
+            if (out.translation_he && out.translation_he.trim()) {
+              reply += `\n🔁 תרגום: ${out.translation_he.trim()}`;
+            } else {
+              reply += '\n🔁 (לא הצלחתי להפריד תרגום — מוצג המקור בלבד)';
+            }
+            bot.sendMessage(chatId, reply).catch((e) => console.error('[Flight] sendMessage:', e.message));
+          } catch (err) {
+            console.error('[Flight]', err.message);
+            // Flight mode stays ON (C3.1) — no setFlightMode(false) here.
+            bot.sendMessage(chatId, '⚠️ לא הצלחתי לתמלל. נסה שוב או דבר לאט יותר.');
+          }
+          return;
+        }
+      }
+
       try {
         const { transcribeVoice } = require('../skills/voice');
         const file    = await bot.getFile(msg.voice.file_id);
@@ -1331,6 +1468,27 @@ function startBot(token, webhookUrl = null) {
         bot.sendMessage(cbChat, details, { parse_mode: 'HTML' });
       } else {
         bot.answerCallbackQuery(query.id, { text: 'ליד לא נמצא' });
+      }
+      return;
+    }
+
+    // Flight companion (Part A) — inline-keyboard tap re-renders the same
+    // section as the typed `/flight <section>` arg (A3.1). Owner-only (D1.1):
+    // same gate as the /flight command. 0 LLM tokens; never routes through the
+    // agent (A3.3).
+    if (cbData.startsWith('flight_')) {
+      const ownerId = Number(process.env.TELEGRAM_CHAT_ID);
+      if (!ownerId || cbChat !== ownerId) {
+        console.log('[flight cb] denied — chat', cbChat, 'is not owner');
+        return bot.answerCallbackQuery(query.id).catch(() => {});
+      }
+      const section = cbData.replace('flight_', '');
+      bot.answerCallbackQuery(query.id).catch(() => {});
+      try {
+        await sendFlightSection(cbChat, section);
+      } catch (err) {
+        console.error('[flight cb]', err.message);
+        bot.sendMessage(cbChat, '⚠️ שגיאה במלווה הטיסה.');
       }
       return;
     }
