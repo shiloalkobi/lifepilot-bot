@@ -846,13 +846,27 @@ function startBot(token, webhookUrl = null) {
             console.log('[Flight] Transcribing flight voice note...');
             const out = await transcribeFlightVoice(fileUrl);
             const verbatim = (out.transcript_verbatim || '').trim() || '(ייתכן שהקול לא היה ברור)';
+            const translation = (out.translation || '').trim();
             let reply = `🎙️ מקור (verbatim): ${verbatim}`;
-            if (out.translation_he && out.translation_he.trim()) {
-              reply += `\n🔁 תרגום: ${out.translation_he.trim()}`;
+            if (translation) {
+              reply += `\n🔁 תרגום: ${translation}`;
             } else {
               reply += '\n🔁 (לא הצלחתי להפריד תרגום — מוצג המקור בלבד)';
             }
             bot.sendMessage(chatId, reply).catch((e) => console.error('[Flight] sendMessage:', e.message));
+
+            // v2 — voice output ONLY when translating TO English (Hebrew was
+            // spoken). Hebrew translation → text only. The text reply is already
+            // sent above; wrap TTS/sendVoice so a TTS failure never breaks it.
+            if (out.translated_to === 'en' && translation) {
+              try {
+                const { generateTTS } = require('./tts');
+                const mp3Path = await generateTTS(translation, 'en');
+                await bot.sendVoice(chatId, require('fs').createReadStream(mp3Path));
+              } catch (ttsErr) {
+                console.error('[Flight] voice output:', ttsErr.message);
+              }
+            }
           } catch (err) {
             console.error('[Flight]', err.message);
             // Flight mode stays ON (C3.1) — no setFlightMode(false) here.
