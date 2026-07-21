@@ -1,5 +1,6 @@
 .env
 node_modules/
+.DS_Store
 google_credentials.json
 google_token.json
 _bmad/
