@@ -2,12 +2,15 @@
 /**
  * R3 GATE — live BIDIRECTIONAL direction verification (run manually, NOT in CI).
  *
- * Extends the R1 harness approach to TWO clips that exercise both directions of
- * Flight Companion v2:
+ * Extends the R1 harness approach to THREE clips that exercise both directions
+ * of Flight Companion v2:
  *   (a) Hebrew clip  (generateTTS(hebrewText, 'iw')) → expect detected Hebrew,
  *       translation in English, translated_to === 'en'.
  *   (b) English clip (generateTTS(englishText, 'en')) → expect detected English,
  *       translation in Hebrew, translated_to === 'he'.
+ *   (c) SHORT Hebrew clip ("איפה השירותים בבקשה") → real mis-transcription bug
+ *       repro; checks airport-context disambiguation yields a restroom/toilet
+ *       translation (printed for human eval, does not gate ship/no-ship).
  *
  * Pipeline mirrors tests/_r1_live_harness.js: TTS mp3 → ffmpeg ogg/opus (matches
  * real Telegram voice notes + the hardcoded audio/ogg mime) → local HTTPS
@@ -47,6 +50,20 @@ const CLIPS = [
     expectDetect: /en|eng|english/i,
     expectTranslatedTo: 'he',
     translationIsLatin: false, // translation should be Hebrew
+  },
+  {
+    // SHORT/challenging clip — real bug repro: this 1-2s Hebrew phrase was
+    // mis-transcribed ("השירותים"→"הטין" → "the teen"). Sanity-checks that the
+    // airport-context disambiguation steers it back to restroom/toilet. If TTS
+    // artifacts make the restroom assertion flaky, the harness still hard-fails
+    // only on direction + parse; the restroom check is printed for human eval.
+    id: 'hebrew_short',
+    text: 'איפה השירותים בבקשה',
+    lang: 'iw',
+    expectDetect: /he|heb|hebrew|iw|עברית/i,
+    expectTranslatedTo: 'en',
+    translationIsLatin: true,  // translation should be English
+    expectTranslation: /restroom|toilet|bathroom|lavatory|washroom|wc/i,
   },
 ];
 
@@ -111,6 +128,16 @@ async function main() {
                 `  translated_to=${clip.expectTranslatedTo}: ${cTo ? '✓' : '✗'}` +
                 `  translation lang ok: ${transOk ? '✓' : '✗'}` +
                 `  two-field parse: ${cParse ? '✓' : '✗'}`);
+
+    // Optional content sanity check (e.g. restroom airport-context disambig).
+    // Printed for HUMAN eval — TTS artifacts can make it flaky, so it does NOT
+    // hard-fail the gate (direction + parse remain the ship/no-ship signal).
+    if (clip.expectTranslation) {
+      const contentOk = clip.expectTranslation.test(out.translation || '');
+      console.log(`  content sanity (${clip.expectTranslation}): ` +
+                  `${contentOk ? '✓ airport context helped' : '✗ (human eval — not gating)'}`);
+    }
+
     const clipPass = cDetect && cTo && transOk && cParse;
     console.log(`  → ${clipPass ? 'PASS ✅' : 'FAIL ❌'}`);
     if (!clipPass) allPass = false;
